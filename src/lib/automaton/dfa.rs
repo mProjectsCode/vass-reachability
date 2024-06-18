@@ -7,15 +7,15 @@ use petgraph::{
     Direction,
 };
 
-use super::Automaton;
+use super::{AutEdge, AutNode, Automaton, AutBuild};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DfaNodeData<T: Debug + Clone + PartialEq> {
-    accepting: bool,
-    data: T,
+pub struct DfaNodeData<T: AutNode> {
+    pub accepting: bool,
+    pub data: T,
 }
 
-impl<T: Debug + Clone + PartialEq> DfaNodeData<T> {
+impl<T: AutNode> DfaNodeData<T> {
     pub fn new(accepting: bool, data: T) -> Self {
         DfaNodeData { accepting, data }
     }
@@ -41,13 +41,13 @@ impl<T: Debug + Clone + PartialEq> DfaNodeData<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct DFA<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq> {
+pub struct DFA<N: AutNode, E: AutEdge> {
     start: NodeIndex<u32>,
     graph: StableDiGraph<DfaNodeData<N>, E>,
     alphabet: Vec<E>,
 }
 
-impl<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq> DFA<N, E> {
+impl<N: AutNode, E: AutEdge> DFA<N, E> {
     pub fn new(alphabet: Vec<E>, start_accepting: bool, data: N) -> Self {
         let mut graph = StableDiGraph::new();
         let start = graph.add_node(DfaNodeData::new(start_accepting, data));
@@ -68,10 +68,6 @@ impl<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq> DFA<N, E> {
             start,
             graph,
         }
-    }
-
-    pub fn start(&self) -> NodeIndex<u32> {
-        self.start
     }
 
     /// Adds a failure state if needed. This turns the DFA into a complete DFA, which is needed for some algorithms.
@@ -224,8 +220,8 @@ impl<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq> DFA<N, E> {
     }
 }
 
-impl<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq>
-    Automaton<NodeIndex, DfaNodeData<N>, E> for DFA<N, E>
+impl<N: AutNode, E: AutEdge>
+    AutBuild<NodeIndex, DfaNodeData<N>, E> for DFA<N, E>
 {
     fn add_state(&mut self, data: DfaNodeData<N>) -> NodeIndex<u32> {
         self.graph.add_node(data)
@@ -246,6 +242,12 @@ impl<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq>
         self.graph.add_edge(from, to, label);
     }
 
+
+}
+
+impl<N: AutNode, E: AutEdge>
+    Automaton<NodeIndex<u32>, E> for DFA<N, E> 
+{
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_state = Some(self.start);
         for symbol in input {
@@ -265,5 +267,9 @@ impl<N: Debug + Clone + PartialEq, E: Debug + Clone + PartialEq>
             Some(data) => data.accepting,
             None => false,
         }
+    }
+
+    fn start(&self) -> NodeIndex<u32> {
+        self.start
     }
 }
