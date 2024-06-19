@@ -7,7 +7,7 @@ use petgraph::{
     Direction,
 };
 
-use super::{AutEdge, AutNode, Automaton, AutBuild};
+use super::{AutBuild, AutEdge, AutNode, Automaton};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DfaNodeData<T: AutNode> {
@@ -220,9 +220,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     }
 }
 
-impl<N: AutNode, E: AutEdge>
-    AutBuild<NodeIndex, DfaNodeData<N>, E> for DFA<N, E>
-{
+impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, E> for DFA<N, E> {
     fn add_state(&mut self, data: DfaNodeData<N>) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
@@ -241,13 +239,9 @@ impl<N: AutNode, E: AutEdge>
 
         self.graph.add_edge(from, to, label);
     }
-
-
 }
 
-impl<N: AutNode, E: AutEdge>
-    Automaton<NodeIndex<u32>, E> for DFA<N, E> 
-{
+impl<N: AutNode, E: AutEdge> Automaton<NodeIndex<u32>, E> for DFA<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_state = Some(self.start);
         for symbol in input {

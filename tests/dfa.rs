@@ -1,6 +1,6 @@
 use vass_reachability::automaton::{
     dfa::{DfaNodeData, DFA},
-    Automaton, AutBuild,
+    AutBuild, Automaton,
 };
 
 #[test]
