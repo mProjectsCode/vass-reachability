@@ -97,11 +97,9 @@ pub struct InitializedVASS<'a, N: AutNode, E: AutEdge, const D: usize> {
     final_node: NodeIndex<u32>,
 }
 
-impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<NodeIndex, E>
-    for InitializedVASS<'a, N, E, D>
-{
+impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<E> for InitializedVASS<'a, N, E, D> {
     fn accepts(&self, input: &[E]) -> bool {
-        let mut current_state = Some(self.start());
+        let mut current_state = Some(self.initial_node);
         let mut current_valuation = self.initial_valuation.clone();
 
         for symbol in input {
@@ -130,9 +128,5 @@ impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<NodeIndex, E>
             Some(state) => state == self.final_node && current_valuation == self.final_valuation,
             None => false,
         }
-    }
-
-    fn start(&self) -> NodeIndex {
-        self.initial_node
     }
 }
