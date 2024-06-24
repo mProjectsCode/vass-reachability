@@ -6,6 +6,7 @@ use super::{dfa::DFA, AutBuild, AutEdge, AutNode, Automaton};
 
 pub type VassEdge<E, const D: usize> = (E, [i32; D]);
 
+// todo epsilon transitions
 #[derive(Debug, Clone)]
 pub struct VASS<N: AutNode, E: AutEdge, const D: usize> {
     graph: StableDiGraph<N, VassEdge<E, D>>,
