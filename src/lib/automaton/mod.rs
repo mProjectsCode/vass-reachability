@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 pub mod dfa;
+pub mod dyck;
 pub mod modulo;
 pub mod vass;
 
@@ -15,7 +16,6 @@ pub trait AutBuild<NIndex, N: AutNode, E: AutEdge> {
     fn add_transition(&mut self, from: NIndex, to: NIndex, label: E);
 }
 
-pub trait Automaton<NIndex, E: AutEdge> {
+pub trait Automaton<E: AutEdge> {
     fn accepts(&self, input: &[E]) -> bool;
-    fn start(&self) -> NIndex;
 }

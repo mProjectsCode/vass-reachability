@@ -42,32 +42,24 @@ impl<T: AutNode> DfaNodeData<T> {
 
 #[derive(Debug, Clone)]
 pub struct DFA<N: AutNode, E: AutEdge> {
-    start: NodeIndex<u32>,
+    start: Option<NodeIndex<u32>>,
     graph: StableDiGraph<DfaNodeData<N>, E>,
     alphabet: Vec<E>,
 }
 
 impl<N: AutNode, E: AutEdge> DFA<N, E> {
-    pub fn new(alphabet: Vec<E>, start_accepting: bool, data: N) -> Self {
-        let mut graph = StableDiGraph::new();
-        let start = graph.add_node(DfaNodeData::new(start_accepting, data));
+    pub fn new(alphabet: Vec<E>) -> Self {
+        let graph = StableDiGraph::new();
 
         DFA {
             alphabet,
-            start,
+            start: None,
             graph,
         }
     }
 
-    pub fn new_from_data(alphabet: Vec<E>, data: DfaNodeData<N>) -> Self {
-        let mut graph = StableDiGraph::new();
-        let start = graph.add_node(data);
-
-        DFA {
-            alphabet,
-            start,
-            graph,
-        }
+    pub fn set_start(&mut self, start: NodeIndex<u32>) {
+        self.start = Some(start);
     }
 
     /// Adds a failure state if needed. This turns the DFA into a complete DFA, which is needed for some algorithms.
@@ -75,7 +67,8 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         let mut failure_transitions = Vec::new();
 
         let mut state_map = std::collections::HashSet::new();
-        let mut stack = vec![self.start];
+        assert!(self.start.is_some(), "DFA must have a start state");
+        let mut stack = vec![self.start.unwrap()];
 
         while let Some(state) = stack.pop() {
             state_map.insert(state);
@@ -114,11 +107,14 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
 
     /// Inverts self, creating a new DFA where the accepting states are inverted.
     pub fn invert(&self) -> DFA<N, E> {
-        let mut inverted =
-            DFA::new_from_data(self.alphabet.clone(), self.graph[self.start].invert());
+        assert!(self.start.is_some(), "DFA must have a start state");
+
+        let mut inverted = DFA::new(self.alphabet.clone());
         for node in self.graph.node_indices() {
-            if node != self.start {
-                inverted.add_state(self.graph[node].invert());
+            let new_node = inverted.add_state(self.graph[node].invert());
+
+            if node == self.start.unwrap() {
+                inverted.set_start(new_node);
             }
         }
 
@@ -136,16 +132,26 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
             "Alphabets must be the same to intersect DFAs"
         );
 
+        assert!(self.start.is_some(), "Self must have a start state");
+        assert!(other.start.is_some(), "Other must have a start state");
+
+        let self_start = self.start.unwrap();
+        let other_start = other.start.unwrap();
+
+        // state map to map combinations of states to the new intersected states
         let mut state_map = std::collections::HashMap::new();
 
-        let mut stack = vec![(self.start, other.start)];
+        // stack for the state combinations that still need to be processed
+        let mut stack = vec![(self_start, other_start)];
 
-        let mut intersected = DFA::new_from_data(
-            self.alphabet.clone(),
-            self.graph[self.start].and(&other.graph[other.start]),
-        );
+        // the intersected DFA
+        let mut intersected = DFA::new(self.alphabet.clone());
 
-        state_map.insert((self.start, other.start), intersected.start);
+        let start_state =
+            intersected.add_state(self.graph[self_start].and(&other.graph[other_start]));
+        intersected.set_start(start_state);
+
+        state_map.insert((self_start, other_start), intersected.start.unwrap());
 
         while let Some((state1, state2)) = stack.pop() {
             let new_state = state_map[&(state1, state2)];
@@ -186,7 +192,8 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         }
 
         let mut visited = std::collections::HashSet::new();
-        let mut stack = vec![self.start];
+        assert!(self.start.is_some(), "Self must have a start state");
+        let mut stack = vec![self.start.unwrap()];
 
         while let Some(state) = stack.pop() {
             if self.graph[state].accepting {
@@ -241,9 +248,11 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, E> for DFA<N, E
     }
 }
 
-impl<N: AutNode, E: AutEdge> Automaton<NodeIndex<u32>, E> for DFA<N, E> {
+impl<N: AutNode, E: AutEdge> Automaton<E> for DFA<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
-        let mut current_state = Some(self.start);
+        assert!(self.start.is_some(), "Self must have a start state");
+
+        let mut current_state = Some(self.start.unwrap());
         for symbol in input {
             if let Some(state) = current_state {
                 let next_state = self
@@ -261,9 +270,5 @@ impl<N: AutNode, E: AutEdge> Automaton<NodeIndex<u32>, E> for DFA<N, E> {
             Some(data) => data.accepting,
             None => false,
         }
-    }
-
-    fn start(&self) -> NodeIndex<u32> {
-        self.start
     }
 }

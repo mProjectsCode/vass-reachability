@@ -5,10 +5,11 @@ use vass_reachability::automaton::{
 
 #[test]
 fn test_dfa() {
-    let mut dfa = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa.start();
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa.add_state(DfaNodeData::new(false, 1));
     let q2 = dfa.add_state(DfaNodeData::new(true, 2));
+    dfa.set_start(q0);
 
     dfa.add_transition(q0, q1, 'a');
     dfa.add_transition(q1, q2, 'b');
@@ -23,10 +24,11 @@ fn test_dfa() {
 
 #[test]
 fn test_dfa_inversion() {
-    let mut dfa = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa.start();
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa.add_state(DfaNodeData::new(false, 1));
     let q2 = dfa.add_state(DfaNodeData::new(true, 2));
+    dfa.set_start(q0);
 
     dfa.add_transition(q0, q1, 'a');
     dfa.add_transition(q1, q2, 'b');
@@ -49,18 +51,20 @@ fn test_dfa_inversion() {
 
 #[test]
 fn test_dfa_intersection() {
-    let mut dfa1 = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa1.start();
+    let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa1.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa1.add_state(DfaNodeData::new(true, 1));
+    dfa1.set_start(q0);
 
     // a* b b*
     dfa1.add_transition(q0, q0, 'a');
     dfa1.add_transition(q0, q1, 'b');
     dfa1.add_transition(q1, q1, 'b');
 
-    let mut dfa2 = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa2.start();
+    let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa2.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa2.add_state(DfaNodeData::new(true, 1));
+    dfa2.set_start(q0);
 
     // a b*
     dfa2.add_transition(q0, q1, 'a');
@@ -80,18 +84,20 @@ fn test_dfa_intersection() {
 
 #[test]
 fn test_dfa_intersection_2() {
-    let mut dfa1 = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa1.start();
+    let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa1.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa1.add_state(DfaNodeData::new(true, 1));
+    dfa1.set_start(q0);
 
     // a* b b*
     dfa1.add_transition(q0, q0, 'a');
     dfa1.add_transition(q0, q1, 'b');
     dfa1.add_transition(q1, q1, 'b');
 
-    let mut dfa2 = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa2.start();
+    let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa2.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa2.add_state(DfaNodeData::new(true, 1));
+    dfa2.set_start(q0);
 
     // a b*
     dfa2.add_transition(q0, q1, 'a');
@@ -108,18 +114,20 @@ fn test_dfa_intersection_2() {
 
 #[test]
 fn test_dfa_intersection_3() {
-    let mut dfa1 = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa1.start();
+    let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa1.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa1.add_state(DfaNodeData::new(true, 1));
+    dfa1.set_start(q0);
 
     // a* b b*
     dfa1.add_transition(q0, q0, 'a');
     dfa1.add_transition(q0, q1, 'b');
     dfa1.add_transition(q1, q1, 'b');
 
-    let mut dfa2 = DFA::<u32, char>::new_from_data(vec!['a', 'b'], DfaNodeData::new(false, 0));
-    let q0 = dfa2.start();
+    let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa2.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa2.add_state(DfaNodeData::new(true, 1));
+    dfa2.set_start(q0);
 
     // a* b
     dfa2.add_transition(q0, q0, 'a');
