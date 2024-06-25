@@ -254,6 +254,12 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for DFA<N, E> {
 
         let mut current_state = Some(self.start.unwrap());
         for symbol in input {
+            assert!(
+                self.alphabet.contains(symbol),
+                "Symbol {:?} not in alphabet",
+                symbol
+            );
+
             if let Some(state) = current_state {
                 let next_state = self
                     .graph
