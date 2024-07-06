@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use petgraph::{
+    dot::Dot,
     graph::NodeIndex,
     stable_graph::StableDiGraph,
     visit::{EdgeRef, IntoEdgeReferences},
@@ -32,7 +33,7 @@ impl<T: AutNode> DfaNodeData<T> {
         DfaNodeData::new(!self.accepting, self.data.clone())
     }
 
-    pub fn and(&self, other: &Self) -> DfaNodeData<(T, T)> {
+    pub fn and<TO: AutNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<(T, TO)> {
         DfaNodeData::new(
             self.accepting && other.accepting,
             (self.data.clone(), other.data.clone()),
@@ -126,9 +127,15 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     }
 
     /// Builds an intersection DFA from two DFAs. Both DFAs must have the same alphabet.
-    pub fn intersect(&self, other: DFA<N, E>) -> DFA<(N, N), E> {
+    pub fn intersect<NO: AutNode>(&self, other: DFA<NO, E>) -> DFA<(N, NO), E> {
+        let mut alphabet_cl = self.alphabet.clone();
+        let mut other_alphabet_cl = other.alphabet.clone();
+
+        alphabet_cl.sort();
+        other_alphabet_cl.sort();
+
         assert_eq!(
-            self.alphabet, other.alphabet,
+            alphabet_cl, other_alphabet_cl,
             "Alphabets must be the same to intersect DFAs"
         );
 
@@ -221,9 +228,13 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     ///
     /// The inclusion holds if there is no accepting run in the intersection of self and the inverse of other.
     /// `L(Self) ⊆ L(Other) iff L(Self) ∩ L(invert(Other)) = ∅`
-    pub fn is_subset_of(&self, other: &DFA<N, E>) -> bool {
+    pub fn is_subset_of<NO: AutNode>(&self, other: &DFA<NO, E>) -> bool {
         let inverted = other.clone().invert();
-        self.intersect(inverted).is_language_empty()
+        let intersection = self.intersect(inverted);
+        // dbg!(&intersection);
+        // println!("{:?}", Dot::new(&intersection.graph));
+
+        intersection.is_language_empty()
     }
 }
 

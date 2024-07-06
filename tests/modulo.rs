@@ -4,7 +4,7 @@ use vass_reachability::automaton::{modulo::ModuloDFA, Automaton};
 fn test_modulo() {
     let modulo = ModuloDFA::<2>::new(3);
 
-    dbg!(&modulo);
+    // dbg!(&modulo);
 
     let input = vec![1, -2, 2, -1];
     assert!(!modulo.accepts(&input));

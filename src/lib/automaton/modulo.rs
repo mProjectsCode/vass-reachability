@@ -33,7 +33,6 @@ impl<const D: usize> ModuloDFA<D> {
 
         let mut dfa = DFA::new(alphabet);
 
-        // let mut nodes = Array::<u32, IxDyn>::zeros(IxDyn(&[mu; D]));
         let nodes = Array::<NodeIndex<u32>, IxDyn>::from_shape_fn(IxDyn(&[mu; D]), |x| {
             let arr = dim_to_array::<D>(x);
             let is_0 = arr.iter().all(|&x| x == 0);
@@ -47,7 +46,7 @@ impl<const D: usize> ModuloDFA<D> {
             state
         });
 
-        dbg!(&nodes);
+        // dbg!(&nodes);
 
         for (index, node) in nodes.indexed_iter() {
             for d in 0..D {
@@ -64,6 +63,14 @@ impl<const D: usize> ModuloDFA<D> {
         }
 
         Self { mu, dfa }
+    }
+
+    pub fn mu(&self) -> usize {
+        self.mu
+    }
+
+    pub fn dfa(&self) -> &DFA<[usize; D], i32> {
+        &self.dfa
     }
 }
 

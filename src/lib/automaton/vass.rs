@@ -1,8 +1,14 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
+use primes::{PrimeSet, Sieve};
 
-use super::{dfa::DFA, AutBuild, AutEdge, AutNode, Automaton};
+use super::{
+    dfa::{DfaNodeData, DFA},
+    modulo::ModuloDFA,
+    nfa::NFA,
+    AutBuild, AutEdge, AutNode, Automaton,
+};
 
 pub type VassEdge<E, const D: usize> = (E, [i32; D]);
 
@@ -33,13 +39,6 @@ impl<N: Debug + Clone + PartialEq, E: AutEdge, const D: usize> VASS<N, E, D> {
             initial_node,
             final_node,
         }
-    }
-
-    /// Control flow language, not context-free language
-    pub fn to_cfl(&self) -> DFA<N, E> {
-        // we probably need a DFA trait and then blanket implement things like invert, intersection, etc.
-        // that way we can reuse the graph here and don't need to construct a separate DFA
-        todo!()
     }
 }
 
@@ -89,6 +88,24 @@ pub fn neg_array<const D: usize>(arr: [i32; D]) -> [i32; D] {
     arr
 }
 
+pub fn marking_to_vec<const D: usize>(marking: [i32; D]) -> Vec<i32> {
+    let mut vec = vec![];
+
+    for d in 0..D {
+        let label = if marking[d] > 0 {
+            (d + 1) as i32
+        } else {
+            -((d + 1) as i32)
+        };
+
+        for _ in 0..marking[d].abs() {
+            vec.push(label);
+        }
+    }
+
+    vec
+}
+
 #[derive(Debug, Clone)]
 pub struct InitializedVASS<'a, N: AutNode, E: AutEdge, const D: usize> {
     vass: &'a VASS<N, E, D>,
@@ -96,6 +113,86 @@ pub struct InitializedVASS<'a, N: AutNode, E: AutEdge, const D: usize> {
     final_valuation: [i32; D],
     initial_node: NodeIndex<u32>,
     final_node: NodeIndex<u32>,
+}
+
+impl<'a, N: AutNode, E: AutEdge, const D: usize> InitializedVASS<'a, N, E, D> {
+    pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, i32> {
+        let cfg_alphabet = (1..=D as i32).chain((1..=D as i32).map(|x| -x)).collect();
+        let mut cfg = NFA::new(cfg_alphabet);
+
+        let cfg_start = cfg.add_state(self.state_to_cfg_state(self.initial_node));
+        cfg.set_start(cfg_start);
+
+        let mut visited = HashMap::<NodeIndex, NodeIndex>::new();
+        let mut stack = vec![(self.initial_node, cfg_start)];
+
+        while let Some((vass_state, cfg_state)) = stack.pop() {
+            visited.insert(vass_state, cfg_state);
+
+            for vass_edge in self
+                .vass
+                .graph
+                .edges_directed(vass_state, Direction::Outgoing)
+            {
+                let cfg_target = if let Some(&target) = visited.get(&vass_edge.target()) {
+                    target
+                } else {
+                    let target = cfg.add_state(self.state_to_cfg_state(vass_edge.target()));
+                    stack.push((vass_edge.target(), target));
+                    target
+                };
+
+                let vass_label = vass_edge.weight().1;
+
+                assert_ne!(vass_label, [0; D], "0 edge marking not implemented");
+
+                let marking_vec = marking_to_vec(vass_label);
+
+                let mut cfg_source = cfg_state;
+
+                for i in 0..marking_vec.len() - 1 {
+                    let label = marking_vec[i];
+                    let target = cfg.add_state(DfaNodeData::new(false, None));
+                    cfg.add_transition(cfg_source, target, Some(label));
+                    cfg_source = target;
+                }
+
+                let label = marking_vec[marking_vec.len() - 1];
+                cfg.add_transition(cfg_source, cfg_target, Some(label));
+            }
+        }
+
+        cfg.determinize()
+    }
+
+    fn state_to_cfg_state(&self, state: NodeIndex<u32>) -> DfaNodeData<Option<N>> {
+        DfaNodeData::new(
+            state == self.final_node,
+            Some(self.node_data(state).clone()),
+        )
+    }
+
+    pub fn node_data(&self, node: NodeIndex<u32>) -> &N {
+        &self.vass.graph[node]
+    }
+
+    pub fn reach_1(&self) -> bool {
+        let cfg = self.to_cfg();
+        let mut pset = Sieve::new();
+
+        for p in pset.iter() {
+            if p > 100 {
+                panic!("No solution with mu < 100 found");
+            }
+
+            let aprox = ModuloDFA::<D>::new(p as usize);
+            if cfg.is_subset_of(aprox.dfa()) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<E> for InitializedVASS<'a, N, E, D> {

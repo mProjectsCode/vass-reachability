@@ -3,13 +3,14 @@ use std::fmt::Debug;
 pub mod dfa;
 pub mod dyck;
 pub mod modulo;
+pub mod nfa;
 pub mod vass;
 
 pub trait AutNode: Debug + Clone + PartialEq {}
-pub trait AutEdge: Debug + Clone + PartialEq {}
+pub trait AutEdge: Debug + Clone + PartialEq + Ord {}
 
 impl<T> AutNode for T where T: Debug + Clone + PartialEq {}
-impl<T> AutEdge for T where T: Debug + Clone + PartialEq {}
+impl<T> AutEdge for T where T: Debug + Clone + PartialEq + Ord {}
 
 pub trait AutBuild<NIndex, N: AutNode, E: AutEdge> {
     fn add_state(&mut self, data: N) -> NIndex;
