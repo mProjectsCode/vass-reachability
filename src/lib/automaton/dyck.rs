@@ -4,7 +4,7 @@
 // no, because that would inflate our alphabet
 // we can represent them as integers from starting from 1 to represent incrementing the counter i and -i to represent decrementing the counter i
 
-use super::{AutEdge, Automaton};
+use super::Automaton;
 
 /// # Dyck Vass
 ///
@@ -12,28 +12,29 @@ use super::{AutEdge, Automaton};
 ///
 /// An accepting run in the Dyck VASS is a run that starts and ends with all counters at 0 and never goes below 0 in any counter.
 ///
-/// Here increasing a counter `i ∈ [1, D]` is done by the `i32` value `i` and decreasing a counter `i` is done by `-i`.
+/// Here increasing a counter `i ∈ [1; size]` is done by the `i32` value `i` and decreasing a counter `i` is done by `-i`.
 /// So `5_i32` increments counter 5 and `-5_i32` decrements counter 5.
 #[derive(Debug, Clone)]
-pub struct DyckVASS<const D: usize> {
+pub struct DyckVASS {
     alphabet: Vec<i32>,
+    size: usize,
 }
 
-impl<const D: usize> DyckVASS<D> {
-    pub fn new() -> Self {
+impl DyckVASS {
+    pub fn new(size: usize) -> Self {
         let mut alphabet = vec![];
-        for i in 1..=D {
+        for i in 1..=size {
             alphabet.push(i as i32);
             alphabet.push(-(i as i32));
         }
 
-        Self { alphabet }
+        Self { alphabet, size }
     }
 }
 
-impl<const D: usize> Automaton<i32> for DyckVASS<D> {
+impl Automaton<i32> for DyckVASS {
     fn accepts(&self, input: &[i32]) -> bool {
-        let mut state: [i32; D] = [0; D];
+        let mut state: Vec<i32> = vec![0; self.size];
 
         for symbol in input {
             if !self.alphabet.contains(symbol) {
@@ -50,6 +51,10 @@ impl<const D: usize> Automaton<i32> for DyckVASS<D> {
             }
         }
 
-        state == [0; D]
+        state.iter().all(|&x| x == 0)
+    }
+
+    fn alphabet(&self) -> &Vec<i32> {
+        &self.alphabet
     }
 }

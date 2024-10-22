@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef};
 
 use super::{
     dfa::{DfaNodeData, DFA},
-    AutBuild, AutEdge, AutNode,
+    AutBuild, AutEdge, AutNode, Automaton,
 };
 
 pub struct NFA<N: AutNode, E: AutEdge> {
@@ -86,10 +86,12 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         self.graph[state].accepting()
     }
 
+    // checks if a set of states contains an accepting state
     pub fn is_accepting_set(&self, states: &Vec<NodeIndex<u32>>) -> bool {
         states.iter().any(|&x| self.is_accepting(x))
     }
 
+    // creates a state from a set of states
     pub fn state_from_set(&self, states: &Vec<NodeIndex<u32>>) -> DfaNodeData<Vec<N>> {
         DfaNodeData::new(self.is_accepting_set(states), self.node_data_set(states))
     }
@@ -98,6 +100,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         &self.graph[node].data()
     }
 
+    // maps a set of states to their data
     pub fn node_data_set(&self, nodes: &Vec<NodeIndex<u32>>) -> Vec<N> {
         nodes.iter().map(|&x| self.node_data(x).clone()).collect()
     }
@@ -110,5 +113,38 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, Option<E>> for 
 
     fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: Option<E>) {
         self.graph.add_edge(from, to, label);
+    }
+}
+
+impl<N: AutNode, E: AutEdge> Automaton<E> for NFA<N, E> {
+    fn accepts(&self, input: &[E]) -> bool {
+        let mut current_states = vec![self.start.expect("NFA must have a start state")];
+
+        for symbol in input {
+            let mut next_states = vec![];
+
+            for &state in &current_states {
+                for edge in self
+                    .graph
+                    .edges_directed(state, petgraph::Direction::Outgoing)
+                {
+                    if edge.weight().as_ref() == Some(symbol) {
+                        next_states.push(edge.target());
+                    }
+                }
+            }
+
+            if next_states.is_empty() {
+                return false;
+            }
+
+            current_states = next_states;
+        }
+
+        self.is_accepting_set(&current_states)
+    }
+
+    fn alphabet(&self) -> &Vec<E> {
+        &self.alphabet
     }
 }

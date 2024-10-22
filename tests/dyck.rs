@@ -2,7 +2,7 @@ use vass_reachability::automaton::{dyck::DyckVASS, Automaton};
 
 #[test]
 fn test_dyck() {
-    let dyck = DyckVASS::<2>::new();
+    let dyck = DyckVASS::new(2);
 
     let input = vec![1, 2, -2, -1];
     assert!(dyck.accepts(&input));

@@ -2,8 +2,10 @@ use std::fmt::Debug;
 
 pub mod dfa;
 pub mod dyck;
+pub mod ltc;
 pub mod modulo;
 pub mod nfa;
+pub mod path;
 pub mod vass;
 
 pub trait AutNode: Debug + Clone + PartialEq {}
@@ -19,4 +21,5 @@ pub trait AutBuild<NIndex, N: AutNode, E: AutEdge> {
 
 pub trait Automaton<E: AutEdge> {
     fn accepts(&self, input: &[E]) -> bool;
+    fn alphabet(&self) -> &Vec<E>;
 }

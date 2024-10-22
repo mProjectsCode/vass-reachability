@@ -1,14 +1,13 @@
 use std::fmt::Debug;
 
 use petgraph::{
-    dot::Dot,
     graph::NodeIndex,
     stable_graph::StableDiGraph,
     visit::{EdgeRef, IntoEdgeReferences},
     Direction,
 };
 
-use super::{AutBuild, AutEdge, AutNode, Automaton};
+use super::{path::Path, AutBuild, AutEdge, AutNode, Automaton};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DfaNodeData<T: AutNode> {
@@ -185,6 +184,39 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         intersected
     }
 
+    pub fn bfs(&self, is_target: impl Fn(NodeIndex<u32>, &DfaNodeData<N>) -> bool) -> Vec<Path> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut paths = Vec::new();
+
+        assert!(self.start.is_some(), "Self must have a start state");
+        queue.push_back(Path::new(self.start.unwrap()));
+
+        while let Some(path) = queue.pop_front() {
+            let last = path.end;
+
+            if is_target(last, &self.graph[last]) {
+                paths.push(path.clone());
+            }
+
+            visited.insert(last);
+
+            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+                if !visited.contains(&edge.target()) {
+                    let mut new_path = path.clone();
+                    new_path.add_edge(edge.id(), edge.target());
+                    queue.push_back(new_path);
+                }
+            }
+        }
+
+        paths
+    }
+
+    pub fn bfs_accepting_states(&self) -> Vec<Path> {
+        self.bfs(|_, data| data.accepting)
+    }
+
     /// Not sure about this algorithm, but we first check if the graph has any accepting states. If it doesn't, we can return false immediately.
     /// Then we do a simple DFS from the start state, and if we find an accepting state, we return true.
     /// (the second part is probably not necessary, as there should only be one connected component and if that contains an accepting state,
@@ -287,5 +319,9 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for DFA<N, E> {
             Some(data) => data.accepting,
             None => false,
         }
+    }
+
+    fn alphabet(&self) -> &Vec<E> {
+        &self.alphabet
     }
 }

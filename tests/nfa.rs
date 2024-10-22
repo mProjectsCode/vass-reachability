@@ -1,4 +1,7 @@
-use vass_reachability::automaton::{dfa::DfaNodeData, nfa::NFA, AutBuild};
+use vass_reachability::{
+    automaton::{dfa::DfaNodeData, nfa::NFA, AutBuild},
+    validation::same_language::same_language,
+};
 
 #[test]
 fn test_nfa_to_dfa() {
@@ -23,6 +26,8 @@ fn test_nfa_to_dfa() {
 
     let dfa = nfa.determinize();
 
+    assert!(same_language(&nfa, &dfa, 6), "Languages are not the same");
+
     // dbg!(&dfa);
 }
 
@@ -42,6 +47,8 @@ fn test_nfa_to_dfa_2() {
     nfa.add_transition(q1, q2, Some('b'));
 
     let dfa = nfa.determinize();
+
+    assert!(same_language(&nfa, &dfa, 6), "Languages are not the same");
 
     // dbg!(&dfa);
 }

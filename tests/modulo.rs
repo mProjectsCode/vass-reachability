@@ -2,7 +2,7 @@ use vass_reachability::automaton::{modulo::ModuloDFA, Automaton};
 
 #[test]
 fn test_modulo() {
-    let modulo = ModuloDFA::<2>::new(3);
+    let modulo = ModuloDFA::new(2, 3);
 
     // dbg!(&modulo);
 

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, ops::Neg};
 
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
 use primes::{PrimeSet, Sieve};
@@ -10,28 +10,42 @@ use super::{
     AutBuild, AutEdge, AutNode, Automaton,
 };
 
-pub type VassEdge<E, const D: usize> = (E, [i32; D]);
+pub type VassEdge<E> = (E, Vec<i32>);
 
 // todo epsilon transitions
 #[derive(Debug, Clone)]
-pub struct VASS<N: AutNode, E: AutEdge, const D: usize> {
-    graph: StableDiGraph<N, VassEdge<E, D>>,
+pub struct VASS<N: AutNode, E: AutEdge> {
+    graph: StableDiGraph<N, VassEdge<E>>,
     alphabet: Vec<E>,
+    counter_count: usize,
 }
 
-impl<N: Debug + Clone + PartialEq, E: AutEdge, const D: usize> VASS<N, E, D> {
-    pub fn new(alphabet: Vec<E>) -> Self {
+impl<N: Debug + Clone + PartialEq, E: AutEdge> VASS<N, E> {
+    pub fn new(counter_count: usize, alphabet: Vec<E>) -> Self {
         let graph = StableDiGraph::new();
-        VASS { alphabet, graph }
+        VASS {
+            alphabet,
+            graph,
+            counter_count,
+        }
     }
 
     pub fn init(
         &self,
-        initial_valuation: [i32; D],
-        final_valuation: [i32; D],
+        initial_valuation: Vec<i32>,
+        final_valuation: Vec<i32>,
         initial_node: NodeIndex<u32>,
         final_node: NodeIndex<u32>,
-    ) -> InitializedVASS<N, E, D> {
+    ) -> InitializedVASS<N, E> {
+        assert!(
+            initial_valuation.len() == self.counter_count,
+            "Initial valuation has to have the same length as the counter count"
+        );
+        assert!(
+            final_valuation.len() == self.counter_count,
+            "Final valuation has to have the same length as the counter count"
+        );
+
         InitializedVASS {
             vass: self,
             initial_valuation,
@@ -42,14 +56,17 @@ impl<N: Debug + Clone + PartialEq, E: AutEdge, const D: usize> VASS<N, E, D> {
     }
 }
 
-impl<N: AutNode, E: AutEdge, const D: usize> AutBuild<NodeIndex, N, VassEdge<E, D>>
-    for VASS<N, E, D>
-{
+impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, N, VassEdge<E>> for VASS<N, E> {
     fn add_state(&mut self, data: N) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
 
-    fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: VassEdge<E, D>) {
+    fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: VassEdge<E>) {
+        assert!(
+            label.1.len() == self.counter_count,
+            "Update has to have the same length as the counter count"
+        );
+
         let existing_edge = self
             .graph
             .edges_directed(from, Direction::Outgoing)
@@ -65,33 +82,10 @@ impl<N: AutNode, E: AutEdge, const D: usize> AutBuild<NodeIndex, N, VassEdge<E, 
     }
 }
 
-pub fn add_arrays<const D: usize>(lhs: [i32; D], rhs: [i32; D]) -> [i32; D] {
-    let mut lhs = lhs;
-    for i in 0..D {
-        lhs[i] += rhs[i];
-    }
-    lhs
-}
-
-pub fn sub_arrays<const D: usize>(mut lhs: [i32; D], rhs: [i32; D]) -> [i32; D] {
-    for i in 0..D {
-        lhs[i] -= rhs[i];
-    }
-    lhs
-}
-
-pub fn neg_array<const D: usize>(arr: [i32; D]) -> [i32; D] {
-    let mut arr = arr;
-    for i in 0..D {
-        arr[i] = -arr[i];
-    }
-    arr
-}
-
-pub fn marking_to_vec<const D: usize>(marking: [i32; D]) -> Vec<i32> {
+pub fn marking_to_vec(marking: &Vec<i32>) -> Vec<i32> {
     let mut vec = vec![];
 
-    for d in 0..D {
+    for d in 0..marking.len() {
         let label = if marking[d] > 0 {
             (d + 1) as i32
         } else {
@@ -107,17 +101,19 @@ pub fn marking_to_vec<const D: usize>(marking: [i32; D]) -> Vec<i32> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InitializedVASS<'a, N: AutNode, E: AutEdge, const D: usize> {
-    vass: &'a VASS<N, E, D>,
-    initial_valuation: [i32; D],
-    final_valuation: [i32; D],
+pub struct InitializedVASS<'a, N: AutNode, E: AutEdge> {
+    vass: &'a VASS<N, E>,
+    initial_valuation: Vec<i32>,
+    final_valuation: Vec<i32>,
     initial_node: NodeIndex<u32>,
     final_node: NodeIndex<u32>,
 }
 
-impl<'a, N: AutNode, E: AutEdge, const D: usize> InitializedVASS<'a, N, E, D> {
+impl<'a, N: AutNode, E: AutEdge> InitializedVASS<'a, N, E> {
     pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, i32> {
-        let cfg_alphabet = (1..=D as i32).chain((1..=D as i32).map(|x| -x)).collect();
+        let cfg_alphabet = (1..=self.vass.counter_count as i32)
+            .chain((1..=self.vass.counter_count as i32).map(|x| -x))
+            .collect();
         let mut cfg = NFA::new(cfg_alphabet);
 
         let cfg_start = cfg.add_state(self.state_to_cfg_state(self.initial_node));
@@ -142,9 +138,12 @@ impl<'a, N: AutNode, E: AutEdge, const D: usize> InitializedVASS<'a, N, E, D> {
                     target
                 };
 
-                let vass_label = vass_edge.weight().1;
+                let vass_label = &vass_edge.weight().1;
 
-                assert_ne!(vass_label, [0; D], "0 edge marking not implemented");
+                assert!(
+                    !vass_label.iter().all(|x| *x == 0),
+                    "0 edge marking not implemented"
+                );
 
                 let marking_vec = marking_to_vec(vass_label);
 
@@ -185,7 +184,7 @@ impl<'a, N: AutNode, E: AutEdge, const D: usize> InitializedVASS<'a, N, E, D> {
                 panic!("No solution with mu < 100 found");
             }
 
-            let aprox = ModuloDFA::<D>::new(p as usize);
+            let aprox = ModuloDFA::new(self.vass.counter_count, p as usize);
             if cfg.is_subset_of(aprox.dfa()) {
                 return false;
             }
@@ -195,7 +194,21 @@ impl<'a, N: AutNode, E: AutEdge, const D: usize> InitializedVASS<'a, N, E, D> {
     }
 }
 
-impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<E> for InitializedVASS<'a, N, E, D> {
+fn neg_vec(vec: &Vec<i32>) -> Vec<i32> {
+    vec.iter().map(|x| x.neg()).collect()
+}
+
+fn add_vec(a: &Vec<i32>, b: &Vec<i32>) -> Vec<i32> {
+    a.iter().zip(b.iter()).map(|(x, y)| x + y).collect()
+}
+
+fn mut_add_vec(a: &mut Vec<i32>, b: &Vec<i32>) {
+    for i in 0..a.len() {
+        a[i] += b[i];
+    }
+}
+
+impl<'a, N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<'a, N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_state = Some(self.initial_node);
         let mut current_valuation = self.initial_valuation.clone();
@@ -209,11 +222,11 @@ impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<E> for InitializedVAS
                     .find(|neighbor| {
                         let edge = neighbor.weight();
                         // check that we can take the edge
-                        edge.0 == *symbol && current_valuation >= neg_array(edge.1)
+                        edge.0 == *symbol && current_valuation >= neg_vec(&edge.1)
                     })
                     .map(|edge| {
                         // subtract the valuation of the edge from the current valuation
-                        current_valuation = add_arrays(current_valuation, edge.weight().1);
+                        mut_add_vec(&mut current_valuation, &edge.weight().1);
                         edge.target()
                     });
                 current_state = next_state;
@@ -226,5 +239,9 @@ impl<'a, N: AutNode, E: AutEdge, const D: usize> Automaton<E> for InitializedVAS
             Some(state) => state == self.final_node && current_valuation == self.final_valuation,
             None => false,
         }
+    }
+
+    fn alphabet(&self) -> &Vec<E> {
+        &self.vass.alphabet
     }
 }

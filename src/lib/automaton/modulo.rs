@@ -1,5 +1,5 @@
-use ndarray::{Array, Dim, Dimension, IntoDimension, IxDyn, IxDynImpl, ShapeBuilder};
-use petgraph::{graph::NodeIndex, visit::NodeRef};
+use ndarray::{Array, Dim, Dimension, IxDyn, IxDynImpl};
+use petgraph::graph::NodeIndex;
 
 use super::{
     dfa::{DfaNodeData, DFA},
@@ -8,48 +8,48 @@ use super::{
 
 /// a modulo automaton tracks counters modulo some number `mu`. It accepts a run if the counters are all 0 at the end of the run.
 #[derive(Debug, Clone)]
-pub struct ModuloDFA<const D: usize> {
+pub struct ModuloDFA {
     mu: usize,
-    dfa: DFA<[usize; D], i32>,
+    counter_count: usize,
+    dfa: DFA<Vec<usize>, i32>,
 }
 
-fn dim_to_array<const D: usize>(x: Dim<IxDynImpl>) -> [usize; D] {
-    assert_eq!(x.ndim(), D, "dimension mismatch");
-
-    let mut arr = [0; D];
-    for (i, &d) in x.as_array_view().iter().enumerate() {
-        arr[i] = d;
+fn dim_to_array(x: Dim<IxDynImpl>) -> Vec<usize> {
+    let mut arr = vec![0];
+    for d in x.as_array_view().iter() {
+        arr.push(*d);
     }
     arr
 }
 
-impl<const D: usize> ModuloDFA<D> {
-    pub fn new(mu: usize) -> Self {
+impl ModuloDFA {
+    pub fn new(counter_count: usize, mu: usize) -> Self {
         let mut alphabet = vec![];
-        for i in 1..=D {
+        for i in 1..=counter_count {
             alphabet.push(i as i32);
             alphabet.push(-(i as i32));
         }
 
         let mut dfa = DFA::new(alphabet);
 
-        let nodes = Array::<NodeIndex<u32>, IxDyn>::from_shape_fn(IxDyn(&[mu; D]), |x| {
-            let arr = dim_to_array::<D>(x);
-            let is_0 = arr.iter().all(|&x| x == 0);
+        let nodes =
+            Array::<NodeIndex<u32>, IxDyn>::from_shape_fn(IxDyn(&vec![mu; counter_count]), |x| {
+                let arr = dim_to_array(x);
+                let is_0 = arr.iter().all(|&x| x == 0);
 
-            let state = dfa.add_state(DfaNodeData::new(!is_0, arr));
+                let state = dfa.add_state(DfaNodeData::new(!is_0, arr));
 
-            if is_0 {
-                dfa.set_start(state);
-            }
+                if is_0 {
+                    dfa.set_start(state);
+                }
 
-            state
-        });
+                state
+            });
 
         // dbg!(&nodes);
 
         for (index, node) in nodes.indexed_iter() {
-            for d in 0..D {
+            for d in 0..counter_count {
                 // add the transition for adding one to counter d
                 let mut new_index = index.clone();
                 new_index[d] = (new_index[d] + 1) % mu;
@@ -62,20 +62,32 @@ impl<const D: usize> ModuloDFA<D> {
             }
         }
 
-        Self { mu, dfa }
+        Self {
+            mu,
+            dfa,
+            counter_count,
+        }
     }
 
     pub fn mu(&self) -> usize {
         self.mu
     }
 
-    pub fn dfa(&self) -> &DFA<[usize; D], i32> {
+    pub fn dfa(&self) -> &DFA<Vec<usize>, i32> {
         &self.dfa
+    }
+
+    pub fn counter_count(&self) -> usize {
+        self.counter_count
     }
 }
 
-impl<const D: usize> Automaton<i32> for ModuloDFA<D> {
+impl Automaton<i32> for ModuloDFA {
     fn accepts(&self, input: &[i32]) -> bool {
         self.dfa.accepts(input)
+    }
+
+    fn alphabet(&self) -> &Vec<i32> {
+        self.dfa.alphabet()
     }
 }

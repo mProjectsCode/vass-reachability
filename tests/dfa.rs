@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use vass_reachability::automaton::{
     dfa::{DfaNodeData, DFA},
     AutBuild, Automaton,
@@ -16,10 +17,10 @@ fn test_dfa() {
     dfa.add_transition(q2, q1, 'a');
 
     let input = "ababab";
-    assert!(dfa.accepts(&input.chars().collect::<Vec<_>>()));
+    assert!(dfa.accepts(&input.chars().collect_vec()));
 
     let input = "ababa";
-    assert!(!dfa.accepts(&input.chars().collect::<Vec<_>>()));
+    assert!(!dfa.accepts(&input.chars().collect_vec()));
 }
 
 #[test]
@@ -35,18 +36,18 @@ fn test_dfa_inversion() {
     dfa.add_transition(q2, q1, 'a');
 
     let input = "ababab";
-    assert!(dfa.accepts(&input.chars().collect::<Vec<_>>()));
+    assert!(dfa.accepts(&input.chars().collect_vec()));
 
     let input = "ababa";
-    assert!(!dfa.accepts(&input.chars().collect::<Vec<_>>()));
+    assert!(!dfa.accepts(&input.chars().collect_vec()));
 
     let inverted = dfa.invert();
 
     let input = "ababab";
-    assert!(!inverted.accepts(&input.chars().collect::<Vec<_>>()));
+    assert!(!inverted.accepts(&input.chars().collect_vec()));
 
     let input = "ababa";
-    assert!(inverted.accepts(&input.chars().collect::<Vec<_>>()));
+    assert!(inverted.accepts(&input.chars().collect_vec()));
 }
 
 #[test]
