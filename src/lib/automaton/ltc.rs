@@ -32,6 +32,8 @@ impl LTC {
         // this can probably be done with a solver. We need to look at intermediate valuations after each element.
         // if we constrain these to be positive, we might have an algorithm for this.
 
+        // solver to look at: https://github.com/rust-or/good_lp
+
         unimplemented!()
     }
 }
