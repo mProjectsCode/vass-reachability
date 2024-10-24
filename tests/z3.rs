@@ -1,6 +1,7 @@
-use z3::{ast::{Ast, Int}, Config, Context, Solver};
-
-
+use z3::{
+    ast::{Ast, Int},
+    Config, Context, Solver,
+};
 
 #[test]
 fn z3_works() {
