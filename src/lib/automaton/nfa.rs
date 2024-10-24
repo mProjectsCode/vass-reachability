@@ -28,6 +28,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         self.start = Some(start);
     }
 
+    // todo minimierung
     pub fn determinize(&self) -> DFA<Vec<N>, E> {
         let nfa_start = self.start.expect("NFA must have a start state");
         let mut state_map = HashMap::new();

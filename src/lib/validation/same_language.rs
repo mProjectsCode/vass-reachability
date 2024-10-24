@@ -18,7 +18,7 @@ pub fn same_language<E: AutEdge>(
 
         for word in combinations {
             let word: Vec<E> = word.into_iter().cloned().collect_vec();
-            println!("{:?}", word);
+            // println!("{:?}", word);
             if a.accepts(&word) != b.accepts(&word) {
                 return false;
             }
