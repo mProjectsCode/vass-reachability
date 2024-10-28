@@ -1,6 +1,6 @@
 use z3::{
     ast::{Ast, Int},
-    Config, Context, Solver,
+    Config, Context, SatResult, Solver,
 };
 
 #[test]
@@ -14,25 +14,41 @@ fn z3_works() {
 
     let _0 = Int::from_i64(&ctx, 0);
     let _5 = Int::from_i64(&ctx, 5);
-    let _15 = Int::from_i64(&ctx, 15);
+    let _17 = Int::from_i64(&ctx, 17);
 
-    solver.assert(&(&x + &_5 * &y).le(&_15));
+    // both x and y are positive
     solver.assert(&x.ge(&_0));
-    solver.assert(&x.le(&_5));
     solver.assert(&y.ge(&_0));
 
+    // x + 5 * y = 17
+    solver.assert(&(&x + &_5 * &y)._eq(&_17));
+    // x + y = 5
     solver.assert(&(&x + &y)._eq(&_5));
 
     match solver.check() {
-        z3::SatResult::Sat => {
+        SatResult::Sat => {
             let model = solver.get_model();
-            println!("Model: {:?}", model);
+
+            if let Some(m) = model {
+                let x_val = m.get_const_interp(&x).unwrap().as_i64().unwrap();
+                let y_val = m.get_const_interp(&y).unwrap().as_i64().unwrap();
+
+                // x + 5 * y = 17
+                // x + y = 5
+                // => x = 2, y = 3
+                assert_eq!(x_val, 2);
+                assert_eq!(y_val, 3);
+
+                println!("x: {}, y: {}", x_val, y_val);
+            }
         }
-        z3::SatResult::Unsat => {
+        SatResult::Unsat => {
             println!("unsat");
+            unreachable!();
         }
-        z3::SatResult::Unknown => {
+        SatResult::Unknown => {
             println!("unknown");
+            unreachable!();
         }
     }
 }
