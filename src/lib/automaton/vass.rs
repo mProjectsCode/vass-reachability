@@ -20,7 +20,7 @@ pub struct VASS<N: AutNode, E: AutEdge> {
     counter_count: usize,
 }
 
-impl<N: Debug + Clone + PartialEq, E: AutEdge> VASS<N, E> {
+impl<N: AutNode, E: AutEdge> VASS<N, E> {
     pub fn new(counter_count: usize, alphabet: Vec<E>) -> Self {
         let graph = StableDiGraph::new();
         VASS {

@@ -62,6 +62,8 @@ impl ModuloDFA {
             }
         }
 
+        dfa.override_complete();
+
         Self {
             mu,
             dfa,

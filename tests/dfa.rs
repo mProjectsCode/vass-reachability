@@ -1,7 +1,10 @@
 use itertools::Itertools;
-use vass_reachability::automaton::{
-    dfa::{DfaNodeData, DFA},
-    AutBuild, Automaton,
+use vass_reachability::{
+    automaton::{
+        dfa::{DfaNodeData, DFA},
+        AutBuild, Automaton,
+    },
+    validation::same_language::same_language,
 };
 
 #[test]
@@ -15,6 +18,8 @@ fn test_dfa() {
     dfa.add_transition(q0, q1, 'a');
     dfa.add_transition(q1, q2, 'b');
     dfa.add_transition(q2, q1, 'a');
+
+    dfa.add_failure_state(3);
 
     let input = "ababab";
     assert!(dfa.accepts(&input.chars().collect_vec()));
@@ -34,6 +39,8 @@ fn test_dfa_inversion() {
     dfa.add_transition(q0, q1, 'a');
     dfa.add_transition(q1, q2, 'b');
     dfa.add_transition(q2, q1, 'a');
+
+    dfa.add_failure_state(3);
 
     let input = "ababab";
     assert!(dfa.accepts(&input.chars().collect_vec()));
@@ -141,4 +148,66 @@ fn test_dfa_intersection_3() {
     // which should be true
 
     assert!(dfa2.is_subset_of(&dfa1));
+}
+
+#[test]
+fn minimize_1() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
+    let q3 = dfa.add_state(DfaNodeData::new(true, 3));
+    let q4 = dfa.add_state(DfaNodeData::new(false, 4));
+    let q5 = dfa.add_state(DfaNodeData::new(true, 5));
+    dfa.set_start(q0);
+
+    dfa.add_transition(q0, q1, 'a');
+    dfa.add_transition(q0, q3, 'b');
+    dfa.add_transition(q1, q0, 'a');
+    dfa.add_transition(q1, q3, 'b');
+    dfa.add_transition(q2, q1, 'a');
+    dfa.add_transition(q2, q4, 'b');
+    dfa.add_transition(q3, q5, 'a');
+    dfa.add_transition(q3, q5, 'b');
+    dfa.add_transition(q4, q3, 'a');
+    dfa.add_transition(q4, q3, 'b');
+    dfa.add_transition(q5, q5, 'a');
+    dfa.add_transition(q5, q5, 'b');
+
+    dfa.override_complete();
+
+    let minimized = dfa.minimize();
+
+    assert!(same_language(&dfa, &minimized, 10));
+}
+
+#[test]
+fn minimize_2() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(true, 2));
+    let q3 = dfa.add_state(DfaNodeData::new(true, 3));
+    let q4 = dfa.add_state(DfaNodeData::new(true, 4));
+    let q5 = dfa.add_state(DfaNodeData::new(false, 5));
+    dfa.set_start(q0);
+
+    dfa.add_transition(q0, q1, 'a');
+    dfa.add_transition(q0, q2, 'b');
+    dfa.add_transition(q1, q0, 'a');
+    dfa.add_transition(q1, q3, 'b');
+    dfa.add_transition(q2, q4, 'a');
+    dfa.add_transition(q2, q5, 'b');
+    dfa.add_transition(q3, q4, 'a');
+    dfa.add_transition(q3, q5, 'b');
+    dfa.add_transition(q4, q4, 'a');
+    dfa.add_transition(q4, q5, 'b');
+    dfa.add_transition(q5, q5, 'a');
+    dfa.add_transition(q5, q5, 'b');
+
+    dfa.override_complete();
+
+    let minimized = dfa.minimize();
+
+    assert!(same_language(&dfa, &minimized, 10));
 }

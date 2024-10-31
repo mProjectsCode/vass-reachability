@@ -80,6 +80,8 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
             }
         }
 
+        dfa.override_complete();
+
         dfa
     }
 
