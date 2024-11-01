@@ -216,3 +216,28 @@ fn minimize_2() {
     assert_eq!(minimized.state_count(), 3);
     dbg!(&minimized);
 }
+
+#[test]
+fn minimize_3() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a']);
+
+    let q0 = dfa.add_state(DfaNodeData::new(true, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(true, 2));
+    let q3 = dfa.add_state(DfaNodeData::new(false, 3));
+
+    dfa.set_start(q0);
+
+    dfa.add_transition(q0, q1, 'a');
+    dfa.add_transition(q1, q2, 'a');
+    dfa.add_transition(q2, q3, 'a');
+    dfa.add_transition(q3, q0, 'a');
+
+    dfa.override_complete();
+
+    let minimized = dfa.minimize();
+
+    assert!(same_language(&dfa, &minimized, 10));
+    assert_eq!(minimized.state_count(), 2);
+    
+}
