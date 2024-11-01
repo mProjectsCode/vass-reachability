@@ -179,10 +179,12 @@ fn minimize_1() {
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
+    assert_eq!(minimized.state_count(), 3);
 }
 
 #[test]
 fn minimize_2() {
+    // example:  https://en.wikipedia.org/wiki/DFA_minimization
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
     let q0 = dfa.add_state(DfaNodeData::new(false, 0));
     let q1 = dfa.add_state(DfaNodeData::new(false, 1));
@@ -210,4 +212,7 @@ fn minimize_2() {
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
+    // TODO: currently the minimized has 4 states, but it should have 3
+    assert_eq!(minimized.state_count(), 3);
+    dbg!(&minimized);
 }

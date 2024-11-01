@@ -69,6 +69,11 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         self.is_complete = true;
     }
 
+
+    pub fn state_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
     /// Adds a failure state if needed. This turns the DFA into a complete DFA, which is needed for some algorithms.
     pub fn add_failure_state(&mut self, data: N) -> Option<NodeIndex<u32>> {
         let mut failure_transitions = Vec::new();
@@ -154,6 +159,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
 
         for node in reachable.graph.node_indices() {
             let mut entry = DfaMinimizationTableEntry::new(
+                node,
                 &reachable.graph[node].data,
                 node == new_start,
                 reachable.graph[node].accepting,
@@ -168,7 +174,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
 
                 assert!(target.is_some(), "DFA must be complete to minimize");
 
-                entry.add_transition(&reachable.graph[target.unwrap()].data);
+                entry.add_transition(target.unwrap());
             }
 
             table.add_entry(entry);
@@ -528,7 +534,7 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         let mut state_map = std::collections::HashMap::new();
 
         for entry in self.iter_some() {
-            let state = dfa.add_state(DfaNodeData::new(entry.is_final, entry.state.clone()));
+            let state = dfa.add_state(DfaNodeData::new(entry.is_final, entry.data.clone()));
             if entry.is_initial {
                 dfa.set_start(state);
             }
@@ -537,11 +543,11 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         }
 
         for entry in self.iter_some() {
-            let from = state_map[entry.state];
+            let from = state_map[&entry.state];
 
             for (i, symbol) in self.alphabet.iter().enumerate() {
                 let target = entry.transitions[i];
-                let to = state_map[target];
+                let to = state_map[&target];
                 dfa.add_transition(from, to, (*symbol).clone());
             }
         }
@@ -552,23 +558,26 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DfaMinimizationTableEntry<'a, N: AutNode> {
-    pub state: &'a N,
+
+    pub state: NodeIndex<u32>,
+    pub data: &'a N,
     pub is_initial: bool,
     pub is_final: bool,
-    pub transitions: Vec<&'a N>,
+    pub transitions: Vec<NodeIndex<u32>>,
 }
 
 impl<'a, N: AutNode> DfaMinimizationTableEntry<'a, N> {
-    pub fn new(state: &'a N, initial_state: bool, final_state: bool) -> Self {
+    pub fn new(state: NodeIndex<u32>, data: &'a N, initial_state: bool, final_state: bool) -> Self {
         DfaMinimizationTableEntry {
             state,
+            data,
             is_initial: initial_state,
             is_final: final_state,
             transitions: vec![],
         }
     }
 
-    pub fn add_transition(&mut self, target: &'a N) {
+    pub fn add_transition(&mut self, target: NodeIndex<u32>) {
         self.transitions.push(target);
     }
 }
