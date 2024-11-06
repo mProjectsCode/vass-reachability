@@ -1,7 +1,12 @@
-use std::fmt::Debug;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt::Debug,
+    vec,
+};
 
+use itertools::Itertools;
 use petgraph::{
-    graph::NodeIndex,
+    graph::{EdgeIndex, NodeIndex},
     stable_graph::StableDiGraph,
     visit::{EdgeRef, IntoEdgeReferences},
     Direction,
@@ -40,7 +45,7 @@ impl<T: AutNode> DfaNodeData<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DFA<N: AutNode, E: AutEdge> {
     start: Option<NodeIndex<u32>>,
     graph: StableDiGraph<DfaNodeData<N>, E>,
@@ -69,32 +74,49 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         self.is_complete = true;
     }
 
-
     pub fn state_count(&self) -> usize {
         self.graph.node_count()
+    }
+
+    pub fn edge_weight(&self, edge: EdgeIndex<u32>) -> &E {
+        self.graph.edge_weight(edge).unwrap()
     }
 
     /// Adds a failure state if needed. This turns the DFA into a complete DFA, which is needed for some algorithms.
     pub fn add_failure_state(&mut self, data: N) -> Option<NodeIndex<u32>> {
         let mut failure_transitions = Vec::new();
 
-        let mut state_map = std::collections::HashSet::new();
-        assert!(self.start.is_some(), "DFA must have a start state");
-        let mut stack = vec![self.start.unwrap()];
+        // let mut state_map = std::collections::HashSet::new();
+        // assert!(self.start.is_some(), "DFA must have a start state");
+        // let mut stack = vec![self.start.unwrap()];
 
-        while let Some(state) = stack.pop() {
-            state_map.insert(state);
+        // while let Some(state) = stack.pop() {
+        //     state_map.insert(state);
 
+        //     for letter in self.alphabet.iter() {
+        //         let edge = self
+        //             .graph
+        //             .edges_directed(state, Direction::Outgoing)
+        //             .find(|edge| edge.weight() == letter);
+
+        //         if let Some(edge) = edge {
+        //             if !state_map.contains(&edge.target()) {
+        //                 stack.push(edge.target());
+        //             }
+        //         } else {
+        //             failure_transitions.push((state, letter.clone()));
+        //         }
+        //     }
+        // }
+
+        for state in self.graph.node_indices() {
             for letter in self.alphabet.iter() {
-                if self
+                let edge = self
                     .graph
                     .edges_directed(state, Direction::Outgoing)
-                    .any(|edge| edge.weight() == letter)
-                {
-                    if !state_map.contains(&state) {
-                        stack.push(state);
-                    }
-                } else {
+                    .find(|edge| edge.weight() == letter);
+
+                if edge.is_none() {
                     failure_transitions.push((state, letter.clone()));
                 }
             }
@@ -128,7 +150,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         // first we want to remove unreachable states
         let mut reachable = DFA::new(self.alphabet.clone());
 
-        let mut visited = std::collections::HashMap::new();
+        let mut visited = HashMap::new();
         let mut stack = vec![self.start.unwrap()];
         let new_start = reachable.add_state(self.graph[self.start.unwrap()].clone());
         reachable.set_start(new_start);
@@ -138,10 +160,10 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
             for edge in self.graph.edges_directed(state, Direction::Outgoing) {
                 let new_from_state = *visited.get(&state).unwrap();
 
-                if !visited.contains_key(&edge.target()) {
+                if let Entry::Vacant(e) = visited.entry(edge.target()) {
                     // create a new state and add it to the visited map
                     let new_to_state = reachable.add_state(self.graph[edge.target()].clone());
-                    visited.insert(edge.target(), new_to_state);
+                    e.insert(new_to_state);
                     stack.push(edge.target());
 
                     reachable.add_transition(new_from_state, new_to_state, edge.weight().clone());
@@ -155,7 +177,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         // second we need to merge equivalent states
 
         // we
-        let mut table = DfaMinimizationTable::new(&self.alphabet);
+        let mut table = DfaMinimizationTable::new(self);
 
         for node in reachable.graph.node_indices() {
             let mut entry = DfaMinimizationTableEntry::new(
@@ -172,7 +194,10 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
                     .find(|edge| edge.weight() == letter)
                     .map(|edge| edge.target());
 
-                assert!(target.is_some(), "DFA must be complete to minimize");
+                if target.is_none() {
+                    println!("No target for letter {:?} from state {:?}", letter, node);
+                    panic!("DFA must be complete to minimize");
+                }
 
                 entry.add_transition(target.unwrap());
             }
@@ -210,7 +235,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     }
 
     /// Builds an intersection DFA from two DFAs. Both DFAs must have the same alphabet, a start state, and they must be complete.
-    pub fn intersect<NO: AutNode>(&self, other: DFA<NO, E>) -> DFA<(N, NO), E> {
+    pub fn intersect<NO: AutNode>(&self, other: &DFA<NO, E>) -> DFA<(N, NO), E> {
         assert!(self.start.is_some(), "Self must have a start state");
         assert!(other.start.is_some(), "Other must have a start state");
 
@@ -232,7 +257,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         let other_start = other.start.unwrap();
 
         // state map to map combinations of states to the new intersected states
-        let mut state_map = std::collections::HashMap::new();
+        let mut state_map = HashMap::new();
 
         // stack for the state combinations that still need to be processed
         let mut stack = vec![(self_start, other_start)];
@@ -349,7 +374,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     /// `L(Self) ⊆ L(Other) iff L(Self) ∩ L(invert(Other)) = ∅`
     pub fn is_subset_of<NO: AutNode>(&self, other: &DFA<NO, E>) -> bool {
         let inverted = other.clone().invert();
-        let intersection = self.intersect(inverted);
+        let intersection = self.intersect(&inverted);
         // dbg!(&intersection);
         // println!("{:?}", Dot::new(&intersection.graph));
 
@@ -413,23 +438,68 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for DFA<N, E> {
     }
 }
 
+impl<N: AutNode, E: AutEdge> Debug for DFA<N, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DFA")
+            .field("alphabet", &self.alphabet)
+            .field("state_count", &self.graph.node_count())
+            .field(
+                "states",
+                &self
+                    .graph
+                    .node_indices()
+                    .map(|node| (&self.graph[node].data, node))
+                    .collect_vec(),
+            )
+            .field("initial_state", &self.start)
+            .field(
+                "final_states",
+                &self
+                    .graph
+                    .node_indices()
+                    .filter(|node| self.graph[*node].accepting)
+                    .collect_vec(),
+            )
+            .field("edge_count", &self.graph.edge_count())
+            .field(
+                "edges",
+                &self
+                    .graph
+                    .edge_references()
+                    .map(|edge| {
+                        (
+                            format!(
+                                "{:?} --- {:?} --> {:?}",
+                                edge.source(),
+                                edge.weight(),
+                                edge.target()
+                            ),
+                            edge.id(),
+                        )
+                    })
+                    .collect_vec(),
+            )
+            .finish()
+    }
+}
+
 /// Represents the table used in the minimization of a DFA.
 /// The table is a vector of entries, where each entry is a state in the DFA.
 /// Each entry contains the state, whether it is an initial state, whether it is a final state, and the transitions to other states.
 /// The transitions are represented as a vector of states, where the index of the state corresponds to the index of the symbol in the alphabet.
 /// The alphabet is a reference to the alphabet of the DFA.
 /// The table contains None for states that have been merged with another state, as to minimize reallocations when merging states.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DfaMinimizationTable<'a, N: AutNode, E: AutEdge> {
     pub table: Vec<Option<DfaMinimizationTableEntry<'a, N>>>,
-    pub alphabet: &'a Vec<E>,
+    pub graph: &'a DFA<N, E>,
 }
 
 impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
-    pub fn new(alphabet: &'a Vec<E>) -> Self {
+    pub fn new(graph: &'a DFA<N, E>) -> Self {
         DfaMinimizationTable {
             table: vec![],
-            alphabet,
+            graph,
         }
     }
 
@@ -464,15 +534,22 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         for entry in self.iter_some() {
             assert_eq!(
                 entry.transitions.len(),
-                self.alphabet.len(),
+                self.graph.alphabet.len(),
                 "All entries must have transitions for all symbols in the alphabet. Entry: {:?}",
                 entry
             );
         }
 
+        let equivalent_states = self.find_equivalent_states();
+
+        // dbg!(&equivalent_states);
         // dbg!(&self.table);
 
-        while let Some((i, j)) = self.find_minimizable_rows() {
+        for (i, j) in equivalent_states {
+            if self.table[i].is_none() || self.table[j].is_none() {
+                continue;
+            }
+
             let entry_b = self.table[j].take().unwrap();
             let entry_a = self.table[i].as_mut().unwrap();
 
@@ -498,40 +575,10 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         // dbg!(&self.table);
     }
 
-    pub fn find_minimizable_rows(&self) -> Option<(usize, usize)> {
-        for (i, entry_a) in self.iter_some_with_index() {
-            for (j, entry_b) in self.iter_some_with_index() {
-                if i == j {
-                    continue;
-                }
-
-                if entry_a.is_final != entry_b.is_final {
-                    continue;
-                }
-
-                let mut is_minimizable = true;
-                for (transition_a, transition_b) in
-                    entry_a.transitions.iter().zip(entry_b.transitions.iter())
-                {
-                    if transition_a != transition_b {
-                        is_minimizable = false;
-                        break;
-                    }
-                }
-
-                if is_minimizable {
-                    return Some((i, j));
-                }
-            }
-        }
-
-        None
-    }
-
     pub fn to_dfa(&self) -> DFA<N, E> {
-        let mut dfa = DFA::new(self.alphabet.clone());
+        let mut dfa = DFA::new(self.graph.alphabet.clone());
 
-        let mut state_map = std::collections::HashMap::new();
+        let mut state_map = HashMap::new();
 
         for entry in self.iter_some() {
             let state = dfa.add_state(DfaNodeData::new(entry.is_final, entry.data.clone()));
@@ -545,20 +592,120 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         for entry in self.iter_some() {
             let from = state_map[&entry.state];
 
-            for (i, symbol) in self.alphabet.iter().enumerate() {
+            for (i, symbol) in self.graph.alphabet.iter().enumerate() {
                 let target = entry.transitions[i];
                 let to = state_map[&target];
                 dfa.add_transition(from, to, (*symbol).clone());
             }
         }
 
+        dfa.override_complete();
+
         dfa
+    }
+
+    fn find_equivalent_states(&self) -> Vec<(usize, usize)> {
+        let state_count = self.table.len();
+        let mut table = vec![vec![false; state_count]; state_count];
+        // sadly we need something to map the petgraph indices to our contiguous indices
+        // to index into the table
+        let reverse_index_map = self
+            .table
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| (entry.as_ref().unwrap().state, i))
+            .collect::<HashMap<_, _>>();
+
+        // mark all pairs of states (q1, q2) where q1 is accepting and q2 is not accepting
+        for (i, i_data) in self.iter_some_with_index() {
+            for (j, j_data) in self.iter_some_with_index() {
+                if i >= j {
+                    continue;
+                }
+
+                if table[i][j] {
+                    continue;
+                }
+
+                if i_data.is_final != j_data.is_final {
+                    table[i][j] = true;
+                }
+            }
+        }
+
+        // while there is an unmarked pair (q1, q2) in the table and a letter with q1 -> q3 and q2 -> q4 so that (q3, q4) is marked, mark (q1, q2)
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for (i, i_data) in self.iter_some_with_index() {
+                for (j, j_data) in self.iter_some_with_index() {
+                    if i >= j {
+                        continue;
+                    }
+
+                    if table[i][j] {
+                        continue;
+                    }
+
+                    for l in 1..self.graph.alphabet.len() {
+                        let i_target = i_data.transitions[l];
+                        let j_target = j_data.transitions[l];
+
+                        let mut i_target_index = reverse_index_map[&i_target];
+                        let mut j_target_index = reverse_index_map[&j_target];
+
+                        if i_target_index >= j_target_index {
+                            (i_target_index, j_target_index) = (j_target_index, i_target_index);
+                        }
+
+                        if table[i_target_index][j_target_index] {
+                            table[i][j] = true;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // println!("Table:");
+
+        // for i in 0..state_count {
+        //     for j in 0..state_count {
+        //         if table[i][j] {
+        //             print!("x")
+        //         }
+        //         else {
+        //             print!(".")
+        //         }
+        //     }
+
+        //     println!();
+        // }
+
+        // dbg!(&table);
+
+        let mut equivalent_states = vec![];
+
+        for (i, _i_data) in self.iter_some_with_index() {
+            for (j, _j_data) in self.iter_some_with_index() {
+                if i >= j {
+                    continue;
+                }
+
+                if !table[i][j] {
+                    // println!("States {:?} and {:?} are equivalent", i_data.data, j_data.data);
+                    equivalent_states.push((i, j));
+                }
+            }
+        }
+
+        equivalent_states
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DfaMinimizationTableEntry<'a, N: AutNode> {
-
     pub state: NodeIndex<u32>,
     pub data: &'a N,
     pub is_initial: bool,

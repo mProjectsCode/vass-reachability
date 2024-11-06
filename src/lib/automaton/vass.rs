@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, ops::Neg};
+use std::collections::HashMap;
 
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
 use primes::{PrimeSet, Sieve};
@@ -7,6 +7,7 @@ use super::{
     dfa::{DfaNodeData, DFA},
     modulo::ModuloDFA,
     nfa::NFA,
+    utils::{mut_add_vec, neg_vec},
     AutBuild, AutEdge, AutNode, Automaton,
 };
 
@@ -82,17 +83,17 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, N, VassEdge<E>> for VASS<N, E> 
     }
 }
 
-pub fn marking_to_vec(marking: &Vec<i32>) -> Vec<i32> {
+pub fn marking_to_vec(marking: &[i32]) -> Vec<i32> {
     let mut vec = vec![];
 
-    for d in 0..marking.len() {
-        let label = if marking[d] > 0 {
+    for (d, m) in marking.iter().enumerate() {
+        let label = if *m > 0 {
             (d + 1) as i32
         } else {
             -((d + 1) as i32)
         };
 
-        for _ in 0..marking[d].abs() {
+        for _ in 0..m.abs() {
             vec.push(label);
         }
     }
@@ -109,7 +110,7 @@ pub struct InitializedVASS<'a, N: AutNode, E: AutEdge> {
     final_node: NodeIndex<u32>,
 }
 
-impl<'a, N: AutNode, E: AutEdge> InitializedVASS<'a, N, E> {
+impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
     pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, i32> {
         let cfg_alphabet = (1..=self.vass.counter_count as i32)
             .chain((1..=self.vass.counter_count as i32).map(|x| -x))
@@ -149,10 +150,9 @@ impl<'a, N: AutNode, E: AutEdge> InitializedVASS<'a, N, E> {
 
                 let mut cfg_source = cfg_state;
 
-                for i in 0..marking_vec.len() - 1 {
-                    let label = marking_vec[i];
+                for label in marking_vec.iter().take(marking_vec.len() - 1) {
                     let target = cfg.add_state(DfaNodeData::new(false, None));
-                    cfg.add_transition(cfg_source, target, Some(label));
+                    cfg.add_transition(cfg_source, target, Some(*label));
                     cfg_source = target;
                 }
 
@@ -176,17 +176,65 @@ impl<'a, N: AutNode, E: AutEdge> InitializedVASS<'a, N, E> {
     }
 
     pub fn reach_1(&self) -> bool {
-        let cfg = self.to_cfg();
+        let mut cfg = self.to_cfg();
+        cfg.add_failure_state(vec![]);
+        // dbg!(&cfg);
+        let min_cfg = cfg.minimize();
+        // dbg!(&min_cfg);
+
+        println!("Generated CFG with {} states", cfg.state_count());
+        println!("Minimized CFG with {} states", min_cfg.state_count());
+
         let mut pset = Sieve::new();
 
-        for p in pset.iter() {
-            if p > 100 {
+        for mu in pset.iter() {
+            if mu > 100 {
                 panic!("No solution with mu < 100 found");
             }
 
-            let aprox = ModuloDFA::new(self.vass.counter_count, p as usize);
-            if cfg.is_subset_of(aprox.dfa()) {
+            println!("Step mu = {}", mu);
+
+            // IDEA: we only need the paths
+            // we can probably do that by lazily generating the modulo dfa as we need it, as the modulo dfa is massive
+            // maybe we can even generate the intersection lazily
+            let aprox = ModuloDFA::new(self.vass.counter_count, mu as usize, true);
+            // dbg!(&aprox);
+            let intersection = min_cfg.intersect(aprox.dfa());
+            // dbg!(&intersection);
+            let reach_paths = intersection.bfs_accepting_states();
+
+            println!("Found {} possible reaching paths", reach_paths.len());
+
+            if reach_paths.is_empty() {
                 return false;
+            }
+
+            for (i, path) in reach_paths.iter().enumerate() {
+                print!("Path {}: ", i);
+
+                // TODO: if the path goes into the negative, the prefix from the cfg
+                if path.is_zero_reaching(self.vass.counter_count, |x| *intersection.edge_weight(x))
+                {
+                    println!("Zero reaching: {:?}", path);
+                    return true;
+                } else {
+                    println!("Not zero reaching: {:?}", path);
+
+                    if path.has_loop() {
+                        let ltc =
+                            path.to_ltc(self.vass.counter_count, |x| *intersection.edge_weight(x));
+
+                        if ltc.reach_n() {
+                            println!("LTC is reachable in N");
+                            return true;
+                        } else {
+                            println!("LTC is not reachable in N");
+                            // TODO: cut ltc from cfg
+                        }
+                    } else {
+                        // TODO: cut path from cfg
+                    }
+                }
             }
         }
 
@@ -194,21 +242,7 @@ impl<'a, N: AutNode, E: AutEdge> InitializedVASS<'a, N, E> {
     }
 }
 
-fn neg_vec(vec: &Vec<i32>) -> Vec<i32> {
-    vec.iter().map(|x| x.neg()).collect()
-}
-
-fn add_vec(a: &Vec<i32>, b: &Vec<i32>) -> Vec<i32> {
-    a.iter().zip(b.iter()).map(|(x, y)| x + y).collect()
-}
-
-fn mut_add_vec(a: &mut Vec<i32>, b: &Vec<i32>) {
-    for i in 0..a.len() {
-        a[i] += b[i];
-    }
-}
-
-impl<'a, N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<'a, N, E> {
+impl<N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<'_, N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_state = Some(self.initial_node);
         let mut current_valuation = self.initial_valuation.clone();

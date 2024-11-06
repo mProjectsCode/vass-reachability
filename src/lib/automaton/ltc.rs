@@ -7,6 +7,7 @@ use z3::{
 /// This implementation is specifically for VASS.
 /// Why do we need a subtract and add vector for each element?
 /// Because an LTC should already simply the transitions to single loop transitions and single intermediate transitions.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LTC {
     pub elements: Vec<LTCElement>,
     pub dimension: usize,
@@ -30,9 +31,8 @@ impl LTC {
             "Loop add vector has to have the same dimension as the LTC"
         );
 
-        match self.elements.last() {
-            Some(LTCElement::Loop(_)) => panic!("Cannot have two loops in a row"),
-            _ => (),
+        if let Some(LTCElement::Loop(_)) = self.elements.last() {
+            panic!("Cannot have two loops in a row")
         }
 
         self.elements
@@ -70,7 +70,7 @@ impl LTC {
         let ctx = Context::new(&config);
         let solver = Solver::new(&ctx);
 
-        let _0 = Int::from_i64(&ctx, 0);
+        let zero = Int::from_i64(&ctx, 0);
 
         let mut formula = vec![Int::from_i64(&ctx, 0); self.dimension];
         // currently unused, for path extraction later
@@ -88,7 +88,7 @@ impl LTC {
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
                         if only_n_counters {
-                            solver.assert(&formula[i].ge(&_0));
+                            solver.assert(&formula[i].ge(&zero));
                         }
 
                         formula[i] =
@@ -104,7 +104,7 @@ impl LTC {
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
                         if only_n_counters {
-                            solver.assert(&formula[i].ge(&_0));
+                            solver.assert(&formula[i].ge(&zero));
                         }
 
                         formula[i] = &formula[i] + &Int::from_i64(&ctx, add[i] as i64);
@@ -113,8 +113,8 @@ impl LTC {
             }
         }
 
-        for i in 0..self.dimension {
-            solver.assert(&formula[i]._eq(&_0));
+        for f in formula {
+            solver.assert(&f._eq(&zero));
         }
 
         match solver.check() {
@@ -131,6 +131,7 @@ impl LTC {
 /// A transition must be taken exactly once.
 /// The first vector needs to be subtracted from the counters and the second vector needs to be added to the counters.
 /// Similar to a firing rule in a Petri net.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LTCElement {
     Loop((Vec<i32>, Vec<i32>)),
     Transition((Vec<i32>, Vec<i32>)),

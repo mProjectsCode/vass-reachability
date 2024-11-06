@@ -23,7 +23,7 @@ fn dim_to_array(x: Dim<IxDynImpl>) -> Vec<usize> {
 }
 
 impl ModuloDFA {
-    pub fn new(counter_count: usize, mu: usize) -> Self {
+    pub fn new(counter_count: usize, mu: usize, invert: bool) -> Self {
         let mut alphabet = vec![];
         for i in 1..=counter_count {
             alphabet.push(i as i32);
@@ -37,7 +37,7 @@ impl ModuloDFA {
                 let arr = dim_to_array(x);
                 let is_0 = arr.iter().all(|&x| x == 0);
 
-                let state = dfa.add_state(DfaNodeData::new(!is_0, arr));
+                let state = dfa.add_state(DfaNodeData::new(!is_0 ^ invert, arr));
 
                 if is_0 {
                     dfa.set_start(state);

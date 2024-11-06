@@ -179,7 +179,7 @@ fn minimize_1() {
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
-    assert_eq!(minimized.state_count(), 3);
+    assert_eq!(minimized.state_count(), 2);
 }
 
 #[test]
@@ -212,9 +212,7 @@ fn minimize_2() {
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
-    // TODO: currently the minimized has 4 states, but it should have 3
     assert_eq!(minimized.state_count(), 3);
-    dbg!(&minimized);
 }
 
 #[test]
@@ -239,5 +237,34 @@ fn minimize_3() {
 
     assert!(same_language(&dfa, &minimized, 10));
     assert_eq!(minimized.state_count(), 2);
-    
+}
+
+#[test]
+fn minimize_4() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c', 'd']);
+
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(true, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
+
+    dfa.set_start(q0);
+
+    dfa.add_transition(q0, q0, 'a');
+    dfa.add_transition(q0, q1, 'b');
+    dfa.add_transition(q0, q2, 'c');
+    dfa.add_transition(q0, q2, 'd');
+    dfa.add_transition(q1, q2, 'a');
+    dfa.add_transition(q1, q2, 'b');
+    dfa.add_transition(q1, q1, 'c');
+    dfa.add_transition(q1, q2, 'd');
+    dfa.add_transition(q2, q2, 'a');
+    dfa.add_transition(q2, q2, 'b');
+    dfa.add_transition(q2, q2, 'c');
+    dfa.add_transition(q2, q2, 'd');
+
+    dfa.override_complete();
+
+    let minimized = dfa.minimize();
+
+    assert!(same_language(&dfa, &minimized, 8));
 }

@@ -52,7 +52,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
                         .graph
                         .edges_directed(node, petgraph::Direction::Outgoing)
                     {
-                        if edge.weight().as_ref() == Some(&symbol) {
+                        if edge.weight().as_ref() == Some(symbol) {
                             target_state.push(edge.target());
                         }
                     }
@@ -80,8 +80,6 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
             }
         }
 
-        dfa.override_complete();
-
         dfa
     }
 
@@ -90,21 +88,21 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
     }
 
     // checks if a set of states contains an accepting state
-    pub fn is_accepting_set(&self, states: &Vec<NodeIndex<u32>>) -> bool {
+    pub fn is_accepting_set(&self, states: &[NodeIndex<u32>]) -> bool {
         states.iter().any(|&x| self.is_accepting(x))
     }
 
     // creates a state from a set of states
-    pub fn state_from_set(&self, states: &Vec<NodeIndex<u32>>) -> DfaNodeData<Vec<N>> {
+    pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNodeData<Vec<N>> {
         DfaNodeData::new(self.is_accepting_set(states), self.node_data_set(states))
     }
 
     pub fn node_data(&self, node: NodeIndex<u32>) -> &N {
-        &self.graph[node].data()
+        self.graph[node].data()
     }
 
     // maps a set of states to their data
-    pub fn node_data_set(&self, nodes: &Vec<NodeIndex<u32>>) -> Vec<N> {
+    pub fn node_data_set(&self, nodes: &[NodeIndex<u32>]) -> Vec<N> {
         nodes.iter().map(|&x| self.node_data(x).clone()).collect()
     }
 }
