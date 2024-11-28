@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef};
+use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
 
 use super::{
     dfa::{DfaNodeData, DFA},
@@ -28,14 +28,16 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         self.start = Some(start);
     }
 
-    // todo minimierung
+    /// Determinizes a NFA to a DFA.
+    /// This is done by creating a new DFA where each state is a set of states from the NFA.
+    /// This respects epsilon transitions.
     pub fn determinize(&self) -> DFA<Vec<N>, E> {
         let nfa_start = self.start.expect("NFA must have a start state");
         let mut state_map = HashMap::new();
 
         let mut dfa = DFA::new(self.alphabet.clone());
 
-        let start_state_set = vec![nfa_start];
+        let start_state_set = self.e_closure(nfa_start);
         let dfa_start = dfa.add_state(self.state_from_set(&start_state_set));
         dfa.set_start(dfa_start);
 
@@ -50,7 +52,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
                 for &node in &state {
                     for edge in self
                         .graph
-                        .edges_directed(node, petgraph::Direction::Outgoing)
+                        .edges_directed(node, Direction::Outgoing)
                     {
                         if edge.weight().as_ref() == Some(symbol) {
                             target_state.push(edge.target());
@@ -59,6 +61,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
                 }
 
                 // TODO: handle epsilon transitions
+                self.extend_to_e_closure(&mut target_state);
 
                 if target_state.is_empty() {
                     continue;
@@ -81,6 +84,53 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         }
 
         dfa
+    }
+
+    /// Calculates the epsilon closure of a state.
+    /// Meaning all states reachable only by epsilon transitions.
+    pub fn e_closure(&self, state: NodeIndex<u32>) -> Vec<NodeIndex<u32>> {
+        let mut stack = vec![state];
+        let mut closure = vec![state];
+
+        while let Some(state) = stack.pop() {
+            for edge in self
+                .graph
+                .edges_directed(state, Direction::Outgoing)
+            {
+                if edge.weight().is_none() {
+                    let target = edge.target();
+
+                    if !closure.contains(&target) {
+                        closure.push(target);
+                        stack.push(target);
+                    }
+                }
+            }
+        }
+
+        closure
+    }
+
+    /// Calculates the epsilon closure of a set of states.
+    /// This set is duplicate free.
+    pub fn extend_to_e_closure(&self, states: &mut Vec<NodeIndex<u32>>) {
+        let mut stack = states.clone();
+
+        while let Some(state) = stack.pop() {
+            for edge in self
+                .graph
+                .edges_directed(state, Direction::Outgoing)
+            {
+                if edge.weight().is_none() {
+                    let target = edge.target();
+
+                    if !states.contains(&target) {
+                        states.push(target);
+                        stack.push(target);
+                    }
+                }
+            }
+        }
     }
 
     pub fn is_accepting(&self, state: NodeIndex<u32>) -> bool {
@@ -120,6 +170,7 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, Option<E>> for 
 impl<N: AutNode, E: AutEdge> Automaton<E> for NFA<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_states = vec![self.start.expect("NFA must have a start state")];
+        self.extend_to_e_closure(&mut current_states);
 
         for symbol in input {
             let mut next_states = vec![];
@@ -127,7 +178,7 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for NFA<N, E> {
             for &state in &current_states {
                 for edge in self
                     .graph
-                    .edges_directed(state, petgraph::Direction::Outgoing)
+                    .edges_directed(state, Direction::Outgoing)
                 {
                     if edge.weight().as_ref() == Some(symbol) {
                         next_states.push(edge.target());
@@ -138,6 +189,8 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for NFA<N, E> {
             if next_states.is_empty() {
                 return false;
             }
+
+            self.extend_to_e_closure(&mut next_states);
 
             current_states = next_states;
         }

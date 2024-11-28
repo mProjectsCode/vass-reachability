@@ -140,24 +140,22 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
                 };
 
                 let vass_label = &vass_edge.weight().1;
-
-                assert!(
-                    !vass_label.iter().all(|x| *x == 0),
-                    "0 edge marking not implemented"
-                );
-
                 let marking_vec = marking_to_vec(vass_label);
 
-                let mut cfg_source = cfg_state;
+                if marking_vec.is_empty() {
+                    cfg.add_transition(cfg_state, cfg_target, None);
+                } else {
+                    let mut cfg_source = cfg_state;
 
-                for label in marking_vec.iter().take(marking_vec.len() - 1) {
-                    let target = cfg.add_state(DfaNodeData::new(false, None));
-                    cfg.add_transition(cfg_source, target, Some(*label));
-                    cfg_source = target;
+                    for label in marking_vec.iter().take(marking_vec.len() - 1) {
+                        let target = cfg.add_state(DfaNodeData::new(false, None));
+                        cfg.add_transition(cfg_source, target, Some(*label));
+                        cfg_source = target;
+                    }
+    
+                    let label = marking_vec[marking_vec.len() - 1];
+                    cfg.add_transition(cfg_source, cfg_target, Some(label));
                 }
-
-                let label = marking_vec[marking_vec.len() - 1];
-                cfg.add_transition(cfg_source, cfg_target, Some(label));
             }
         }
 
