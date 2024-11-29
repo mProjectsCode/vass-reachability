@@ -6,9 +6,8 @@ use std::{
 
 use itertools::Itertools;
 use petgraph::{
-    graph::{EdgeIndex, NodeIndex},
-    stable_graph::StableDiGraph,
-    visit::{EdgeRef, IntoEdgeReferences},
+    graph::{DiGraph, EdgeIndex, NodeIndex},
+    visit::EdgeRef,
     Direction,
 };
 
@@ -48,14 +47,14 @@ impl<T: AutNode> DfaNodeData<T> {
 #[derive(Clone)]
 pub struct DFA<N: AutNode, E: AutEdge> {
     start: Option<NodeIndex<u32>>,
-    graph: StableDiGraph<DfaNodeData<N>, E>,
+    graph: DiGraph<DfaNodeData<N>, E>,
     alphabet: Vec<E>,
     is_complete: bool,
 }
 
 impl<N: AutNode, E: AutEdge> DFA<N, E> {
     pub fn new(alphabet: Vec<E>) -> Self {
-        let graph = StableDiGraph::new();
+        let graph = DiGraph::new();
 
         DFA {
             alphabet,
@@ -85,29 +84,6 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     /// Adds a failure state if needed. This turns the DFA into a complete DFA, which is needed for some algorithms.
     pub fn add_failure_state(&mut self, data: N) -> Option<NodeIndex<u32>> {
         let mut failure_transitions = Vec::new();
-
-        // let mut state_map = std::collections::HashSet::new();
-        // assert!(self.start.is_some(), "DFA must have a start state");
-        // let mut stack = vec![self.start.unwrap()];
-
-        // while let Some(state) = stack.pop() {
-        //     state_map.insert(state);
-
-        //     for letter in self.alphabet.iter() {
-        //         let edge = self
-        //             .graph
-        //             .edges_directed(state, Direction::Outgoing)
-        //             .find(|edge| edge.weight() == letter);
-
-        //         if let Some(edge) = edge {
-        //             if !state_map.contains(&edge.target()) {
-        //                 stack.push(edge.target());
-        //             }
-        //         } else {
-        //             failure_transitions.push((state, letter.clone()));
-        //         }
-        //     }
-        // }
 
         for state in self.graph.node_indices() {
             for letter in self.alphabet.iter() {
@@ -176,7 +152,6 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
 
         // second we need to merge equivalent states
 
-        // we
         let mut table = DfaMinimizationTable::new(self);
 
         for node in reachable.graph.node_indices() {
@@ -503,17 +478,6 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         }
     }
 
-    /// Iterate over the table, returning the index and the entry for each entry that is not None.
-    fn iter_some_with_index(
-        &self,
-    ) -> impl Iterator<Item = (usize, &DfaMinimizationTableEntry<'a, N>)> {
-        self.table
-            .iter()
-            .enumerate()
-            .filter(|entry| entry.1.is_some())
-            .map(|entry| (entry.0, entry.1.as_ref().unwrap()))
-    }
-
     // Iterate over the table, returning the entries that are not None.
     fn iter_some(&self) -> impl Iterator<Item = &DfaMinimizationTableEntry<'a, N>> {
         self.table.iter().filter_map(|entry| entry.as_ref())
@@ -607,18 +571,13 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
     fn find_equivalent_states(&self) -> Vec<(usize, usize)> {
         let state_count = self.table.len();
         let mut table = vec![vec![false; state_count]; state_count];
-        // sadly we need something to map the petgraph indices to our contiguous indices
-        // to index into the table
-        let reverse_index_map = self
-            .table
-            .iter()
-            .enumerate()
-            .map(|(i, entry)| (entry.as_ref().unwrap().state, i))
-            .collect::<HashMap<_, _>>();
 
         // mark all pairs of states (q1, q2) where q1 is accepting and q2 is not accepting
-        for (i, i_data) in self.iter_some_with_index() {
-            for (j, j_data) in self.iter_some_with_index() {
+        for i_data in self.iter_some() {
+            for j_data in self.iter_some() {
+                let i = i_data.state.index();
+                let j = j_data.state.index();
+
                 if i >= j {
                     continue;
                 }
@@ -638,8 +597,11 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
         while changed {
             changed = false;
 
-            for (i, i_data) in self.iter_some_with_index() {
-                for (j, j_data) in self.iter_some_with_index() {
+            for i_data in self.iter_some() {
+                for j_data in self.iter_some() {
+                    let i = i_data.state.index();
+                    let j = j_data.state.index();
+
                     if i >= j {
                         continue;
                     }
@@ -649,17 +611,14 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
                     }
 
                     for l in 1..self.graph.alphabet.len() {
-                        let i_target = i_data.transitions[l];
-                        let j_target = j_data.transitions[l];
+                        let mut i_target = i_data.transitions[l].index();
+                        let mut j_target = j_data.transitions[l].index();
 
-                        let mut i_target_index = reverse_index_map[&i_target];
-                        let mut j_target_index = reverse_index_map[&j_target];
-
-                        if i_target_index >= j_target_index {
-                            (i_target_index, j_target_index) = (j_target_index, i_target_index);
+                        if i_target >= j_target {
+                            (i_target, j_target) = (j_target, i_target);
                         }
 
-                        if table[i_target_index][j_target_index] {
+                        if table[i_target][j_target] {
                             table[i][j] = true;
                             changed = true;
                         }
@@ -687,8 +646,11 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
 
         let mut equivalent_states = vec![];
 
-        for (i, _i_data) in self.iter_some_with_index() {
-            for (j, _j_data) in self.iter_some_with_index() {
+        for i_data in self.iter_some() {
+            for j_data in self.iter_some() {
+                let i = i_data.state.index();
+                let j = j_data.state.index();
+
                 if i >= j {
                     continue;
                 }

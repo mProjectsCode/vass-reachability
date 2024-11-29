@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
+use petgraph::{graph::{DiGraph, NodeIndex}, visit::EdgeRef, Direction};
 
 use super::{
     dfa::{DfaNodeData, DFA},
@@ -9,13 +9,13 @@ use super::{
 
 pub struct NFA<N: AutNode, E: AutEdge> {
     start: Option<NodeIndex<u32>>,
-    graph: StableDiGraph<DfaNodeData<N>, Option<E>>,
+    graph: DiGraph<DfaNodeData<N>, Option<E>>,
     alphabet: Vec<E>,
 }
 
 impl<N: AutNode, E: AutEdge> NFA<N, E> {
     pub fn new(alphabet: Vec<E>) -> Self {
-        let graph = StableDiGraph::new();
+        let graph = DiGraph::new();
 
         NFA {
             alphabet,
