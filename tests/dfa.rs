@@ -4,7 +4,7 @@ use vass_reachability::{
         dfa::{DfaNodeData, DFA},
         AutBuild, Automaton,
     },
-    validation::same_language::same_language,
+    validation::same_language::{assert_same_language, same_language},
 };
 
 #[test]
@@ -267,4 +267,75 @@ fn minimize_4() {
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 8));
+}
+
+#[test]
+fn minimize_5() {
+    let mut dfa = DFA::<u32, i32>::new(vec![1, 2, -1, -2]);
+
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
+    let q3 = dfa.add_state(DfaNodeData::new(false, 3));
+    let q4 = dfa.add_state(DfaNodeData::new(false, 4));
+    let q5 = dfa.add_state(DfaNodeData::new(true, 5));
+    let q6 = dfa.add_state(DfaNodeData::new(false, 6));
+    let q7 = dfa.add_state(DfaNodeData::new(false, 7));
+    let q8 = dfa.add_state(DfaNodeData::new(false, 8));
+
+    dfa.set_start(q0);
+
+    dfa.add_transition(q0, q1, -2);
+    dfa.add_transition(q0, q2, -1);
+    dfa.add_transition(q0, q3, 1);
+    dfa.add_transition(q0, q1, 2);
+
+    dfa.add_transition(q1, q1, -2);
+    dfa.add_transition(q1, q1, -1);
+    dfa.add_transition(q1, q3, 1);
+    dfa.add_transition(q1, q1, 2);
+
+    dfa.add_transition(q2, q2, -2);
+    dfa.add_transition(q2, q2, -1);
+    dfa.add_transition(q2, q6, 1);
+    dfa.add_transition(q2, q2, 2);
+
+    dfa.add_transition(q3, q1, -2);
+    dfa.add_transition(q3, q4, -1);
+    dfa.add_transition(q3, q3, 1);
+    dfa.add_transition(q3, q1, 2);
+
+    dfa.add_transition(q4, q1, -2);
+    dfa.add_transition(q4, q5, -1);
+    dfa.add_transition(q4, q1, 1);
+    dfa.add_transition(q4, q1, 2);
+
+    dfa.add_transition(q5, q1, -2);
+    dfa.add_transition(q5, q5, -1);
+    dfa.add_transition(q5, q1, 1);
+    dfa.add_transition(q5, q1, 2);
+
+    dfa.add_transition(q6, q2, -2);
+    dfa.add_transition(q6, q7, -1);
+    dfa.add_transition(q6, q6, 1);
+    dfa.add_transition(q6, q2, 2);
+
+    dfa.add_transition(q7, q2, -2);
+    dfa.add_transition(q7, q8, -1);
+    dfa.add_transition(q7, q2, 1);
+    dfa.add_transition(q7, q2, 2);
+
+    dfa.add_transition(q8, q2, -2);
+    dfa.add_transition(q8, q8, -1);
+    dfa.add_transition(q8, q2, 1);
+    dfa.add_transition(q8, q2, 2);
+
+    dfa.override_complete();
+
+    let minimized = dfa.minimize();
+
+    assert_eq!(minimized.state_count(), 6);
+    // dbg!(&minimized);
+
+    assert_same_language(&dfa, &minimized, 8);
 }

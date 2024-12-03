@@ -1,15 +1,20 @@
 use std::collections::HashMap;
 
-use petgraph::{graph::{DiGraph, NodeIndex}, visit::EdgeRef, Direction};
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+    Direction,
+};
 
 use super::{
     dfa::{DfaNodeData, DFA},
     AutBuild, AutEdge, AutNode, Automaton,
 };
 
+#[derive(Debug, Clone)]
 pub struct NFA<N: AutNode, E: AutEdge> {
     start: Option<NodeIndex<u32>>,
-    graph: DiGraph<DfaNodeData<N>, Option<E>>,
+    pub graph: DiGraph<DfaNodeData<N>, Option<E>>,
     alphabet: Vec<E>,
 }
 
@@ -50,17 +55,13 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
                 let mut target_state = vec![];
 
                 for &node in &state {
-                    for edge in self
-                        .graph
-                        .edges_directed(node, Direction::Outgoing)
-                    {
+                    for edge in self.graph.edges_directed(node, Direction::Outgoing) {
                         if edge.weight().as_ref() == Some(symbol) {
                             target_state.push(edge.target());
                         }
                     }
                 }
 
-                // TODO: handle epsilon transitions
                 self.extend_to_e_closure(&mut target_state);
 
                 if target_state.is_empty() {
@@ -83,6 +84,64 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
             }
         }
 
+        dfa.override_complete();
+
+        dfa
+    }
+
+    /// Determinizes a NFA to a DFA.
+    /// This is done by creating a new DFA where each state is a set of states from the NFA.
+    /// This respects epsilon transitions.
+    pub fn determinize_no_state_data(&self) -> DFA<(), E> {
+        let nfa_start = self.start.expect("NFA must have a start state");
+        let mut state_map = HashMap::new();
+
+        let mut dfa = DFA::new(self.alphabet.clone());
+
+        let start_state_set = self.e_closure(nfa_start);
+        let dfa_start = dfa.add_state(self.state_from_set_no_data(&start_state_set));
+        dfa.set_start(dfa_start);
+
+        state_map.insert(start_state_set.clone(), dfa_start);
+
+        let mut stack = vec![start_state_set];
+
+        while let Some(state) = stack.pop() {
+            for symbol in &self.alphabet {
+                let mut target_state = vec![];
+
+                for &node in &state {
+                    for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+                        if edge.weight().as_ref() == Some(symbol) {
+                            target_state.push(edge.target());
+                        }
+                    }
+                }
+
+                self.extend_to_e_closure(&mut target_state);
+
+                if target_state.is_empty() {
+                    continue;
+                }
+
+                target_state.sort();
+                target_state.dedup();
+
+                let target_dfa_state = if let Some(&x) = state_map.get(&target_state) {
+                    x
+                } else {
+                    let new_state = dfa.add_state(self.state_from_set_no_data(&target_state));
+                    state_map.insert(target_state.clone(), new_state);
+                    stack.push(target_state);
+                    new_state
+                };
+
+                dfa.add_transition(state_map[&state], target_dfa_state, symbol.clone());
+            }
+        }
+
+        dfa.override_complete();
+
         dfa
     }
 
@@ -93,10 +152,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         let mut closure = vec![state];
 
         while let Some(state) = stack.pop() {
-            for edge in self
-                .graph
-                .edges_directed(state, Direction::Outgoing)
-            {
+            for edge in self.graph.edges_directed(state, Direction::Outgoing) {
                 if edge.weight().is_none() {
                     let target = edge.target();
 
@@ -117,10 +173,7 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
         let mut stack = states.clone();
 
         while let Some(state) = stack.pop() {
-            for edge in self
-                .graph
-                .edges_directed(state, Direction::Outgoing)
-            {
+            for edge in self.graph.edges_directed(state, Direction::Outgoing) {
                 if edge.weight().is_none() {
                     let target = edge.target();
 
@@ -145,6 +198,11 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
     // creates a state from a set of states
     pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNodeData<Vec<N>> {
         DfaNodeData::new(self.is_accepting_set(states), self.node_data_set(states))
+    }
+
+    // creates a state from a set of states
+    pub fn state_from_set_no_data(&self, states: &[NodeIndex<u32>]) -> DfaNodeData<()> {
+        DfaNodeData::new(self.is_accepting_set(states), ())
     }
 
     pub fn node_data(&self, node: NodeIndex<u32>) -> &N {
@@ -176,10 +234,7 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for NFA<N, E> {
             let mut next_states = vec![];
 
             for &state in &current_states {
-                for edge in self
-                    .graph
-                    .edges_directed(state, Direction::Outgoing)
-                {
+                for edge in self.graph.edges_directed(state, Direction::Outgoing) {
                     if edge.weight().as_ref() == Some(symbol) {
                         next_states.push(edge.target());
                     }

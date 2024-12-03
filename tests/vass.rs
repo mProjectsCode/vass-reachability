@@ -74,7 +74,7 @@ fn test_vass_reach_2() {
 }
 
 // this test currently runs forever
-// #[test]
+#[test]
 fn test_vass_reach_3() {
     let mut vass = VASS::<u32, char>::new(2, vec!['a', 'b']);
     let q0 = vass.add_state(0);
@@ -89,7 +89,7 @@ fn test_vass_reach_3() {
 }
 
 // this test currently runs forever
-// #[test]
+#[test]
 fn test_vass_reach_4() {
     // this is a simple model for mutual exclusion
     // we have two processes

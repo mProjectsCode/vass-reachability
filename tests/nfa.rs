@@ -53,7 +53,6 @@ fn test_nfa_to_dfa_2() {
     // dbg!(&dfa);
 }
 
-
 #[test]
 fn test_nfa_to_dfa_3() {
     // An NFA that has empty transitions
@@ -73,7 +72,7 @@ fn test_nfa_to_dfa_3() {
 
     nfa.add_transition(q2, q3, Some('a'));
     nfa.add_transition(q2, q4, None);
-    
+
     nfa.add_transition(q3, q2, Some('b'));
 
     let dfa = nfa.determinize();

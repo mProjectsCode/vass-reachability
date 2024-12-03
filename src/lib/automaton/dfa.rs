@@ -36,18 +36,22 @@ impl<T: AutNode> DfaNodeData<T> {
         DfaNodeData::new(!self.accepting, self.data.clone())
     }
 
-    pub fn and<TO: AutNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<(T, TO)> {
+    pub fn join<TO: AutNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<(T, TO)> {
         DfaNodeData::new(
             self.accepting && other.accepting,
             (self.data.clone(), other.data.clone()),
         )
+    }
+
+    pub fn join_left<TO: AutNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<T> {
+        DfaNodeData::new(self.accepting && other.accepting, self.data.clone())
     }
 }
 
 #[derive(Clone)]
 pub struct DFA<N: AutNode, E: AutEdge> {
     start: Option<NodeIndex<u32>>,
-    graph: DiGraph<DfaNodeData<N>, E>,
+    pub graph: DiGraph<DfaNodeData<N>, E>,
     alphabet: Vec<E>,
     is_complete: bool,
 }
@@ -119,6 +123,24 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         None
     }
 
+    pub fn assert_complete(&self) {
+        for state in self.graph.node_indices() {
+            for letter in self.alphabet.iter() {
+                let edge = self
+                    .graph
+                    .edges_directed(state, Direction::Outgoing)
+                    .find(|edge| edge.weight() == letter);
+
+                assert!(
+                    edge.is_some(),
+                    "DFA is not complete. State {:?} does not have a transition for letter {:?}",
+                    state,
+                    letter
+                );
+            }
+        }
+    }
+
     pub fn minimize(&self) -> DFA<N, E> {
         assert!(self.start.is_some(), "Self must have a start state");
         assert!(self.is_complete, "Self must be complete to minimize");
@@ -136,19 +158,26 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
             for edge in self.graph.edges_directed(state, Direction::Outgoing) {
                 let new_from_state = *visited.get(&state).unwrap();
 
-                if let Entry::Vacant(e) = visited.entry(edge.target()) {
-                    // create a new state and add it to the visited map
-                    let new_to_state = reachable.add_state(self.graph[edge.target()].clone());
-                    e.insert(new_to_state);
-                    stack.push(edge.target());
+                match visited.entry(edge.target()) {
+                    Entry::Occupied(e) => {
+                        reachable.add_transition(new_from_state, *e.get(), edge.weight().clone());
+                    }
+                    Entry::Vacant(e) => {
+                        let new_to_state = reachable.add_state(self.graph[edge.target()].clone());
+                        e.insert(new_to_state);
+                        stack.push(edge.target());
 
-                    reachable.add_transition(new_from_state, new_to_state, edge.weight().clone());
-                } else {
-                    let new_to_state = *visited.get(&edge.target()).unwrap();
-                    reachable.add_transition(new_from_state, new_to_state, edge.weight().clone());
+                        reachable.add_transition(
+                            new_from_state,
+                            new_to_state,
+                            edge.weight().clone(),
+                        );
+                    }
                 }
             }
         }
+
+        // assert_same_language(self, &reachable, 8);
 
         // second we need to merge equivalent states
 
@@ -210,7 +239,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     }
 
     /// Builds an intersection DFA from two DFAs. Both DFAs must have the same alphabet, a start state, and they must be complete.
-    pub fn intersect<NO: AutNode>(&self, other: &DFA<NO, E>) -> DFA<(N, NO), E> {
+    pub fn intersect<NO: AutNode>(&self, other: &DFA<NO, E>) -> DFA<N, E> {
         assert!(self.start.is_some(), "Self must have a start state");
         assert!(other.start.is_some(), "Other must have a start state");
 
@@ -241,7 +270,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         let mut intersected = DFA::new(self.alphabet.clone());
 
         let start_state =
-            intersected.add_state(self.graph[self_start].and(&other.graph[other_start]));
+            intersected.add_state(self.graph[self_start].join_left(&other.graph[other_start]));
         intersected.set_start(start_state);
 
         state_map.insert((self_start, other_start), intersected.start.unwrap());
@@ -256,7 +285,8 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
                             .entry((edge1.target(), edge2.target()))
                             .or_insert_with(|| {
                                 let new_state = intersected.add_state(
-                                    self.graph[edge1.target()].and(&other.graph[edge2.target()]),
+                                    self.graph[edge1.target()]
+                                        .join_left(&other.graph[edge2.target()]),
                                 );
                                 stack.push((edge1.target(), edge2.target()));
                                 new_state
@@ -267,6 +297,8 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
                 }
             }
         }
+
+        intersected.override_complete();
 
         intersected
     }
@@ -280,7 +312,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         queue.push_back(Path::new(self.start.unwrap()));
 
         while let Some(path) = queue.pop_front() {
-            let last = path.end;
+            let last = path.end.unwrap();
 
             if is_target(last, &self.graph[last]) {
                 paths.push(path.clone());
@@ -458,6 +490,55 @@ impl<N: AutNode, E: AutEdge> Debug for DFA<N, E> {
     }
 }
 
+pub trait VASSCFG {
+    fn modulo_reach(&self, dimension: usize, mu: i32) -> Vec<Path>;
+}
+
+impl<N: AutNode> VASSCFG for DFA<N, i32> {
+    fn modulo_reach(&self, dimension: usize, mu: i32) -> Vec<Path> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut paths = Vec::new();
+
+        assert!(self.start.is_some(), "Self must have a start state");
+        queue.push_back((Path::new(self.start.unwrap()), vec![0; dimension]));
+
+        while let Some((path, valuation)) = queue.pop_front() {
+            // dbg!(&queue.len(), mu, &valuation);
+
+            let last = path.end.unwrap();
+
+            if self.graph[last].accepting && valuation.iter().all(|&x| x == 0) {
+                paths.push(path.clone());
+                continue;
+            }
+
+            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+                let mut new_valuation: Vec<i32> = valuation.clone();
+
+                let update = edge.weight();
+                if *update > 0 {
+                    new_valuation[(update - 1) as usize] += 1;
+                    new_valuation[(update - 1) as usize] =
+                        new_valuation[(update - 1) as usize].rem_euclid(mu);
+                } else {
+                    new_valuation[(-update - 1) as usize] -= 1;
+                    new_valuation[(-update - 1) as usize] =
+                        new_valuation[(-update - 1) as usize].rem_euclid(mu);
+                }
+
+                if visited.insert((edge.target(), new_valuation.clone())) {
+                    let mut new_path = path.clone();
+                    new_path.add_edge(edge.id(), edge.target());
+                    queue.push_back((new_path, new_valuation.clone()));
+                }
+            }
+        }
+
+        paths
+    }
+}
+
 /// Represents the table used in the minimization of a DFA.
 /// The table is a vector of entries, where each entry is a state in the DFA.
 /// Each entry contains the state, whether it is an initial state, whether it is a final state, and the transitions to other states.
@@ -610,7 +691,7 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
                         continue;
                     }
 
-                    for l in 1..self.graph.alphabet.len() {
+                    for l in 0..self.graph.alphabet.len() {
                         let mut i_target = i_data.transitions[l].index();
                         let mut j_target = j_data.transitions[l].index();
 

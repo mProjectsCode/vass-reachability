@@ -51,12 +51,10 @@ pub fn assert_same_language<E: AutEdge>(
                     panic!("{:?} is accepted by b but not by a", word);
                 }
                 _ => {}
-                
             }
 
             if a.accepts(&word) != b.accepts(&word) {
                 println!("{:?}", word);
-                
             }
         }
     }
