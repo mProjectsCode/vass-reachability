@@ -14,6 +14,10 @@ pub fn mut_add_vec(a: &mut [i32], b: &[i32]) {
     }
 }
 
+pub fn mod_vec(a: &[i32], mu: i32) -> Vec<i32> {
+    a.iter().map(|x| x.rem_euclid(mu)).collect()
+}
+
 pub fn dyck_transitions_to_ltc_transition(
     transitions: &[i32],
     dimension: usize,

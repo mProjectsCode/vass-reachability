@@ -207,12 +207,13 @@ impl Path {
         (ltc, dfa)
     }
 
-    pub fn is_n_zero_reaching(
+    pub fn is_n_reaching(
         &self,
-        dimension: usize,
+        initial_valuation: &[i32],
+        final_valuation: &[i32],
         get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32,
-    ) -> ZeroReaching {
-        let mut counters = vec![0; dimension];
+    ) -> PathNReaching {
+        let mut counters = initial_valuation.to_vec();
 
         for (i, edge) in self.edges.iter().enumerate() {
             let weight = get_edge_weight(*edge);
@@ -224,13 +225,13 @@ impl Path {
             }
 
             if counters.iter().any(|&x| x < 0) {
-                return ZeroReaching::FallsBelowZero(i);
+                return PathNReaching::Negative(i);
             }
         }
 
-        match counters.iter().all(|&x| x == 0) {
-            true => ZeroReaching::ReachesZero,
-            false => ZeroReaching::DoesNotReachZero,
+        match counters == final_valuation {
+            true => PathNReaching::True,
+            false => PathNReaching::False,
         }
     }
 
@@ -249,8 +250,8 @@ enum LTCTranslation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ZeroReaching {
-    FallsBelowZero(usize),
-    DoesNotReachZero,
-    ReachesZero,
+pub enum PathNReaching {
+    Negative(usize),
+    False,
+    True,
 }

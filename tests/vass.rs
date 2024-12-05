@@ -1,6 +1,10 @@
 use std::vec;
 
-use vass_reachability::automaton::{vass::VASS, AutBuild, Automaton};
+use vass_reachability::automaton::{
+    petri_net::{self, InitializedPetriNet, PetriNet},
+    vass::VASS,
+    AutBuild, Automaton,
+};
 
 #[test]
 fn test_vass() {
@@ -117,4 +121,39 @@ fn test_vass_reach_4() {
     let initialized_vass = vass.init(vec![0, 0, 0, 0, 0], vec![0, 0, 0, 0, 0], q0, q2);
 
     assert!(!initialized_vass.reach_1());
+}
+
+#[test]
+fn test_vass_reach_5() {
+    // same as test 4, but we build it from a petri net.
+
+    let mut petri_net = PetriNet::new(5);
+
+    petri_net.add_transition(vec![(1, 1), (1, 5)], vec![(1, 2)]);
+    petri_net.add_transition(vec![(1, 3), (1, 5)], vec![(1, 4)]);
+    petri_net.add_transition(vec![(1, 2)], vec![(1, 1), (1, 5)]);
+    petri_net.add_transition(vec![(1, 4)], vec![(1, 3), (1, 5)]);
+
+    let initialized_petri_net = petri_net.init(vec![1, 0, 1, 0, 0], vec![0, 1, 0, 1, 0]);
+
+    let initialized_vass = initialized_petri_net.to_vass();
+
+    assert!(!initialized_vass.reach_1());
+}
+
+#[test]
+fn test_vass_reach_6() {
+    let mut petri_net = PetriNet::new(4);
+
+    petri_net.add_transition(vec![(1, 1)], vec![(1, 2)]);
+    petri_net.add_transition(vec![(1, 3)], vec![(1, 2)]);
+    petri_net.add_transition(vec![(1, 2)], vec![(1, 3), (1, 4)]);
+
+    let initialized_petri_net = petri_net.init(vec![1, 0, 0, 0], vec![0, 1, 0, 3]);
+
+    let initialized_vass = initialized_petri_net.to_vass();
+
+    // dbg!(&initialized_vass);
+
+    assert!(initialized_vass.reach_1());
 }

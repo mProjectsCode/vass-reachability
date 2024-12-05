@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
 use primes::{PrimeSet, Sieve};
 
-use crate::automaton::{dfa::VASSCFG, path::ZeroReaching};
+use crate::automaton::{dfa::VASSCFG, path::PathNReaching};
 
 use super::{
     dfa::{DfaNodeData, DFA},
@@ -19,33 +19,33 @@ pub type VassEdge<E> = (E, Vec<i32>);
 pub struct VASS<N: AutNode, E: AutEdge> {
     graph: StableDiGraph<N, VassEdge<E>>,
     alphabet: Vec<E>,
-    counter_count: usize,
+    dimension: usize,
 }
 
 impl<N: AutNode, E: AutEdge> VASS<N, E> {
-    pub fn new(counter_count: usize, alphabet: Vec<E>) -> Self {
+    pub fn new(dimension: usize, alphabet: Vec<E>) -> Self {
         let graph = StableDiGraph::new();
         VASS {
             alphabet,
             graph,
-            counter_count,
+            dimension,
         }
     }
 
     pub fn init(
-        &self,
+        self,
         initial_valuation: Vec<i32>,
         final_valuation: Vec<i32>,
         initial_node: NodeIndex<u32>,
         final_node: NodeIndex<u32>,
     ) -> InitializedVASS<N, E> {
         assert!(
-            initial_valuation.len() == self.counter_count,
-            "Initial valuation has to have the same length as the counter count"
+            initial_valuation.len() == self.dimension,
+            "Initial valuation has to have the same length as the dimension"
         );
         assert!(
-            final_valuation.len() == self.counter_count,
-            "Final valuation has to have the same length as the counter count"
+            final_valuation.len() == self.dimension,
+            "Final valuation has to have the same length as the dimension"
         );
 
         InitializedVASS {
@@ -65,8 +65,8 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, N, VassEdge<E>> for VASS<N, E> 
 
     fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: VassEdge<E>) {
         assert!(
-            label.1.len() == self.counter_count,
-            "Update has to have the same length as the counter count"
+            label.1.len() == self.dimension,
+            "Update has to have the same length as the dimension"
         );
 
         let existing_edge = self
@@ -103,17 +103,17 @@ pub fn marking_to_vec(marking: &[i32]) -> Vec<i32> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InitializedVASS<'a, N: AutNode, E: AutEdge> {
-    vass: &'a VASS<N, E>,
+pub struct InitializedVASS<N: AutNode, E: AutEdge> {
+    vass: VASS<N, E>,
     initial_valuation: Vec<i32>,
     final_valuation: Vec<i32>,
     initial_node: NodeIndex<u32>,
     final_node: NodeIndex<u32>,
 }
 
-impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
+impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
     pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, i32> {
-        let mut cfg = NFA::new(dimension_to_cfg_alphabet(self.vass.counter_count));
+        let mut cfg = NFA::new(dimension_to_cfg_alphabet(self.vass.dimension));
 
         let cfg_start = cfg.add_state(self.state_to_cfg_state(self.initial_node));
         cfg.set_start(cfg_start);
@@ -172,7 +172,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
     }
 
     pub fn reach_1(&self) -> bool {
-        let dimension = self.vass.counter_count;
+        let dimension = self.vass.dimension;
 
         let time = std::time::Instant::now();
 
@@ -229,17 +229,24 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
                 cfg.graph.edge_count()
             );
 
-            let reach_paths = cfg.modulo_reach(dimension, mu as i32);
+            let reach_path =
+                cfg.modulo_reach(mu as i32, &self.initial_valuation, &self.final_valuation);
 
-            if reach_paths.is_empty() {
+            println!("BFS time: {:?}", step_time.elapsed());
+
+            if reach_path.is_none() {
+                println!("No paths found");
                 result = false;
                 break;
             }
 
-            let path = &reach_paths[0];
-            let zero_reaching = path.is_n_zero_reaching(dimension, |x| *cfg.edge_weight(x));
+            let path = reach_path.unwrap();
+            let reaching =
+                path.is_n_reaching(&self.initial_valuation, &self.final_valuation, |x| {
+                    *cfg.edge_weight(x)
+                });
 
-            if zero_reaching == ZeroReaching::ReachesZero {
+            if reaching == PathNReaching::True {
                 println!(
                     "Zero reaching: {:?}",
                     path.simple_print(|x| *cfg.edge_weight(x))
@@ -255,7 +262,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
                 if path.has_loop() {
                     let (ltc, dfa) = path.to_ltc(dimension, |x| *cfg.edge_weight(x));
 
-                    if ltc.reach_n() {
+                    if ltc.reach_n(&self.initial_valuation, &self.final_valuation) {
                         println!("LTC is reachable in N");
 
                         result = true;
@@ -269,16 +276,14 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
                         cfg = cfg.intersect(&dfa);
                         cfg = cfg.minimize();
                     }
-                } else if let ZeroReaching::FallsBelowZero(index) = zero_reaching {
+                } else if let PathNReaching::Negative(index) = reaching {
                     let sliced_path = path.slice(index);
                     println!("Does not stay positive at index {:?}", index);
-                    // dbg!(&sliced_path);
+
                     let dfa = sliced_path.simple_to_dfa(true, dimension, |x| *cfg.edge_weight(x));
-                    // dbg!(&dfa);
+
                     cfg = cfg.intersect(&dfa);
-                    // dbg!(&cfg);
                     cfg = cfg.minimize();
-                    // dbg!(&cfg);
                 } else {
                     mu = piter.next().unwrap();
                 }
@@ -299,7 +304,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<'_, N, E> {
     }
 }
 
-impl<N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<'_, N, E> {
+impl<N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_state = Some(self.initial_node);
         let mut current_valuation = self.initial_valuation.clone();

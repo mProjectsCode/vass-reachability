@@ -11,6 +11,8 @@ use petgraph::{
     Direction,
 };
 
+use crate::automaton::utils::mod_vec;
+
 use super::{path::Path, AutBuild, AutEdge, AutNode, Automaton};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -491,51 +493,74 @@ impl<N: AutNode, E: AutEdge> Debug for DFA<N, E> {
 }
 
 pub trait VASSCFG {
-    fn modulo_reach(&self, dimension: usize, mu: i32) -> Vec<Path>;
+    fn modulo_reach(
+        &self,
+        mu: i32,
+        initial_valuation: &[i32],
+        final_valuation: &[i32],
+    ) -> Option<Path>;
 }
 
 impl<N: AutNode> VASSCFG for DFA<N, i32> {
-    fn modulo_reach(&self, dimension: usize, mu: i32) -> Vec<Path> {
-        let mut visited = std::collections::HashSet::new();
+    fn modulo_reach(
+        &self,
+        mu: i32,
+        initial_valuation: &[i32],
+        final_valuation: &[i32],
+    ) -> Option<Path> {
+        // let mut visited = std::collections::HashSet::new();
+        let mut visited = vec![std::collections::HashSet::new(); self.state_count()];
         let mut queue = std::collections::VecDeque::new();
-        let mut paths = Vec::new();
+        let max_valuation = mu - 1;
+        let mod_initial_valuation = mod_vec(initial_valuation, mu);
+        let mod_final_valuation = mod_vec(final_valuation, mu);
 
         assert!(self.start.is_some(), "Self must have a start state");
-        queue.push_back((Path::new(self.start.unwrap()), vec![0; dimension]));
+        queue.push_back((Path::new(self.start.unwrap()), mod_initial_valuation));
 
         while let Some((path, valuation)) = queue.pop_front() {
-            // dbg!(&queue.len(), mu, &valuation);
-
             let last = path.end.unwrap();
-
-            if self.graph[last].accepting && valuation.iter().all(|&x| x == 0) {
-                paths.push(path.clone());
-                continue;
-            }
 
             for edge in self.graph.edges_directed(last, Direction::Outgoing) {
                 let mut new_valuation: Vec<i32> = valuation.clone();
 
                 let update = edge.weight();
                 if *update > 0 {
-                    new_valuation[(update - 1) as usize] += 1;
-                    new_valuation[(update - 1) as usize] =
-                        new_valuation[(update - 1) as usize].rem_euclid(mu);
+                    let index = (update - 1) as usize;
+                    // new_valuation[index] = (new_valuation[index] + 1).rem_euclid(mu);
+                    if new_valuation[index] == max_valuation {
+                        new_valuation[index] = 0;
+                    } else {
+                        new_valuation[index] += 1;
+                    }
                 } else {
-                    new_valuation[(-update - 1) as usize] -= 1;
-                    new_valuation[(-update - 1) as usize] =
-                        new_valuation[(-update - 1) as usize].rem_euclid(mu);
+                    let index = (-update - 1) as usize;
+                    // new_valuation[index] = (new_valuation[index] - 1).rem_euclid(mu);
+                    if new_valuation[index] == 0 {
+                        new_valuation[index] = max_valuation;
+                    } else {
+                        new_valuation[index] -= 1;
+                    }
                 }
 
-                if visited.insert((edge.target(), new_valuation.clone())) {
+                let target = edge.target();
+
+                if visited[target.index()].insert(new_valuation.clone()) {
                     let mut new_path = path.clone();
-                    new_path.add_edge(edge.id(), edge.target());
-                    queue.push_back((new_path, new_valuation.clone()));
+                    new_path.add_edge(edge.id(), target);
+
+                    if self.graph[target].accepting && new_valuation == mod_final_valuation {
+                        // paths.push(new_path);
+                        // Optimization: we only search for the shortest path, so we can stop when we find one
+                        return Some(new_path);
+                    } else {
+                        queue.push_back((new_path, new_valuation));
+                    }
                 }
             }
         }
 
-        paths
+        None
     }
 }
 

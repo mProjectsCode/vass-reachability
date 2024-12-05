@@ -9,8 +9,8 @@ fn ltc_n_reach_1() {
 
     // this one should be reachable in N and Z, and the loop should be taken three times
 
-    assert!(ltc.reach_n());
-    assert!(ltc.reach_z());
+    assert!(ltc.reach_n(&vec![0, 0], &vec![0, 0]));
+    assert!(ltc.reach_z(&vec![0, 0], &vec![0, 0]));
 }
 
 #[test]
@@ -20,8 +20,8 @@ fn ltc_n_reach_2() {
 
     // this one should not be reachable in N, but should be in Z
 
-    assert!(!ltc.reach_n());
-    assert!(ltc.reach_z());
+    assert!(!ltc.reach_n(&vec![0, 0], &vec![0, 0]));
+    assert!(ltc.reach_z(&vec![0, 0], &vec![0, 0]));
 }
 
 #[test]
@@ -33,6 +33,6 @@ fn ltc_n_reach_3() {
 
     // this one should not be reachable in N and Z, as the loop can only produce even numbers on counter two
 
-    assert!(!ltc.reach_n());
-    assert!(!ltc.reach_z());
+    assert!(!ltc.reach_n(&vec![0, 0], &vec![0, 0]));
+    assert!(!ltc.reach_z(&vec![0, 0], &vec![0, 0]));
 }

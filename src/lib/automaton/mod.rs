@@ -6,6 +6,7 @@ pub mod ltc;
 pub mod modulo;
 pub mod nfa;
 pub mod path;
+pub mod petri_net;
 pub mod utils;
 pub mod vass;
 

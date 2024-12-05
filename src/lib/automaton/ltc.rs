@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use z3::{
     ast::{Ast, Int},
     Config, Context, Solver,
@@ -31,9 +32,9 @@ impl LTC {
             "Loop add vector has to have the same dimension as the LTC"
         );
 
-        if let Some(LTCElement::Loop(_)) = self.elements.last() {
-            panic!("Cannot have two loops in a row")
-        }
+        // if let Some(LTCElement::Loop(_)) = self.elements.last() {
+        //     panic!("Cannot have two loops in a row")
+        // }
 
         self.elements
             .push(LTCElement::Loop((loop_subtract, loop_add)));
@@ -56,23 +57,33 @@ impl LTC {
     }
 
     /// Reachability from 0 to 0 in the whole numbers, so intermediate valuations may be negative.
-    pub fn reach_z(&self) -> bool {
-        self.reach(false)
+    pub fn reach_z(&self, initial_valuation: &[i32], final_valuation: &[i32]) -> bool {
+        self.reach(false, initial_valuation, final_valuation)
     }
 
     /// Reachability from 0 to 0 in the natural numbers, so no intermediate valuation may be negative.
-    pub fn reach_n(&self) -> bool {
-        self.reach(true)
+    pub fn reach_n(&self, initial_valuation: &[i32], final_valuation: &[i32]) -> bool {
+        self.reach(true, initial_valuation, final_valuation)
     }
 
-    fn reach(&self, only_n_counters: bool) -> bool {
+    fn reach(
+        &self,
+        only_n_counters: bool,
+        initial_valuation: &[i32],
+        final_valuation: &[i32],
+    ) -> bool {
+        let time = std::time::Instant::now();
+
         let config = Config::new();
         let ctx = Context::new(&config);
         let solver = Solver::new(&ctx);
 
         let zero = Int::from_i64(&ctx, 0);
 
-        let mut formula = vec![Int::from_i64(&ctx, 0); self.dimension];
+        let mut formula = initial_valuation
+            .iter()
+            .map(|&x| Int::from_i64(&ctx, x as i64))
+            .collect_vec();
         // currently unused, for path extraction later
         let mut loop_variables = vec![];
 
@@ -113,15 +124,27 @@ impl LTC {
             }
         }
 
-        for f in formula {
-            solver.assert(&f._eq(&zero));
+        for (f, target) in formula.into_iter().zip(
+            final_valuation
+                .iter()
+                .map(|&x| Int::from_i64(&ctx, x as i64)),
+        ) {
+            solver.assert(&f._eq(&target));
         }
 
-        match solver.check() {
+        println!("Solver setup took: {:?}", time.elapsed());
+
+        let result = match solver.check() {
             z3::SatResult::Sat => true,
             z3::SatResult::Unsat => false,
             z3::SatResult::Unknown => panic!("Solver returned unknown"),
-        }
+        };
+
+        let stats = solver.get_statistics();
+        println!("Solver statistics: {:?}", stats);
+        println!("Solver took: {:?}", time.elapsed());
+
+        result
     }
 }
 
