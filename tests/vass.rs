@@ -1,10 +1,6 @@
 use std::vec;
 
-use vass_reachability::automaton::{
-    petri_net::{self, InitializedPetriNet, PetriNet},
-    vass::VASS,
-    AutBuild, Automaton,
-};
+use vass_reachability::automaton::{petri_net::PetriNet, vass::VASS, AutBuild, Automaton};
 
 #[test]
 fn test_vass() {
@@ -40,7 +36,7 @@ fn test_vass_to_cfg() {
 
     let initialized_vass = vass.init(vec![0, 0], vec![0, 0], q0, q1);
 
-    let cfg = initialized_vass.to_cfg();
+    let _cfg = initialized_vass.to_cfg();
 
     assert!(true);
 

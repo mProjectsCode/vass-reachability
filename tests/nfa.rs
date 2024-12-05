@@ -1,6 +1,6 @@
 use vass_reachability::{
     automaton::{dfa::DfaNodeData, nfa::NFA, AutBuild},
-    validation::same_language::{assert_same_language, same_language},
+    validation::same_language::assert_same_language,
 };
 
 #[test]

@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
 use primes::{PrimeSet, Sieve};
 
-use crate::automaton::{dfa::VASSCFG, path::PathNReaching};
+use crate::{
+    automaton::{dfa::VASSCFG, path::PathNReaching},
+    threading::thread_pool::ThreadPool,
+};
 
 use super::{
     dfa::{DfaNodeData, DFA},
@@ -185,6 +188,8 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
         );
         println!("Dimension: {:?}", dimension);
 
+        let mut thread_pool = ThreadPool::<bool>::new(2);
+
         let mut cfg: DFA<Vec<Option<N>>, i32> = self.to_cfg();
         cfg.add_failure_state(vec![]);
         cfg = cfg.minimize();
@@ -208,7 +213,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
 
         let mut step_time;
 
-        let result;
+        let mut result;
         let mut step_count = 0;
 
         loop {
@@ -222,6 +227,15 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
 
             println!();
             println!("--- Step: {} ---", step_count);
+
+            let finished_jobs = thread_pool.get_finished_jobs();
+            println!("Finished jobs: {:?}", finished_jobs);
+            if finished_jobs.iter().any(|x| *x) {
+                result = true;
+                println!("One of the threads found a solution");
+                break;
+            }
+
             println!("Mu: {}", mu);
             println!(
                 "CFG: {:?} states, {:?} transitions",
@@ -237,6 +251,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
             if reach_path.is_none() {
                 println!("No paths found");
                 result = false;
+
                 break;
             }
 
@@ -262,20 +277,30 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
                 if path.has_loop() {
                     let (ltc, dfa) = path.to_ltc(dimension, |x| *cfg.edge_weight(x));
 
-                    if ltc.reach_n(&self.initial_valuation, &self.final_valuation) {
-                        println!("LTC is reachable in N");
+                    // if ltc.reach_n(&self.initial_valuation, &self.final_valuation) {
+                    //     println!("LTC is reachable in N");
 
-                        result = true;
-                        break;
-                    } else {
-                        println!("LTC is not reachable in N");
+                    //     result = true;
+                    //     break;
+                    // } else {
+                    //     println!("LTC is not reachable in N");
 
-                        // cfg.assert_complete();
-                        // dfa.assert_complete();
+                    //     // cfg.assert_complete();
+                    //     // dfa.assert_complete();
 
-                        cfg = cfg.intersect(&dfa);
-                        cfg = cfg.minimize();
-                    }
+                    //     cfg = cfg.intersect(&dfa);
+                    //     cfg = cfg.minimize();
+                    // }
+
+                    println!("Spawning worker");
+
+                    let initial_v = self.initial_valuation.clone();
+                    let final_v = self.final_valuation.clone();
+
+                    thread_pool.spawn(move || ltc.reach_n(&initial_v, &final_v));
+
+                    cfg = cfg.intersect(&dfa);
+                    cfg = cfg.minimize();
                 } else if let PathNReaching::Negative(index) = reaching {
                     let sliced_path = path.slice(index);
                     println!("Does not stay positive at index {:?}", index);
@@ -290,6 +315,31 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
             }
 
             println!("Time for step: {:?}", step_time.elapsed());
+        }
+
+        println!();
+        println!("Stopping Workers");
+
+        if result {
+            thread_pool.join(false);
+
+            let finished_jobs = thread_pool.get_finished_jobs();
+            println!("Finished jobs: {:?}", finished_jobs);
+            println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
+        } else {
+            thread_pool.join(true);
+
+            let finished_jobs = thread_pool.get_finished_jobs();
+            println!("Finished jobs: {:?}", finished_jobs);
+            println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
+
+            for r in thread_pool.get_finished_jobs() {
+                if r {
+                    println!("One of the threads found a solution");
+                    result = true;
+                    break;
+                }
+            }
         }
 
         println!();
