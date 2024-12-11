@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
-use primes::{PrimeSet, Sieve};
 
 use crate::{
     automaton::{
@@ -206,22 +205,16 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
         println!("Time to convert to CFG: {:?}", time.elapsed());
         println!("-----");
 
-        // println!("Minimized CFG with {} states", min_cfg.state_count());
-
-        let mut pset = Sieve::new();
-        let mut piter = pset.iter();
-        let mut mu = piter.next().unwrap();
-
-        let mut step_time;
-
+        let mut mu = 2;
         let mut result;
+        let mut step_time;
         let mut step_count = 0;
 
         loop {
             step_count += 1;
 
-            if mu > 100 {
-                panic!("No solution with mu < 100 found");
+            if mu > 200 {
+                panic!("No solution with mu < 200 found");
             }
 
             step_time = std::time::Instant::now();
@@ -251,8 +244,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
 
             let reach_time = std::time::Instant::now();
 
-            let reach_path =
-                cfg.modulo_reach(mu as i32, &self.initial_valuation, &self.final_valuation);
+            let reach_path = cfg.modulo_reach(mu, &self.initial_valuation, &self.final_valuation);
 
             println!("BFS time: {:?}", reach_time.elapsed());
 
@@ -264,22 +256,20 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
             }
 
             let path = reach_path.unwrap();
-            let reaching =
+            let (reaching, counters) =
                 path.is_n_reaching(&self.initial_valuation, &self.final_valuation, |x| {
                     *cfg.edge_weight(x)
                 });
 
             if reaching == PathNReaching::True {
-                println!(
-                    "Zero reaching: {:?}",
-                    path.simple_print(|x| *cfg.edge_weight(x))
-                );
+                println!("Reaching: {:?}", path.simple_print(|x| *cfg.edge_weight(x)));
                 result = true;
                 break;
             } else {
                 println!(
-                    "Not zero reaching: {:?}",
-                    path.simple_print(|x| *cfg.edge_weight(x))
+                    "Not reaching: {:?} = {:?}",
+                    path.simple_print(|x| *cfg.edge_weight(x)),
+                    counters
                 );
 
                 if path.has_loop() {
@@ -309,7 +299,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
                 } else {
                     println!("Path only modulo reaching, increasing mu");
 
-                    mu = piter.next().unwrap();
+                    mu += 1;
                 }
             }
 

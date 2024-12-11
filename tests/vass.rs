@@ -1,6 +1,11 @@
 use std::vec;
 
-use vass_reachability::automaton::{petri_net::PetriNet, vass::VASS, AutBuild, Automaton};
+use rand::{rngs::StdRng, Rng, SeedableRng};
+use vass_reachability::automaton::{
+    petri_net::PetriNet,
+    vass::VASS,
+    AutBuild, Automaton,
+};
 
 #[test]
 fn test_vass() {
@@ -152,4 +157,68 @@ fn test_vass_reach_6() {
     // dbg!(&initialized_vass);
 
     assert!(initialized_vass.reach_1());
+}
+
+#[test]
+fn test_vass_reach_7() {
+    let mut petri_net = PetriNet::new(3);
+
+    petri_net.add_transition(vec![], vec![(2, 1)]);
+    petri_net.add_transition(vec![(1, 1), (1, 2)], vec![(2, 2), (2, 3)]);
+    petri_net.add_transition(vec![(2, 3)], vec![(2, 1), (1, 2)]);
+
+    let initialized_petri_net = petri_net.init(vec![1, 0, 2], vec![1, 2, 2]);
+
+    let initialized_vass = initialized_petri_net.to_vass();
+
+    assert!(!initialized_vass.reach_1());
+}
+
+// #[test]
+fn test_vass_reach_random() {
+    let mut r = StdRng::seed_from_u64(1);
+    let place_count = 3;
+    let transition_count = 3;
+    let max_tokens_per_transition = 3;
+
+    let mut results = vec![];
+
+    for _i in 0..10 {
+        let mut petri_net = PetriNet::new(place_count);
+
+        for _ in 0..transition_count {
+            let mut input = vec![];
+            let mut output = vec![];
+
+            for p in 1..=place_count {
+                input.push((r.gen_range(0..max_tokens_per_transition), p));
+                output.push((r.gen_range(0..max_tokens_per_transition), p));
+            }
+
+            petri_net.add_transition(input, output);
+        }
+
+        let mut initial_m = vec![];
+        let mut final_m = vec![];
+
+        for _ in 0..place_count {
+            initial_m.push(r.gen_range(0..max_tokens_per_transition));
+            final_m.push(r.gen_range(0..max_tokens_per_transition));
+        }
+
+        let initialized_petri_net = petri_net.init(initial_m.clone(), final_m.clone());
+
+        // if _i == 4 {
+        //     dbg!(&initialized_petri_net);
+        //     break;
+        // }
+
+        let time = std::time::Instant::now();
+
+        let initialized_vass = initialized_petri_net.to_vass();
+
+        results.push((initialized_vass.reach_1(), time.elapsed()));
+    }
+
+    println!("{:?}", results);
 }

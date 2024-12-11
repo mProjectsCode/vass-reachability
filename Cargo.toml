@@ -19,6 +19,7 @@ ndarray = "0.15.6"
 petgraph = "0.6.5"
 primes = "0.4.0"
 z3 = "0.12.1"
+rand = "0.8.5"
 
 
 [profile.release]

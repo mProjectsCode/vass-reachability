@@ -234,7 +234,14 @@ impl LTCTranslation {
         }
 
         if !stack.is_empty() {
-            ltc_translation.push(LTCTranslationElement::path_from_transitions(stack));
+            if let Some(LTCTranslationElement::Loop(l)) = ltc_translation.last() {
+                let edges = stack.iter().map(|(edge, _)| *edge).collect_vec();
+                if edges != *l {
+                    ltc_translation.push(LTCTranslationElement::Path(edges));
+                }
+            } else {
+                ltc_translation.push(LTCTranslationElement::path_from_transitions(stack));
+            }
         }
 
         LTCTranslation {
@@ -272,6 +279,10 @@ impl LTCTranslation {
                     let mut current = loop_start;
                     nfa.add_transition(current_end, current, None);
 
+                    // This is the code that would be needed when we deal with double loops in LTCs
+                    // let loop_start = current_end;
+                    // let mut current = current_end;
+
                     for edge in edges.iter().take(edges.len() - 1) {
                         let new = nfa.add_state(DfaNodeData::new(false, ()));
                         nfa.add_transition(current, new, Some(get_edge_weight(*edge)));
@@ -281,9 +292,7 @@ impl LTCTranslation {
                     let last_edge = edges.last().unwrap();
                     nfa.add_transition(current, loop_start, Some(get_edge_weight(*last_edge)));
 
-                    current = loop_start;
-
-                    current_end = current;
+                    current_end = loop_start;
                 }
             }
         }

@@ -94,7 +94,7 @@ impl Path {
         initial_valuation: &[i32],
         final_valuation: &[i32],
         get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32,
-    ) -> PathNReaching {
+    ) -> (PathNReaching, Vec<i32>) {
         let mut counters = initial_valuation.to_vec();
 
         for (i, edge) in self.transitions.iter().enumerate() {
@@ -107,14 +107,17 @@ impl Path {
             }
 
             if counters.iter().any(|&x| x < 0) {
-                return PathNReaching::Negative(i);
+                return (PathNReaching::Negative(i), counters);
             }
         }
 
-        match counters == final_valuation {
-            true => PathNReaching::True,
-            false => PathNReaching::False,
-        }
+        (
+            match counters == final_valuation {
+                true => PathNReaching::True,
+                false => PathNReaching::False,
+            },
+            counters,
+        )
     }
 
     pub fn simple_print(&self, get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32) -> String {
@@ -123,12 +126,7 @@ impl Path {
             self.start.index(),
             self.transitions
                 .iter()
-                .map(|x| format!(
-                    "--({:?}, {:?})-> {:?}",
-                    x.0.index(),
-                    get_edge_weight(x.0),
-                    x.1.index()
-                ))
+                .map(|x| format!("--({:?})-> {:?}", get_edge_weight(x.0), x.1.index()))
                 .join(" ")
         )
     }
