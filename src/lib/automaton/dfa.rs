@@ -495,7 +495,7 @@ impl<N: AutNode, E: AutEdge> Debug for DFA<N, E> {
 pub trait VASSCFG {
     fn modulo_reach(
         &self,
-        mu: i32,
+        mu: u32,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> Option<Path>;
@@ -504,14 +504,14 @@ pub trait VASSCFG {
 impl<N: AutNode> VASSCFG for DFA<N, i32> {
     fn modulo_reach(
         &self,
-        mu: i32,
+        mu: u32,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> Option<Path> {
         // let mut visited = std::collections::HashSet::new();
         let mut visited = vec![std::collections::HashSet::new(); self.state_count()];
         let mut queue = std::collections::VecDeque::new();
-        let max_valuation = mu - 1;
+        let max_valuation = (mu as i32) - 1;
         let mod_initial_valuation = mod_vec(initial_valuation, mu);
         let mod_final_valuation = mod_vec(final_valuation, mu);
 

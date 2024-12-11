@@ -2,15 +2,6 @@ use std::collections::HashMap;
 
 use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
 
-use crate::{
-    automaton::{
-        dfa::VASSCFG,
-        ltc::{LTCSolverResult, LTCTranslation},
-        path::PathNReaching,
-    },
-    threading::thread_pool::ThreadPool,
-};
-
 use super::{
     dfa::{DfaNodeData, DFA},
     nfa::NFA,
@@ -62,6 +53,14 @@ impl<N: AutNode, E: AutEdge> VASS<N, E> {
             final_node,
         }
     }
+
+    pub fn state_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    pub fn transition_count(&self) -> usize {
+        self.graph.edge_count()
+    }
 }
 
 impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, N, VassEdge<E>> for VASS<N, E> {
@@ -110,11 +109,11 @@ pub fn marking_to_vec(marking: &[i32]) -> Vec<i32> {
 
 #[derive(Debug, Clone)]
 pub struct InitializedVASS<N: AutNode, E: AutEdge> {
-    vass: VASS<N, E>,
-    initial_valuation: Vec<i32>,
-    final_valuation: Vec<i32>,
-    initial_node: NodeIndex<u32>,
-    final_node: NodeIndex<u32>,
+    pub vass: VASS<N, E>,
+    pub initial_valuation: Vec<i32>,
+    pub final_valuation: Vec<i32>,
+    pub initial_node: NodeIndex<u32>,
+    pub final_node: NodeIndex<u32>,
 }
 
 impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
@@ -169,177 +168,20 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
     fn state_to_cfg_state(&self, state: NodeIndex<u32>) -> DfaNodeData<Option<N>> {
         DfaNodeData::new(
             state == self.final_node,
-            Some(self.node_data(state).clone()),
+            Some(self.vass.graph[state].clone()),
         )
     }
 
-    pub fn node_data(&self, node: NodeIndex<u32>) -> &N {
-        &self.vass.graph[node]
+    pub fn state_count(&self) -> usize {
+        self.vass.state_count()
     }
 
-    pub fn reach_1(&self) -> bool {
-        let dimension = self.vass.dimension;
+    pub fn transition_count(&self) -> usize {
+        self.vass.transition_count()
+    }
 
-        let time = std::time::Instant::now();
-
-        println!();
-        println!("--- VASS N-Reach ---");
-        println!(
-            "VASS: {:?} states, {:?} transitions",
-            self.vass.graph.node_count(),
-            self.vass.graph.edge_count()
-        );
-        println!("Dimension: {:?}", dimension);
-
-        let mut thread_pool = ThreadPool::<LTCSolverResult>::new(8);
-
-        let mut cfg: DFA<Vec<Option<N>>, i32> = self.to_cfg();
-        cfg.add_failure_state(vec![]);
-        cfg = cfg.minimize();
-
-        println!(
-            "CFG: {:?} states, {:?} transitions",
-            cfg.state_count(),
-            cfg.graph.edge_count()
-        );
-        println!("Time to convert to CFG: {:?}", time.elapsed());
-        println!("-----");
-
-        let mut mu = 2;
-        let mut result;
-        let mut step_time;
-        let mut step_count = 0;
-
-        loop {
-            step_count += 1;
-
-            if mu > 200 {
-                panic!("No solution with mu < 200 found");
-            }
-
-            step_time = std::time::Instant::now();
-
-            println!();
-            println!("--- Step: {} ---", step_count);
-
-            thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
-
-            let finished_jobs = thread_pool.get_finished_jobs();
-            println!("Finished jobs: {:?}", finished_jobs);
-            if finished_jobs.iter().any(|x| x.result) {
-                println!("One of the threads found a solution");
-
-                result = true;
-                break;
-            }
-
-            println!("Thread pool handling time: {:?}", step_time.elapsed());
-
-            println!("Mu: {}", mu);
-            println!(
-                "CFG: {:?} states, {:?} transitions",
-                cfg.state_count(),
-                cfg.graph.edge_count()
-            );
-
-            let reach_time = std::time::Instant::now();
-
-            let reach_path = cfg.modulo_reach(mu, &self.initial_valuation, &self.final_valuation);
-
-            println!("BFS time: {:?}", reach_time.elapsed());
-
-            if reach_path.is_none() {
-                println!("No paths found");
-
-                result = false;
-                break;
-            }
-
-            let path = reach_path.unwrap();
-            let (reaching, counters) =
-                path.is_n_reaching(&self.initial_valuation, &self.final_valuation, |x| {
-                    *cfg.edge_weight(x)
-                });
-
-            if reaching == PathNReaching::True {
-                println!("Reaching: {:?}", path.simple_print(|x| *cfg.edge_weight(x)));
-                result = true;
-                break;
-            } else {
-                println!(
-                    "Not reaching: {:?} = {:?}",
-                    path.simple_print(|x| *cfg.edge_weight(x)),
-                    counters
-                );
-
-                if path.has_loop() {
-                    println!("Path has loop, checking LTC");
-
-                    let ltc_translation = LTCTranslation::from_path(&path);
-                    let ltc = ltc_translation.to_ltc(dimension, |x| *cfg.edge_weight(x));
-
-                    let initial_v = self.initial_valuation.clone();
-                    let final_v = self.final_valuation.clone();
-
-                    thread_pool.schedule(move || ltc.reach_n(&initial_v, &final_v));
-
-                    let dfa = ltc_translation.to_dfa(dimension, |x| *cfg.edge_weight(x));
-
-                    cfg = cfg.intersect(&dfa);
-                    cfg = cfg.minimize();
-                } else if let PathNReaching::Negative(index) = reaching {
-                    println!("Does not stay positive at index {:?}", index);
-
-                    let sliced_path = path.slice(index);
-
-                    let dfa = sliced_path.simple_to_dfa(true, dimension, |x| *cfg.edge_weight(x));
-
-                    cfg = cfg.intersect(&dfa);
-                    cfg = cfg.minimize();
-                } else {
-                    println!("Path only modulo reaching, increasing mu");
-
-                    mu += 1;
-                }
-            }
-
-            println!("Time for step: {:?}", step_time.elapsed());
-        }
-
-        println!();
-        println!("Stopping Workers");
-
-        if result {
-            thread_pool.join(false);
-
-            let finished_jobs = thread_pool.get_finished_jobs();
-            println!("Finished jobs: {:?}", finished_jobs);
-            println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
-        } else {
-            thread_pool.join(true);
-
-            let finished_jobs = thread_pool.get_finished_jobs();
-            println!("Finished jobs: {:?}", finished_jobs);
-            println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
-
-            for solver_result in thread_pool.get_finished_jobs() {
-                if solver_result.result {
-                    println!("One of the threads found a solution");
-                    result = true;
-                    break;
-                }
-            }
-        }
-
-        println!();
-        println!("--- Results ---");
-        println!("Result: {}", result);
-        println!("Step count: {}", step_count);
-        println!("Time: {:?}", time.elapsed());
-        println!("-----");
-        println!();
-
-        result
+    pub fn dimension(&self) -> usize {
+        self.vass.dimension
     }
 }
 
