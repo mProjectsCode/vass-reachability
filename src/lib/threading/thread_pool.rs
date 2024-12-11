@@ -18,6 +18,7 @@ pub struct ThreadPool<T: Send + 'static> {
 }
 
 impl<T: Send + 'static> ThreadPool<T> {
+    /// Creates a new thread pool with `size` threads.
     pub fn new(size: usize) -> ThreadPool<T> {
         assert!(size > 0);
 
@@ -47,7 +48,8 @@ impl<T: Send + 'static> ThreadPool<T> {
         }
     }
 
-    pub fn spawn<F>(&self, f: F)
+    /// Schedule a job to be run on the thread pool.
+    pub fn schedule<F>(&self, f: F)
     where
         F: FnOnce() -> T,
         F: Send + 'static,
@@ -60,11 +62,13 @@ impl<T: Send + 'static> ThreadPool<T> {
         }
     }
 
+    /// Gets the results of all finished jobs.
     pub fn get_finished_jobs(&self) -> Vec<T> {
         self.results.lock().unwrap().drain(..).collect()
     }
 
     /// Join the thread pool, waiting for all jobs to finish.
+    /// If `wait_for_scheduled_jobs` is false, the thread pool will cancel scheduled jobs, but will still wait for running jobs to finish.
     /// This is destructive, and the thread pool cannot be used to spawn new jobs after this.
     pub fn join(&mut self, wait_for_scheduled_jobs: bool) {
         if self.joined {
@@ -94,8 +98,35 @@ impl<T: Send + 'static> ThreadPool<T> {
         self.joined
     }
 
+    /// Get the number of active jobs.
     pub fn get_active_jobs(&self) -> usize {
         self.active_jobs.load(Ordering::SeqCst)
+    }
+
+    /// Blocks the calling thread until there are no active jobs.
+    /// Will return immediately if the thread pool has been joined.
+    pub fn block_until_no_active_jobs(&self) {
+        self.block_until_x_active_jobs(0);
+    }
+
+    /// Blocks the calling thread until there are `x` active jobs.
+    /// Will return immediately if the thread pool has been joined.
+    pub fn block_until_x_active_jobs(&self, x: usize) {
+        if self.joined {
+            return;
+        }
+
+        while self.get_active_jobs() > x {
+            thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
+    /// Blocks the calling thread until there are `x` active jobs, but only if there are more than `y` active jobs.
+    /// Will return immediately if the thread pool has been joined.
+    pub fn block_until_x_active_jobs_if_above_y(&self, x: usize, y: usize) {
+        if self.get_active_jobs() > y {
+            self.block_until_x_active_jobs(x);
+        }
     }
 }
 

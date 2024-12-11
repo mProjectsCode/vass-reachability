@@ -314,7 +314,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         queue.push_back(Path::new(self.start.unwrap()));
 
         while let Some(path) = queue.pop_front() {
-            let last = path.end.unwrap();
+            let last = path.end();
 
             if is_target(last, &self.graph[last]) {
                 paths.push(path.clone());
@@ -519,7 +519,7 @@ impl<N: AutNode> VASSCFG for DFA<N, i32> {
         queue.push_back((Path::new(self.start.unwrap()), mod_initial_valuation));
 
         while let Some((path, valuation)) = queue.pop_front() {
-            let last = path.end.unwrap();
+            let last = path.end();
 
             for edge in self.graph.edges_directed(last, Direction::Outgoing) {
                 let mut new_valuation: Vec<i32> = valuation.clone();

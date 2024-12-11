@@ -4,7 +4,11 @@ use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Di
 use primes::{PrimeSet, Sieve};
 
 use crate::{
-    automaton::{dfa::VASSCFG, path::PathNReaching},
+    automaton::{
+        dfa::VASSCFG,
+        ltc::{LTCSolverResult, LTCTranslation},
+        path::PathNReaching,
+    },
     threading::thread_pool::ThreadPool,
 };
 
@@ -188,14 +192,11 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
         );
         println!("Dimension: {:?}", dimension);
 
-        let mut thread_pool = ThreadPool::<bool>::new(2);
+        let mut thread_pool = ThreadPool::<LTCSolverResult>::new(8);
 
         let mut cfg: DFA<Vec<Option<N>>, i32> = self.to_cfg();
         cfg.add_failure_state(vec![]);
         cfg = cfg.minimize();
-        // dbg!(&cfg);
-        // let min_cfg = cfg.minimize();
-        // dbg!(&min_cfg);
 
         println!(
             "CFG: {:?} states, {:?} transitions",
@@ -228,13 +229,18 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
             println!();
             println!("--- Step: {} ---", step_count);
 
+            thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
+
             let finished_jobs = thread_pool.get_finished_jobs();
             println!("Finished jobs: {:?}", finished_jobs);
-            if finished_jobs.iter().any(|x| *x) {
-                result = true;
+            if finished_jobs.iter().any(|x| x.result) {
                 println!("One of the threads found a solution");
+
+                result = true;
                 break;
             }
+
+            println!("Thread pool handling time: {:?}", step_time.elapsed());
 
             println!("Mu: {}", mu);
             println!(
@@ -243,15 +249,17 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
                 cfg.graph.edge_count()
             );
 
+            let reach_time = std::time::Instant::now();
+
             let reach_path =
                 cfg.modulo_reach(mu as i32, &self.initial_valuation, &self.final_valuation);
 
-            println!("BFS time: {:?}", step_time.elapsed());
+            println!("BFS time: {:?}", reach_time.elapsed());
 
             if reach_path.is_none() {
                 println!("No paths found");
-                result = false;
 
+                result = false;
                 break;
             }
 
@@ -275,41 +283,32 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
                 );
 
                 if path.has_loop() {
-                    let (ltc, dfa) = path.to_ltc(dimension, |x| *cfg.edge_weight(x));
+                    println!("Path has loop, checking LTC");
 
-                    // if ltc.reach_n(&self.initial_valuation, &self.final_valuation) {
-                    //     println!("LTC is reachable in N");
-
-                    //     result = true;
-                    //     break;
-                    // } else {
-                    //     println!("LTC is not reachable in N");
-
-                    //     // cfg.assert_complete();
-                    //     // dfa.assert_complete();
-
-                    //     cfg = cfg.intersect(&dfa);
-                    //     cfg = cfg.minimize();
-                    // }
-
-                    println!("Spawning worker");
+                    let ltc_translation = LTCTranslation::from_path(&path);
+                    let ltc = ltc_translation.to_ltc(dimension, |x| *cfg.edge_weight(x));
 
                     let initial_v = self.initial_valuation.clone();
                     let final_v = self.final_valuation.clone();
 
-                    thread_pool.spawn(move || ltc.reach_n(&initial_v, &final_v));
+                    thread_pool.schedule(move || ltc.reach_n(&initial_v, &final_v));
+
+                    let dfa = ltc_translation.to_dfa(dimension, |x| *cfg.edge_weight(x));
 
                     cfg = cfg.intersect(&dfa);
                     cfg = cfg.minimize();
                 } else if let PathNReaching::Negative(index) = reaching {
-                    let sliced_path = path.slice(index);
                     println!("Does not stay positive at index {:?}", index);
+
+                    let sliced_path = path.slice(index);
 
                     let dfa = sliced_path.simple_to_dfa(true, dimension, |x| *cfg.edge_weight(x));
 
                     cfg = cfg.intersect(&dfa);
                     cfg = cfg.minimize();
                 } else {
+                    println!("Path only modulo reaching, increasing mu");
+
                     mu = piter.next().unwrap();
                 }
             }
@@ -333,8 +332,8 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
             println!("Finished jobs: {:?}", finished_jobs);
             println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
 
-            for r in thread_pool.get_finished_jobs() {
-                if r {
+            for solver_result in thread_pool.get_finished_jobs() {
+                if solver_result.result {
                     println!("One of the threads found a solution");
                     result = true;
                     break;
