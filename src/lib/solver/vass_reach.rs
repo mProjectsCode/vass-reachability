@@ -1,241 +1,306 @@
+use std::fmt::Debug;
+
+use petgraph::graph::EdgeIndex;
+
 use crate::{
     automaton::{
         dfa::{DFA, VASSCFG},
         ltc::{LTCSolverResult, LTCTranslation},
-        path::PathNReaching,
+        path::{Path, PathNReaching},
         vass::InitializedVASS,
         AutEdge, AutNode,
     },
+    logger::{LogLevel, Logger},
     threading::thread_pool::ThreadPool,
 };
 
-pub struct VASSReachSolver {
+#[derive(Debug)]
+pub struct VASSReachSolver<N: AutNode, E: AutEdge> {
     options: VASSReachSolverOptions,
+    logger: Logger,
+    ivass: InitializedVASS<N, E>,
+    thread_pool: ThreadPool<LTCSolverResult>,
+    cfg: DFA<Vec<Option<N>>, i32>,
+    mu: u32,
+    step_count: u32,
+    solver_start_time: Option<std::time::Instant>,
 }
 
-impl VASSReachSolver {
-    pub fn new(options: VASSReachSolverOptions) -> Self {
-        VASSReachSolver { options }
-    }
+impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
+    pub fn new(options: VASSReachSolverOptions, ivass: InitializedVASS<N, E>) -> Self {
+        let logger = Logger::new(options.log_level.clone(), "VASS Reach Solver".to_string());
 
-    pub fn solve_n<N: AutNode, E: AutEdge>(
-        &self,
-        ivass: &InitializedVASS<N, E>,
-    ) -> VASSReachSolverStatistics {
-        let dimension = ivass.dimension();
+        let thread_pool = ThreadPool::<LTCSolverResult>::new(options.thread_pool_size);
 
-        let time = std::time::Instant::now();
-
-        let mut thread_pool = ThreadPool::<LTCSolverResult>::new(self.options.thread_pool_size);
-
-        let mut cfg: DFA<Vec<Option<N>>, i32> = ivass.to_cfg();
+        let mut cfg = ivass.to_cfg();
         cfg.add_failure_state(vec![]);
         cfg = cfg.minimize();
 
-        self.print_start_banner(ivass, &cfg);
+        VASSReachSolver {
+            options,
+            logger,
+            ivass,
+            thread_pool,
+            cfg,
+            mu: 2,
+            step_count: 0,
+            solver_start_time: None,
+        }
+    }
 
-        let mut mu = 2;
+    pub fn solve_n(&mut self) -> VASSReachSolverStatistics {
+        let dimension = self.ivass.dimension();
+
+        self.solver_start_time = Some(std::time::Instant::now());
+
+        self.print_start_banner();
+        self.logger.empty();
+
         let mut result;
         let mut step_time;
-        let mut step_count = 0;
 
         loop {
-            step_count += 1;
-
-            if self.max_iterations_reached(step_count) {
-                return VASSReachSolverStatistics::from_error(
-                    VASSReachSolverError::MaxIterationsReached,
-                    step_count,
-                    mu,
-                    time.elapsed(),
-                );
-            }
-
-            if self.max_mu_reached(mu) {
-                return VASSReachSolverStatistics::from_error(
-                    VASSReachSolverError::MaxMuReached,
-                    step_count,
-                    mu,
-                    time.elapsed(),
-                );
-            }
-
+            self.step_count += 1;
             step_time = std::time::Instant::now();
 
-            println!();
-            println!("--- Step: {} ---", step_count);
+            self.logger
+                .object("Step Info")
+                .add_field("step", &self.step_count.to_string())
+                .add_field("mu", &self.mu.to_string())
+                .add_field("cfg.states", &self.cfg.state_count().to_string())
+                .add_field("cfg.transitions", &self.cfg.graph.edge_count().to_string())
+                .log(LogLevel::Info);
 
-            thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
+            if self.max_iterations_reached() {
+                return self.max_iterations_reached_error();
+            }
 
-            let finished_jobs = thread_pool.get_finished_jobs();
-            println!("Finished jobs: {:?}", finished_jobs);
-            if finished_jobs.iter().any(|x| x.result) {
-                println!("One of the threads found a solution");
+            if self.max_mu_reached() {
+                return self.max_mu_reached_error();
+            }
 
+            if self.handle_thread_pool() {
                 result = true;
                 break;
             }
 
-            println!("Thread pool handling time: {:?}", step_time.elapsed());
-
-            println!("Mu: {}", mu);
-            println!(
-                "CFG: {:?} states, {:?} transitions",
-                cfg.state_count(),
-                cfg.graph.edge_count()
-            );
-
-            let reach_time = std::time::Instant::now();
-
-            let reach_path = cfg.modulo_reach(mu, &ivass.initial_valuation, &ivass.final_valuation);
-
-            println!("BFS time: {:?}", reach_time.elapsed());
+            let reach_path = self.run_modulo_bfs();
 
             if reach_path.is_none() {
-                println!("No paths found");
+                self.logger.debug("No path found");
 
                 result = false;
                 break;
             }
 
             let path = reach_path.unwrap();
-            let (reaching, counters) =
-                path.is_n_reaching(&ivass.initial_valuation, &ivass.final_valuation, |x| {
-                    *cfg.edge_weight(x)
-                });
+            let (reaching, counters) = path.is_n_reaching(
+                &self.ivass.initial_valuation,
+                &self.ivass.final_valuation,
+                |x| *self.cfg.edge_weight(x),
+            );
 
             if reaching == PathNReaching::True {
-                println!("Reaching: {:?}", path.simple_print(|x| *cfg.edge_weight(x)));
+                self.logger.debug(&format!(
+                    "Reaching: {:?}",
+                    path.simple_print(|x| self.get_cfg_edge_weight(x))
+                ));
                 result = true;
                 break;
             } else {
-                println!(
-                    "Not reaching: {:?} = {:?}",
-                    path.simple_print(|x| *cfg.edge_weight(x)),
-                    counters
-                );
+                self.logger.debug(&format!(
+                    "Not reaching ({:?}): {:?}",
+                    counters,
+                    path.simple_print(|x| self.get_cfg_edge_weight(x))
+                ));
 
                 if path.has_loop() {
-                    println!("Path has loop, checking LTC");
+                    self.logger.debug("Path has loop, checking LTC");
 
                     let ltc_translation = LTCTranslation::from_path(&path);
-                    let ltc = ltc_translation.to_ltc(dimension, |x| *cfg.edge_weight(x));
+                    let ltc = ltc_translation.to_ltc(dimension, |x| self.get_cfg_edge_weight(x));
 
-                    let initial_v = ivass.initial_valuation.clone();
-                    let final_v = ivass.final_valuation.clone();
+                    let initial_v = self.ivass.initial_valuation.clone();
+                    let final_v = self.ivass.final_valuation.clone();
 
-                    thread_pool.schedule(move || ltc.reach_n(&initial_v, &final_v));
+                    self.thread_pool
+                        .schedule(move || ltc.reach_n(&initial_v, &final_v));
 
-                    let dfa = ltc_translation.to_dfa(dimension, |x| *cfg.edge_weight(x));
+                    let dfa = ltc_translation.to_dfa(dimension, |x| self.get_cfg_edge_weight(x));
 
-                    cfg = cfg.intersect(&dfa);
-                    cfg = cfg.minimize();
+                    self.intersect_cfg(dfa);
                 } else if let PathNReaching::Negative(index) = reaching {
-                    println!("Does not stay positive at index {:?}", index);
+                    self.logger
+                        .debug(&format!("Path does not stay positive at index {:?}", index));
 
                     let sliced_path = path.slice(index);
+                    let dfa =
+                        sliced_path.simple_to_dfa(true, dimension, |x| self.get_cfg_edge_weight(x));
 
-                    let dfa = sliced_path.simple_to_dfa(true, dimension, |x| *cfg.edge_weight(x));
-
-                    cfg = cfg.intersect(&dfa);
-                    cfg = cfg.minimize();
+                    self.intersect_cfg(dfa);
                 } else {
-                    println!("Path only modulo reaching, increasing mu");
+                    self.logger
+                        .debug("Path only modulo reaching, increasing mu");
 
-                    mu += 1;
+                    self.increment_mu();
                 }
             }
 
-            println!("Time for step: {:?}", step_time.elapsed());
+            self.logger
+                .debug(&format!("Step time: {:?}", step_time.elapsed()));
+            self.logger.empty();
         }
 
-        println!();
-        println!("Stopping Workers");
+        self.logger
+            .debug(&format!("Step time: {:?}", step_time.elapsed()));
+        self.logger.empty();
+
+        self.logger.info("Joining thread pool");
 
         if result {
-            thread_pool.join(false);
+            self.thread_pool.join(false);
 
-            let finished_jobs = thread_pool.get_finished_jobs();
-            println!("Finished jobs: {:?}", finished_jobs);
-            println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
+            self.logger.debug(&format!(
+                "Canceled jobs: {:?}",
+                self.thread_pool.get_active_jobs()
+            ));
         } else {
-            thread_pool.join(true);
+            self.logger.debug(&format!(
+                "Waiting on {:?} active jobs",
+                self.thread_pool.get_active_jobs()
+            ));
 
-            let finished_jobs = thread_pool.get_finished_jobs();
-            println!("Finished jobs: {:?}", finished_jobs);
-            println!("Unfinished jobs: {:?}", thread_pool.get_active_jobs());
+            self.thread_pool.join(true);
 
-            for solver_result in thread_pool.get_finished_jobs() {
+            assert_eq!(self.thread_pool.get_active_jobs(), 0);
+
+            for solver_result in self.thread_pool.get_finished_jobs() {
                 if solver_result.result {
-                    println!("One of the threads found a solution");
+                    self.logger.debug("A thread found a solution");
                     result = true;
                     break;
                 }
             }
         }
 
-        let statistics = VASSReachSolverStatistics::new(result, step_count, mu, time.elapsed());
+        self.logger.empty();
+
+        let statistics = VASSReachSolverStatistics::new(
+            result,
+            self.step_count,
+            self.mu,
+            self.get_solver_time().unwrap_or_default(),
+        );
 
         self.print_end_banner(&statistics);
 
         statistics
     }
 
-    fn max_mu_reached(&self, mu: u32) -> bool {
-        self.options.max_mu.map(|x| x <= mu).unwrap_or(false)
+    fn max_mu_reached(&self) -> bool {
+        self.options.max_mu.map(|x| x <= self.mu).unwrap_or(false)
     }
 
-    fn max_iterations_reached(&self, iterations: u32) -> bool {
+    fn max_iterations_reached(&self) -> bool {
         self.options
             .max_iterations
-            .map(|x| x <= iterations)
+            .map(|x| x <= self.step_count)
             .unwrap_or(false)
     }
 
-    fn print_start_banner<N: AutNode, E: AutEdge>(
-        &self,
-        ivass: &InitializedVASS<N, E>,
-        cfg: &DFA<Vec<Option<N>>, i32>,
-    ) {
-        if !self.options.verbose {
-            return;
+    fn max_mu_reached_error(&self) -> VASSReachSolverStatistics {
+        VASSReachSolverStatistics::from_error(
+            VASSReachSolverError::MaxMuReached,
+            self.step_count,
+            self.mu,
+            self.get_solver_time().unwrap_or_default(),
+        )
+    }
+
+    fn max_iterations_reached_error(&self) -> VASSReachSolverStatistics {
+        VASSReachSolverStatistics::from_error(
+            VASSReachSolverError::MaxIterationsReached,
+            self.step_count,
+            self.mu,
+            self.get_solver_time().unwrap_or_default(),
+        )
+    }
+
+    fn get_solver_time(&self) -> Option<std::time::Duration> {
+        self.solver_start_time.map(|x| x.elapsed())
+    }
+
+    fn handle_thread_pool(&self) -> bool {
+        if self.thread_pool.get_active_jobs() >= self.options.thread_pool_size * 4 {
+            self.logger.info(&format!(
+                "Waiting on thread pool to empty. Active jobs: {:?}, Target: {:?}",
+                self.thread_pool.get_active_jobs(),
+                self.options.thread_pool_size
+            ));
+            self.thread_pool
+                .block_until_x_active_jobs(self.options.thread_pool_size);
+        }
+        self.thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
+
+        let finished_jobs = self.thread_pool.get_finished_jobs();
+
+        if finished_jobs.iter().any(|x| x.result) {
+            self.logger.debug("A thread found a solution");
+            return true;
         }
 
-        println!();
-        println!("--- VASS N-Reach Solver ---");
-        println!(
-            "VASS: {:?} states, {:?} transitions",
-            ivass.vass.state_count(),
-            ivass.vass.transition_count()
-        );
-        println!("Dimension: {:?}", ivass.dimension());
-        println!(
-            "CFG: {:?} states, {:?} transitions",
-            cfg.state_count(),
-            cfg.graph.edge_count()
-        );
-        println!("-----");
+        false
+    }
+
+    fn run_modulo_bfs(&self) -> Option<Path> {
+        self.cfg.modulo_reach(
+            self.mu,
+            &self.ivass.initial_valuation,
+            &self.ivass.final_valuation,
+        )
+    }
+
+    fn get_cfg_edge_weight(&self, edge: EdgeIndex<u32>) -> i32 {
+        *self.cfg.edge_weight(edge)
+    }
+
+    fn intersect_cfg(&mut self, dfa: DFA<(), i32>) {
+        self.cfg = self.cfg.intersect(&dfa);
+        self.cfg = self.cfg.minimize();
+    }
+
+    fn increment_mu(&mut self) {
+        self.mu += 1;
+    }
+
+    fn print_start_banner(&self) {
+        self.logger
+            .object("Solver Info")
+            .add_field("dimension", &self.ivass.dimension().to_string())
+            .add_field("vass.states", &self.ivass.vass.state_count().to_string())
+            .add_field(
+                "vass.transitions",
+                &self.ivass.vass.transition_count().to_string(),
+            )
+            .add_field("cfg.states", &self.cfg.state_count().to_string())
+            .add_field("cfg.transitions", &self.cfg.graph.edge_count().to_string())
+            .log(LogLevel::Info);
     }
 
     fn print_end_banner(&self, statistics: &VASSReachSolverStatistics) {
-        if !self.options.verbose {
-            return;
-        }
-
-        println!();
-        println!("--- Results ---");
-        println!("Result: {:?}", statistics.result);
-        println!("Max mu: {}", statistics.mu);
-        println!("Step count: {}", statistics.iterations);
-        println!("Time: {:?}", statistics.time);
-        println!("-----");
-        println!();
+        self.logger
+            .object("Result")
+            .add_field("result", &format!("{:?}", statistics.result))
+            .add_field("max mu", &statistics.mu.to_string())
+            .add_field("step count", &statistics.iterations.to_string())
+            .add_field("time", &format!("{:?}", statistics.time))
+            .log(LogLevel::Info);
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VASSReachSolverOptions {
-    verbose: bool,
+    log_level: LogLevel,
     thread_pool_size: usize,
     max_iterations: Option<u32>,
     max_mu: Option<u32>,
@@ -244,14 +309,14 @@ pub struct VASSReachSolverOptions {
 
 impl VASSReachSolverOptions {
     pub fn new(
-        verbose: bool,
+        log_level: LogLevel,
         thread_pool_size: usize,
         max_iterations: Option<u32>,
         max_mu: Option<u32>,
         max_time: Option<std::time::Duration>,
     ) -> Self {
         VASSReachSolverOptions {
-            verbose,
+            log_level,
             thread_pool_size,
             max_iterations,
             max_mu,
@@ -278,13 +343,8 @@ impl VASSReachSolverOptions {
         self
     }
 
-    pub fn verbose(mut self) -> Self {
-        self.verbose = true;
-        self
-    }
-
-    pub fn quiet(mut self) -> Self {
-        self.verbose = false;
+    pub fn with_log_level(mut self, level: LogLevel) -> Self {
+        self.log_level = level;
         self
     }
 
@@ -293,15 +353,18 @@ impl VASSReachSolverOptions {
         self
     }
 
-    pub fn to_solver(self) -> VASSReachSolver {
-        VASSReachSolver::new(self)
+    pub fn to_solver<N: AutNode, E: AutEdge>(
+        self,
+        ivass: InitializedVASS<N, E>,
+    ) -> VASSReachSolver<N, E> {
+        VASSReachSolver::new(self, ivass)
     }
 }
 
 impl Default for VASSReachSolverOptions {
     fn default() -> Self {
         VASSReachSolverOptions {
-            verbose: true,
+            log_level: LogLevel::Info,
             thread_pool_size: 4,
             max_iterations: None,
             max_mu: None,

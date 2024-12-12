@@ -11,9 +11,10 @@ fn main() {
 
     let initialized_vass = petri_net.init(vec![1, 0, 2], vec![1, 2, 2]).to_vass();
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(solver.solve_n(&initialized_vass).reachable());
+    assert!(!res.reachable());
 }

@@ -59,11 +59,12 @@ fn test_vass_reach_1() {
 
     let initialized_vass = vass.init(vec![0, 0], vec![0, 0], q0, q1);
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(solver.solve_n(&initialized_vass).reachable());
+    assert!(res.reachable());
 }
 
 #[test]
@@ -78,11 +79,12 @@ fn test_vass_reach_2() {
 
     let initialized_vass = vass.init(vec![0, 0], vec![0, 0], q0, q1);
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(!solver.solve_n(&initialized_vass).reachable());
+    assert!(!res.reachable());
 }
 
 // this test currently runs forever
@@ -97,11 +99,12 @@ fn test_vass_reach_3() {
 
     let initialized_vass = vass.init(vec![0, 0], vec![0, 0], q0, q1);
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(!solver.solve_n(&initialized_vass).reachable());
+    assert!(!res.reachable());
 }
 
 // this test currently runs forever
@@ -132,11 +135,12 @@ fn test_vass_reach_4() {
 
     let initialized_vass = vass.init(vec![0, 0, 0, 0, 0], vec![0, 0, 0, 0, 0], q0, q2);
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(!solver.solve_n(&initialized_vass).reachable());
+    assert!(!res.reachable());
 }
 
 #[test]
@@ -154,11 +158,12 @@ fn test_vass_reach_5() {
 
     let initialized_vass = initialized_petri_net.to_vass();
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(!solver.solve_n(&initialized_vass).reachable());
+    assert!(!res.reachable());
 }
 
 #[test]
@@ -175,11 +180,12 @@ fn test_vass_reach_6() {
 
     // dbg!(&initialized_vass);
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(solver.solve_n(&initialized_vass).reachable());
+    assert!(res.reachable());
 }
 
 #[test]
@@ -194,11 +200,12 @@ fn test_vass_reach_7() {
 
     let initialized_vass = initialized_petri_net.to_vass();
 
-    let solver = VASSReachSolverOptions::default()
+    let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
-        .to_solver();
+        .to_solver(initialized_vass)
+        .solve_n();
 
-    assert!(!solver.solve_n(&initialized_vass).reachable());
+    assert!(!res.reachable());
 }
 
 // #[test]
@@ -244,11 +251,12 @@ fn test_vass_reach_random() {
 
         let initialized_vass = initialized_petri_net.to_vass();
 
-        let solver = VASSReachSolverOptions::default()
+        let res = VASSReachSolverOptions::default()
             .with_mu_limit(100)
-            .to_solver();
+            .to_solver(initialized_vass)
+            .solve_n();
 
-        results.push((solver.solve_n(&initialized_vass), time.elapsed()));
+        results.push((res, time.elapsed()));
     }
 
     println!("{:?}", results);

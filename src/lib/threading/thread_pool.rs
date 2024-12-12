@@ -9,6 +9,7 @@ use std::{
 
 type Job<T> = Box<dyn (FnOnce() -> T) + Send + 'static>;
 
+#[derive(Debug)]
 pub struct ThreadPool<T: Send + 'static> {
     workers: Vec<Worker>,
     sender: Option<mpsc::Sender<Job<T>>>,
@@ -136,6 +137,7 @@ impl<T: Send + 'static> Drop for ThreadPool<T> {
     }
 }
 
+#[derive(Debug)]
 struct Worker {
     id: usize,
     thread: Option<thread::JoinHandle<()>>,
