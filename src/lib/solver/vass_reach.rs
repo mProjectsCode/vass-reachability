@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::{atomic::AtomicBool, Arc}};
 
 use petgraph::graph::EdgeIndex;
 
@@ -24,6 +24,7 @@ pub struct VASSReachSolver<N: AutNode, E: AutEdge> {
     mu: u32,
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
+    stop_signal: Arc<AtomicBool>,
 }
 
 impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
@@ -36,6 +37,15 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
         cfg.add_failure_state(vec![]);
         cfg = cfg.minimize();
 
+        let stop_signal = Arc::new(AtomicBool::new(false));
+        if let Some(max_time) = options.max_time {
+            let stop_signal = stop_signal.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(max_time);
+                stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
+            });
+        }
+
         VASSReachSolver {
             options,
             logger,
@@ -45,6 +55,7 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
             mu: 2,
             step_count: 0,
             solver_start_time: None,
+            stop_signal,
         }
     }
 
@@ -54,7 +65,7 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
         self.solver_start_time = Some(std::time::Instant::now());
 
         self.print_start_banner();
-        self.logger.empty();
+        self.logger.empty(LogLevel::Info);
 
         let mut result;
         let mut step_time;
@@ -77,6 +88,10 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
 
             if self.max_mu_reached() {
                 return self.max_mu_reached_error();
+            }
+
+            if self.max_time_reached() {
+                return self.max_time_reached_error();
             }
 
             if self.handle_thread_pool() {
@@ -148,12 +163,12 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
 
             self.logger
                 .debug(&format!("Step time: {:?}", step_time.elapsed()));
-            self.logger.empty();
+            self.logger.empty(LogLevel::Info);
         }
 
         self.logger
             .debug(&format!("Step time: {:?}", step_time.elapsed()));
-        self.logger.empty();
+        self.logger.empty(LogLevel::Info);
 
         self.logger.info("Joining thread pool");
 
@@ -183,7 +198,7 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
             }
         }
 
-        self.logger.empty();
+        self.logger.empty(LogLevel::Info);
 
         let statistics = VASSReachSolverStatistics::new(
             result,
@@ -208,6 +223,10 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
             .unwrap_or(false)
     }
 
+    fn max_time_reached(&self) -> bool {
+        self.stop_signal.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     fn max_mu_reached_error(&self) -> VASSReachSolverStatistics {
         VASSReachSolverStatistics::from_error(
             VASSReachSolverError::MaxMuReached,
@@ -220,6 +239,15 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
     fn max_iterations_reached_error(&self) -> VASSReachSolverStatistics {
         VASSReachSolverStatistics::from_error(
             VASSReachSolverError::MaxIterationsReached,
+            self.step_count,
+            self.mu,
+            self.get_solver_time().unwrap_or_default(),
+        )
+    }
+
+    fn max_time_reached_error(&self) -> VASSReachSolverStatistics {
+        VASSReachSolverStatistics::from_error(
+            VASSReachSolverError::Timeout,
             self.step_count,
             self.mu,
             self.get_solver_time().unwrap_or_default(),

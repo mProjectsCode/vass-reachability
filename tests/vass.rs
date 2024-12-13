@@ -1,9 +1,9 @@
-use std::vec;
+use std::{time::Duration, vec};
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use vass_reachability::{
     automaton::{petri_net::PetriNet, vass::VASS, AutBuild, Automaton},
-    solver::vass_reach::VASSReachSolverOptions,
+    solver::vass_reach::{VASSReachSolverOptions, VASSReachSolverResult},
 };
 
 #[test]
@@ -208,16 +208,17 @@ fn test_vass_reach_7() {
     assert!(!res.reachable());
 }
 
-// #[test]
+#[test]
 fn test_vass_reach_random() {
     let mut r = StdRng::seed_from_u64(1);
     let place_count = 3;
     let transition_count = 3;
     let max_tokens_per_transition = 3;
+    let random_count = 100;
 
     let mut results = vec![];
 
-    for _i in 0..10 {
+    for _i in 0..random_count {
         let mut petri_net = PetriNet::new(place_count);
 
         for _ in 0..transition_count {
@@ -247,17 +248,22 @@ fn test_vass_reach_random() {
         //     break;
         // }
 
-        let time = std::time::Instant::now();
-
         let initialized_vass = initialized_petri_net.to_vass();
 
         let res = VASSReachSolverOptions::default()
-            .with_mu_limit(100)
+            .with_time_limit(Duration::from_secs(2)) // some time that is long enough, but makes the test run in a reasonable time
+            .with_log_level(vass_reachability::logger::LogLevel::Error)
             .to_solver(initialized_vass)
             .solve_n();
 
-        results.push((res, time.elapsed()));
+        println!("{}: {:?}", _i, res.result);
+        results.push(res);
     }
 
+    println!();
     println!("{:?}", results);
+
+    let solved = results.iter().filter(|r| !matches!(r.result, VASSReachSolverResult::Unknown(_))).count();
+
+    println!("Solved {solved} of {random_count}");
 }

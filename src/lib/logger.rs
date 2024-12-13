@@ -83,8 +83,10 @@ impl Logger {
         self.log(LogLevel::Error, message);
     }
 
-    pub fn empty(&self) {
-        println!();
+    pub fn empty(&self, level: LogLevel) {
+        if level.show(&self.level) {
+            println!();
+        }
     }
 
     pub fn object<'a>(&'a self, name: &'a str) -> ObjectBuilder<'a> {
