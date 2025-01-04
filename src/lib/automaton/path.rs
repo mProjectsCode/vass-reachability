@@ -30,12 +30,12 @@ impl Path {
     pub fn has_loop(&self) -> bool {
         let mut visited = vec![];
 
-        for edge in &self.transitions {
-            if visited.contains(&edge) {
+        for (_, node) in &self.transitions {
+            if visited.contains(&node) {
                 return true;
             }
 
-            visited.push(edge);
+            visited.push(node);
         }
 
         false
@@ -63,9 +63,9 @@ impl Path {
         let mut current = dfa.add_state(DfaNodeData::new(false, ()));
         dfa.set_start(current);
 
-        for edge in &self.transitions {
+        for (edge, _) in &self.transitions {
             let new = dfa.add_state(DfaNodeData::new(false, ()));
-            dfa.add_transition(current, new, get_edge_weight(edge.0));
+            dfa.add_transition(current, new, get_edge_weight(*edge));
             current = new;
         }
 
@@ -112,10 +112,7 @@ impl Path {
         }
 
         (
-            match counters == final_valuation {
-                true => PathNReaching::True,
-                false => PathNReaching::False,
-            },
+            PathNReaching::from_bool(counters == final_valuation),
             counters,
         )
     }
@@ -137,4 +134,25 @@ pub enum PathNReaching {
     Negative(usize),
     False,
     True,
+}
+
+impl PathNReaching {
+    pub fn is_true(&self) -> bool {
+        matches!(self, PathNReaching::True)
+    }
+
+    pub fn is_false(&self) -> bool {
+        matches!(self, PathNReaching::False)
+    }
+
+    pub fn is_negative(&self) -> bool {
+        matches!(self, PathNReaching::Negative(_))
+    }
+
+    pub fn from_bool(b: bool) -> Self {
+        match b {
+            true => PathNReaching::True,
+            false => PathNReaching::False,
+        }
+    }
 }

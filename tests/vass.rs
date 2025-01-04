@@ -61,6 +61,8 @@ fn test_vass_reach_1() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -81,6 +83,8 @@ fn test_vass_reach_2() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -101,6 +105,8 @@ fn test_vass_reach_3() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -137,6 +143,8 @@ fn test_vass_reach_4() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -160,6 +168,8 @@ fn test_vass_reach_5() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -182,6 +192,8 @@ fn test_vass_reach_6() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -202,6 +214,8 @@ fn test_vass_reach_7() {
 
     let res = VASSReachSolverOptions::default()
         .with_mu_limit(100)
+        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
+        .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();
 
@@ -214,7 +228,7 @@ fn test_vass_reach_random() {
     let place_count = 3;
     let transition_count = 3;
     let max_tokens_per_transition = 3;
-    let random_count = 100;
+    let random_count = 50;
 
     let mut results = vec![];
 
@@ -251,10 +265,17 @@ fn test_vass_reach_random() {
         let initialized_vass = initialized_petri_net.to_vass();
 
         let res = VASSReachSolverOptions::default()
-            .with_time_limit(Duration::from_secs(2)) // some time that is long enough, but makes the test run in a reasonable time
+            .with_time_limit(Duration::from_secs(1)) // some time that is long enough, but makes the test run in a reasonable time
             .with_log_level(vass_reachability::logger::LogLevel::Error)
             .to_solver(initialized_vass)
             .solve_n();
+
+        if res.unknown() {
+            initialized_petri_net.to_file(&format!(
+                "test_data/petri_nets/unknown_petri_net_{}.json",
+                _i
+            ));
+        }
 
         println!("{}: {:?}", _i, res.result);
         results.push(res);
@@ -263,7 +284,10 @@ fn test_vass_reach_random() {
     println!();
     println!("{:?}", results);
 
-    let solved = results.iter().filter(|r| !matches!(r.result, VASSReachSolverResult::Unknown(_))).count();
+    let solved = results
+        .iter()
+        .filter(|r| !matches!(r.result, VASSReachSolverResult::Unknown(_)))
+        .count();
 
     println!("Solved {solved} of {random_count}");
 }

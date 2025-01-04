@@ -1,9 +1,6 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    fmt::Debug,
-    vec,
-};
+use std::{fmt::Debug, vec};
 
+use hashbrown::{hash_map::Entry, HashMap};
 use itertools::Itertools;
 use petgraph::{
     graph::{DiGraph, EdgeIndex, NodeIndex},

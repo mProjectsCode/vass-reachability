@@ -14,7 +14,7 @@ Currently the project only includes tests which can be run with:
 cargo test
 ```
 
-Or with `cargo test -- --nocapture` to preserve debug output.
+Or with `RUST_BACKTRACE=1 cargo test --release -- --test-threads=1 --nocapture` to get fast, non overlapping tests with debug output.
 
 ## Authors and Contact
 

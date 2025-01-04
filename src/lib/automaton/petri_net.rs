@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use super::{
     vass::{InitializedVASS, VASS},
@@ -7,7 +8,7 @@ use super::{
 
 type PlaceId = usize;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PetriNet {
     place_count: usize,
     transitions: Vec<PetriNetTransition>,
@@ -37,7 +38,7 @@ impl PetriNet {
 }
 
 /// Petri net transition. The first element of the tuple is the weight and the second element is the place id (starting from 1).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PetriNetTransition {
     input: Vec<(usize, PlaceId)>,
     output: Vec<(usize, PlaceId)>,
@@ -69,7 +70,7 @@ impl PetriNetTransition {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitializedPetriNet {
     net: PetriNet,
     initial_marking: Vec<usize>,
@@ -107,5 +108,21 @@ impl InitializedPetriNet {
             center_state,
             center_state,
         )
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap()
+    }
+
+    pub fn from_json(json: &str) -> Self {
+        serde_json::from_str(json).unwrap()
+    }
+
+    pub fn to_file(&self, path: &str) {
+        std::fs::write(path, self.to_json()).unwrap();
+    }
+
+    pub fn from_file(path: &str) -> Self {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     }
 }

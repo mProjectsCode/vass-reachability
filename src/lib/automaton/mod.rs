@@ -1,9 +1,9 @@
 use std::{fmt::Debug, hash::Hash};
 
 pub mod dfa;
-pub mod dyck;
+// pub mod dyck;
 pub mod ltc;
-pub mod modulo;
+// pub mod modulo;
 pub mod nfa;
 pub mod path;
 pub mod petri_net;

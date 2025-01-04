@@ -13,7 +13,7 @@ impl LogLevel {
         match self {
             LogLevel::Debug => "DBG".bright_cyan(),
             LogLevel::Info => "INF".bright_green(),
-            LogLevel::Warn => "WAR".bright_yellow(),
+            LogLevel::Warn => "WAR".yellow(),
             LogLevel::Error => "ERR".bright_red(),
         }
     }

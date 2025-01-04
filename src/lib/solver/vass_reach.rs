@@ -1,4 +1,7 @@
-use std::{fmt::Debug, sync::{atomic::AtomicBool, Arc}};
+use std::{
+    fmt::Debug,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use petgraph::graph::EdgeIndex;
 
@@ -129,7 +132,31 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
                     path.simple_print(|x| self.get_cfg_edge_weight(x))
                 ));
 
-                if path.has_loop() {
+                // TODO: We should probably do the negative check first, cut the path,
+                // then handle cut paths with and without loops separately.
+                // If the path stays positive, we do the normal LTC or modulo increase.
+
+                if let PathNReaching::Negative(index) = reaching {
+                    self.logger
+                        .debug(&format!("Path does not stay positive at index {:?}", index));
+
+                    let cut_path = path.slice(index);
+
+                    self.logger.debug(&format!(
+                        "Cut path {:?}",
+                        cut_path.simple_print(|x| self.get_cfg_edge_weight(x))
+                    ));
+
+                    let cut_path_loop = cut_path.has_loop();
+                    if cut_path_loop {
+                        self.logger.warn("Cut path has loop");
+                    }
+
+                    let dfa =
+                        cut_path.simple_to_dfa(true, dimension, |x| self.get_cfg_edge_weight(x));
+
+                    self.intersect_cfg(dfa);
+                } else if path.has_loop() {
                     self.logger.debug("Path has loop, checking LTC");
 
                     let ltc_translation = LTCTranslation::from_path(&path);
@@ -142,15 +169,6 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
                         .schedule(move || ltc.reach_n(&initial_v, &final_v));
 
                     let dfa = ltc_translation.to_dfa(dimension, |x| self.get_cfg_edge_weight(x));
-
-                    self.intersect_cfg(dfa);
-                } else if let PathNReaching::Negative(index) = reaching {
-                    self.logger
-                        .debug(&format!("Path does not stay positive at index {:?}", index));
-
-                    let sliced_path = path.slice(index);
-                    let dfa =
-                        sliced_path.simple_to_dfa(true, dimension, |x| self.get_cfg_edge_weight(x));
 
                     self.intersect_cfg(dfa);
                 } else {
@@ -452,5 +470,13 @@ impl VASSReachSolverStatistics {
 
     pub fn reachable(&self) -> bool {
         matches!(self.result, VASSReachSolverResult::Reachable)
+    }
+
+    pub fn unreachable(&self) -> bool {
+        matches!(self.result, VASSReachSolverResult::Unreachable)
+    }
+
+    pub fn unknown(&self) -> bool {
+        matches!(self.result, VASSReachSolverResult::Unknown(_))
     }
 }
