@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -30,8 +29,8 @@ impl PetriNet {
 
     pub fn init(
         self,
-        initial_marking: Vec<usize>,
-        final_marking: Vec<usize>,
+        initial_marking: Box<[usize]>,
+        final_marking: Box<[usize]>,
     ) -> InitializedPetriNet {
         InitializedPetriNet::new(self, initial_marking, final_marking)
     }
@@ -49,8 +48,8 @@ impl PetriNetTransition {
         Self { input, output }
     }
 
-    fn input_to_vec(&self, place_count: usize) -> Vec<i32> {
-        let mut vec = vec![0; place_count];
+    fn input_to_slice(&self, place_count: usize) -> Box<[i32]> {
+        let mut vec = vec![0; place_count].into_boxed_slice();
 
         for (weight, place) in &self.input {
             vec[*place - 1] = -(*weight as i32);
@@ -59,8 +58,8 @@ impl PetriNetTransition {
         vec
     }
 
-    fn output_to_vec(&self, place_count: usize) -> Vec<i32> {
-        let mut vec = vec![0; place_count];
+    fn output_to_slice(&self, place_count: usize) -> Box<[i32]> {
+        let mut vec = vec![0; place_count].into_boxed_slice();
 
         for (weight, place) in &self.output {
             vec[*place - 1] = *weight as i32;
@@ -73,12 +72,12 @@ impl PetriNetTransition {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitializedPetriNet {
     net: PetriNet,
-    initial_marking: Vec<usize>,
-    final_marking: Vec<usize>,
+    initial_marking: Box<[usize]>,
+    final_marking: Box<[usize]>,
 }
 
 impl InitializedPetriNet {
-    pub fn new(net: PetriNet, initial_marking: Vec<usize>, final_marking: Vec<usize>) -> Self {
+    pub fn new(net: PetriNet, initial_marking: Box<[usize]>, final_marking: Box<[usize]>) -> Self {
         Self {
             net,
             initial_marking,
@@ -95,16 +94,16 @@ impl InitializedPetriNet {
 
         for (i, transition) in self.net.transitions.iter().enumerate() {
             let state = vass.add_state(i + 1);
-            let input_vec = transition.input_to_vec(self.net.place_count);
-            let output_vec = transition.output_to_vec(self.net.place_count);
+            let input_vec = transition.input_to_slice(self.net.place_count);
+            let output_vec = transition.output_to_slice(self.net.place_count);
 
             vass.add_transition(center_state, state, (i, input_vec));
             vass.add_transition(state, center_state, (i, output_vec));
         }
 
         vass.init(
-            self.initial_marking.iter().map(|x| *x as i32).collect_vec(),
-            self.final_marking.iter().map(|x| *x as i32).collect_vec(),
+            self.initial_marking.iter().map(|x| *x as i32).collect(),
+            self.final_marking.iter().map(|x| *x as i32).collect(),
             center_state,
             center_state,
         )

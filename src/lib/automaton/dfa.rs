@@ -8,7 +8,7 @@ use petgraph::{
     Direction,
 };
 
-use crate::automaton::utils::mod_vec;
+use crate::automaton::utils::VASSValuation;
 
 use super::{path::Path, AutBuild, AutEdge, AutNode, Automaton};
 
@@ -509,8 +509,10 @@ impl<N: AutNode> VASSCFG for DFA<N, i32> {
         let mut visited = vec![std::collections::HashSet::new(); self.state_count()];
         let mut queue = std::collections::VecDeque::new();
         let max_valuation = (mu as i32) - 1;
-        let mod_initial_valuation = mod_vec(initial_valuation, mu);
-        let mod_final_valuation = mod_vec(final_valuation, mu);
+        let mut mod_initial_valuation: Box<[i32]> = Box::from(initial_valuation);
+        let mut mod_final_valuation: Box<[i32]> = Box::from(final_valuation);
+        mod_initial_valuation.mod_euclid_mut(mu);
+        mod_final_valuation.mod_euclid_mut(mu);
 
         assert!(self.start.is_some(), "Self must have a start state");
         queue.push_back((Path::new(self.start.unwrap()), mod_initial_valuation));
@@ -519,7 +521,7 @@ impl<N: AutNode> VASSCFG for DFA<N, i32> {
             let last = path.end();
 
             for edge in self.graph.edges_directed(last, Direction::Outgoing) {
-                let mut new_valuation: Vec<i32> = valuation.clone();
+                let mut new_valuation: Box<[i32]> = valuation.clone();
 
                 let update = edge.weight();
                 if *update > 0 {

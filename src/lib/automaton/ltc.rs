@@ -32,7 +32,7 @@ impl LTC {
         }
     }
 
-    pub fn add_loop(&mut self, loop_subtract: Vec<i32>, loop_add: Vec<i32>) {
+    pub fn add_loop(&mut self, loop_subtract: Box<[i32]>, loop_add: Box<[i32]>) {
         assert!(
             loop_subtract.len() == self.dimension,
             "Loop subtract vector has to have the same dimension as the LTC"
@@ -50,7 +50,7 @@ impl LTC {
             .push(LTCElement::Loop((loop_subtract, loop_add)));
     }
 
-    pub fn add_transition(&mut self, transition_subtract: Vec<i32>, transition_add: Vec<i32>) {
+    pub fn add_transition(&mut self, transition_subtract: Box<[i32]>, transition_add: Box<[i32]>) {
         assert!(
             transition_subtract.len() == self.dimension,
             "Transition subtract vector has to have the same dimension as the LTC"
@@ -90,7 +90,7 @@ impl LTC {
 
         let zero = Int::from_i64(&ctx, 0);
 
-        let mut formula = initial_valuation
+        let mut sums = initial_valuation
             .iter()
             .map(|&x| Int::from_i64(&ctx, x as i64))
             .collect_vec();
@@ -104,16 +104,15 @@ impl LTC {
 
                     // for each counter, we subtract the subtract value, then assert that we are positive and add the add value
                     for i in 0..self.dimension {
-                        formula[i] =
-                            &formula[i] - &Int::from_i64(&ctx, subtract[i] as i64) * &loop_variable;
+                        sums[i] =
+                            &sums[i] - &Int::from_i64(&ctx, subtract[i] as i64) * &loop_variable;
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
                         if only_n_counters {
-                            solver.assert(&formula[i].ge(&zero));
+                            solver.assert(&sums[i].ge(&zero));
                         }
 
-                        formula[i] =
-                            &formula[i] + &Int::from_i64(&ctx, add[i] as i64) * &loop_variable;
+                        sums[i] = &sums[i] + &Int::from_i64(&ctx, add[i] as i64) * &loop_variable;
                     }
 
                     loop_variables.push(loop_variable);
@@ -121,25 +120,21 @@ impl LTC {
                 LTCElement::Transition((subtract, add)) => {
                     // for each counter, we subtract the subtract value, then assert that we are positive and add the add value
                     for i in 0..self.dimension {
-                        formula[i] = &formula[i] - &Int::from_i64(&ctx, subtract[i] as i64);
+                        sums[i] = &sums[i] - &Int::from_i64(&ctx, subtract[i] as i64);
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
                         if only_n_counters {
-                            solver.assert(&formula[i].ge(&zero));
+                            solver.assert(&sums[i].ge(&zero));
                         }
 
-                        formula[i] = &formula[i] + &Int::from_i64(&ctx, add[i] as i64);
+                        sums[i] = &sums[i] + &Int::from_i64(&ctx, add[i] as i64);
                     }
                 }
             }
         }
 
-        for (f, target) in formula.into_iter().zip(
-            final_valuation
-                .iter()
-                .map(|&x| Int::from_i64(&ctx, x as i64)),
-        ) {
-            solver.assert(&f._eq(&target));
+        for (sum, target) in sums.into_iter().zip(final_valuation) {
+            solver.assert(&sum._eq(&Int::from_i64(&ctx, *target as i64)));
         }
 
         // println!("Solver setup took: {:?}", time.elapsed());
@@ -166,8 +161,8 @@ impl LTC {
 /// Similar to a firing rule in a Petri net.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LTCElement {
-    Loop((Vec<i32>, Vec<i32>)),
-    Transition((Vec<i32>, Vec<i32>)),
+    Loop((Box<[i32]>, Box<[i32]>)),
+    Transition((Box<[i32]>, Box<[i32]>)),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

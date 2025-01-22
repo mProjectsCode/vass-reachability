@@ -5,18 +5,18 @@ use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Di
 use super::{
     dfa::{DfaNodeData, DFA},
     nfa::NFA,
-    utils::{mut_add_vec, neg_vec},
+    utils::VASSValuation,
     AutBuild, AutEdge, AutNode, Automaton,
 };
 
-pub type VassEdge<E> = (E, Vec<i32>);
+pub type VassEdge<E> = (E, Box<[i32]>);
 
 // todo epsilon transitions
 #[derive(Debug, Clone)]
 pub struct VASS<N: AutNode, E: AutEdge> {
-    graph: StableDiGraph<N, VassEdge<E>>,
-    alphabet: Vec<E>,
-    dimension: usize,
+    pub graph: StableDiGraph<N, VassEdge<E>>,
+    pub alphabet: Vec<E>,
+    pub dimension: usize,
 }
 
 impl<N: AutNode, E: AutEdge> VASS<N, E> {
@@ -31,8 +31,8 @@ impl<N: AutNode, E: AutEdge> VASS<N, E> {
 
     pub fn init(
         self,
-        initial_valuation: Vec<i32>,
-        final_valuation: Vec<i32>,
+        initial_valuation: Box<[i32]>,
+        final_valuation: Box<[i32]>,
         initial_node: NodeIndex<u32>,
         final_node: NodeIndex<u32>,
     ) -> InitializedVASS<N, E> {
@@ -110,8 +110,8 @@ pub fn marking_to_vec(marking: &[i32]) -> Vec<i32> {
 #[derive(Debug, Clone)]
 pub struct InitializedVASS<N: AutNode, E: AutEdge> {
     pub vass: VASS<N, E>,
-    pub initial_valuation: Vec<i32>,
-    pub final_valuation: Vec<i32>,
+    pub initial_valuation: Box<[i32]>,
+    pub final_valuation: Box<[i32]>,
     pub initial_node: NodeIndex<u32>,
     pub final_node: NodeIndex<u32>,
 }
@@ -199,11 +199,11 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<N, E> {
                     .find(|neighbor| {
                         let edge = neighbor.weight();
                         // check that we can take the edge
-                        edge.0 == *symbol && current_valuation >= neg_vec(&edge.1)
+                        edge.0 == *symbol && current_valuation >= edge.1.neg()
                     })
                     .map(|edge| {
                         // subtract the valuation of the edge from the current valuation
-                        mut_add_vec(&mut current_valuation, &edge.weight().1);
+                        current_valuation.add_mut(&edge.weight().1);
                         edge.target()
                     });
                 current_state = next_state;

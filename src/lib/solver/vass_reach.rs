@@ -17,6 +17,8 @@ use crate::{
     threading::thread_pool::ThreadPool,
 };
 
+use super::vass_z_reach::solve_z_reach;
+
 #[derive(Debug)]
 pub struct VASSReachSolver<N: AutNode, E: AutEdge> {
     options: VASSReachSolverOptions,
@@ -69,6 +71,16 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
 
         self.print_start_banner();
         self.logger.empty(LogLevel::Info);
+
+        let z_reach_result = self.solve_z();
+        if !z_reach_result {
+            return VASSReachSolverStatistics::new(
+                false,
+                self.step_count,
+                self.mu,
+                self.get_solver_time().unwrap_or_default(),
+            );
+        }
 
         let mut result;
         let mut step_time;
@@ -228,6 +240,19 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
         self.print_end_banner(&statistics);
 
         statistics
+    }
+
+    fn solve_z(&self) -> bool {
+        self.logger.debug("Solving VASS for Z-Reach");
+
+        let result = solve_z_reach(&self.ivass);
+
+        self.logger.debug(&format!(
+            "Solved Z-Reach in {:?} with result: {:?}",
+            result.duration, result.result
+        ));
+
+        result.result
     }
 
     fn max_mu_reached(&self) -> bool {
