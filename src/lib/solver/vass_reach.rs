@@ -17,7 +17,7 @@ use crate::{
     threading::thread_pool::ThreadPool,
 };
 
-use super::vass_z_reach::solve_z_reach;
+use super::vass_z_reach::{solve_z_reach, solve_z_reach_for_cfg};
 
 #[derive(Debug)]
 pub struct VASSReachSolver<N: AutNode, E: AutEdge> {
@@ -112,6 +112,19 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
             if self.handle_thread_pool() {
                 result = true;
                 break;
+            }
+
+            if self.step_count != 1 {
+                let z_reach_result = solve_z_reach_for_cfg(
+                    &self.cfg,
+                    &self.ivass.initial_valuation,
+                    &self.ivass.final_valuation,
+                );
+                if !z_reach_result.result {
+                    self.logger.debug("CFG is not Z-Reachable");
+                    result = false;
+                    break;
+                }
             }
 
             let reach_path = self.run_modulo_bfs();

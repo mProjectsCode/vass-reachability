@@ -18,7 +18,7 @@ fn main() {
     // let initialized_vass = petri_net.init(vec![1, 0, 2], vec![1, 2, 2]).to_vass();
 
     let initialized_vass =
-        InitializedPetriNet::from_file("test_data/petri_nets/unknown_petri_net_25.json").to_vass();
+        InitializedPetriNet::from_file("test_data/petri_nets/4/unknown_1.json").to_vass();
 
     let res = VASSReachSolverOptions::default()
         .with_iteration_limit(100)

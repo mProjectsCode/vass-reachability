@@ -1,4 +1,4 @@
-use std::{time::Duration, vec};
+use std::{fs, time::Duration, vec};
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use vass_reachability::{
@@ -229,17 +229,32 @@ fn test_vass_reach_7() {
     assert!(!res.reachable());
 }
 
-#[test]
-fn test_vass_reach_random() {
-    let mut r = StdRng::seed_from_u64(1);
-    let place_count = 3;
-    let transition_count = 3;
-    let max_tokens_per_transition = 3;
-    let random_count = 50;
-
+fn random_vass_test(
+    seed: u64,
+    place_count: usize,
+    transition_count: usize,
+    max_tokens_per_transition: usize,
+    count: usize,
+    timeout: u64,
+    folder_name: &str,
+) {
+    let mut r = StdRng::seed_from_u64(seed);
     let mut results = vec![];
 
-    for _i in 0..random_count {
+    println!();
+    println!("Solving {} random Petri nets", count);
+    println!("places: {}", place_count);
+    println!("transitions: {}", transition_count);
+    println!("max tokens per transition: {}", max_tokens_per_transition);
+    println!();
+
+    let path = format!("test_data/petri_nets/{}", folder_name);
+
+    if !fs::exists(&path).unwrap() {
+        fs::create_dir(&path).unwrap();
+    }
+
+    for _i in 0..count {
         let mut petri_net = PetriNet::new(place_count);
 
         for _ in 0..transition_count {
@@ -273,16 +288,13 @@ fn test_vass_reach_random() {
         let initialized_vass = initialized_petri_net.to_vass();
 
         let res = VASSReachSolverOptions::default()
-            .with_time_limit(Duration::from_secs(1)) // some time that is long enough, but makes the test run in a reasonable time
+            .with_time_limit(Duration::from_secs(timeout)) // some time that is long enough, but makes the test run in a reasonable time
             .with_log_level(vass_reachability::logger::LogLevel::Error)
             .to_solver(initialized_vass)
             .solve_n();
 
         if res.unknown() {
-            initialized_petri_net.to_file(&format!(
-                "test_data/petri_nets/unknown_petri_net_{}.json",
-                _i
-            ));
+            initialized_petri_net.to_file(&format!("{}/unknown_{}.json", path, _i));
         }
 
         println!("{}: {:?}", _i, res.result);
@@ -297,5 +309,11 @@ fn test_vass_reach_random() {
         .filter(|r| !matches!(r.result, VASSReachSolverResult::Unknown(_)))
         .count();
 
-    println!("Solved {solved} of {random_count}");
+    println!("Solved {solved} of {count}");
+}
+
+#[test]
+fn test_vass_reach_random() {
+    random_vass_test(1, 3, 3, 3, 50, 1, "3");
+    random_vass_test(2, 4, 8, 4, 50, 10, "4");
 }
