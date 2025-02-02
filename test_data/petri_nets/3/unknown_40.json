@@ -96,12 +96,12 @@
   },
   "initial_marking": [
     2,
-    1,
-    2
+    0,
+    1
   ],
   "final_marking": [
-    0,
     1,
+    2,
     0
   ]
 }

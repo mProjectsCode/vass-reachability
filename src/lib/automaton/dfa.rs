@@ -71,6 +71,10 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
         self.start = Some(start);
     }
 
+    pub fn get_start(&self) -> Option<NodeIndex<u32>> {
+        self.start
+    }
+
     /// Sets the DFA to be complete. This is useful when we don't want to spend the time to check if the DFA is complete.
     pub fn override_complete(&mut self) {
         self.is_complete = true;

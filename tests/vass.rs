@@ -314,6 +314,6 @@ fn random_vass_test(
 
 #[test]
 fn test_vass_reach_random() {
-    random_vass_test(1, 3, 3, 3, 50, 1, "3");
+    random_vass_test(1, 3, 3, 3, 50, 10, "3");
     random_vass_test(2, 4, 8, 4, 50, 10, "4");
 }

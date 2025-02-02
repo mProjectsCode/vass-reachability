@@ -18,11 +18,11 @@ fn main() {
     // let initialized_vass = petri_net.init(vec![1, 0, 2], vec![1, 2, 2]).to_vass();
 
     let initialized_vass =
-        InitializedPetriNet::from_file("test_data/petri_nets/4/unknown_1.json").to_vass();
+        InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json").to_vass();
 
     let res = VASSReachSolverOptions::default()
         .with_iteration_limit(100)
-        .with_time_limit(Duration::from_secs(5))
+        .with_time_limit(Duration::from_secs(10))
         .with_log_level(vass_reachability::logger::LogLevel::Debug)
         .to_solver(initialized_vass)
         .solve_n();

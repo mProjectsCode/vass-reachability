@@ -72,15 +72,15 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
         self.print_start_banner();
         self.logger.empty(LogLevel::Info);
 
-        let z_reach_result = self.solve_z();
-        if !z_reach_result {
-            return VASSReachSolverStatistics::new(
-                false,
-                self.step_count,
-                self.mu,
-                self.get_solver_time().unwrap_or_default(),
-            );
-        }
+        // let z_reach_result = self.solve_z();
+        // if !z_reach_result {
+        //     return VASSReachSolverStatistics::new(
+        //         false,
+        //         self.step_count,
+        //         self.mu,
+        //         self.get_solver_time().unwrap_or_default(),
+        //     );
+        // }
 
         let mut result;
         let mut step_time;
@@ -114,18 +114,27 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
                 break;
             }
 
-            if self.step_count != 1 {
-                let z_reach_result = solve_z_reach_for_cfg(
-                    &self.cfg,
-                    &self.ivass.initial_valuation,
-                    &self.ivass.final_valuation,
-                );
-                if !z_reach_result.result {
-                    self.logger.debug("CFG is not Z-Reachable");
-                    result = false;
-                    break;
-                }
+            let z_reach_result = solve_z_reach_for_cfg(
+                &self.cfg,
+                &self.ivass.initial_valuation,
+                &self.ivass.final_valuation,
+            );
+            if z_reach_result.is_failure() {
+                self.logger.debug("CFG is not Z-Reachable");
+                result = false;
+                break;
             }
+            if z_reach_result.can_build_n_run(
+                &self.cfg,
+                &self.ivass.initial_valuation,
+                &self.ivass.final_valuation,
+            ) {
+                self.logger.debug("CFG is N-Reachable");
+                result = true;
+                break;
+            }
+            // TODO: when we can't build and run, we should cut the
+            // parikh image or something similar.
 
             let reach_path = self.run_modulo_bfs();
 
@@ -262,10 +271,10 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
 
         self.logger.debug(&format!(
             "Solved Z-Reach in {:?} with result: {:?}",
-            result.duration, result.result
+            result.duration, result.status
         ));
 
-        result.result
+        result.is_success()
     }
 
     fn max_mu_reached(&self) -> bool {
