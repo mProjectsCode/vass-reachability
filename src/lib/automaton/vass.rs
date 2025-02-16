@@ -1,25 +1,30 @@
 use hashbrown::HashMap;
 
-use petgraph::{graph::NodeIndex, stable_graph::StableDiGraph, visit::EdgeRef, Direction};
+use petgraph::{
+    graph::{EdgeIndex, NodeIndex},
+    stable_graph::StableDiGraph,
+    visit::EdgeRef,
+    Direction,
+};
 
 use super::{
     dfa::{DfaNodeData, DFA},
     nfa::NFA,
     utils::VASSValuation,
-    AutBuild, AutEdge, AutNode, Automaton,
+    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
 };
 
 pub type VassEdge<E> = (E, Box<[i32]>);
 
 // todo epsilon transitions
 #[derive(Debug, Clone)]
-pub struct VASS<N: AutNode, E: AutEdge> {
+pub struct VASS<N: AutomatonNode, E: AutomatonEdge> {
     pub graph: StableDiGraph<N, VassEdge<E>>,
     pub alphabet: Vec<E>,
     pub dimension: usize,
 }
 
-impl<N: AutNode, E: AutEdge> VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> VASS<N, E> {
     pub fn new(dimension: usize, alphabet: Vec<E>) -> Self {
         let graph = StableDiGraph::new();
         VASS {
@@ -63,12 +68,19 @@ impl<N: AutNode, E: AutEdge> VASS<N, E> {
     }
 }
 
-impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, N, VassEdge<E>> for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, N, VassEdge<E>>
+    for VASS<N, E>
+{
     fn add_state(&mut self, data: N) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
 
-    fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: VassEdge<E>) {
+    fn add_transition(
+        &mut self,
+        from: NodeIndex<u32>,
+        to: NodeIndex<u32>,
+        label: VassEdge<E>,
+    ) -> EdgeIndex<u32> {
         assert!(
             label.1.len() == self.dimension,
             "Update has to have the same length as the dimension"
@@ -85,7 +97,7 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, N, VassEdge<E>> for VASS<N, E> 
             }
         }
 
-        self.graph.add_edge(from, to, label);
+        self.graph.add_edge(from, to, label)
     }
 }
 
@@ -108,7 +120,7 @@ pub fn marking_to_vec(marking: &[i32]) -> Vec<i32> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InitializedVASS<N: AutNode, E: AutEdge> {
+pub struct InitializedVASS<N: AutomatonNode, E: AutomatonEdge> {
     pub vass: VASS<N, E>,
     pub initial_valuation: Box<[i32]>,
     pub final_valuation: Box<[i32]>,
@@ -116,7 +128,7 @@ pub struct InitializedVASS<N: AutNode, E: AutEdge> {
     pub final_node: NodeIndex<u32>,
 }
 
-impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
     pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, i32> {
         let mut cfg = NFA::new(dimension_to_cfg_alphabet(self.vass.dimension));
 
@@ -185,7 +197,7 @@ impl<N: AutNode, E: AutEdge> InitializedVASS<N, E> {
     }
 }
 
-impl<N: AutNode, E: AutEdge> Automaton<E> for InitializedVASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for InitializedVASS<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_state = Some(self.initial_node);
         let mut current_valuation = self.initial_valuation.clone();

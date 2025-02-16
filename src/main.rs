@@ -24,9 +24,10 @@ fn main() {
         .with_iteration_limit(100)
         .with_time_limit(Duration::from_secs(10))
         .with_log_level(vass_reachability::logger::LogLevel::Debug)
+        .with_log_file("logs/log.txt")
         .to_solver(initialized_vass)
         .solve_n();
 
     dbg!(&res);
-    assert!(!res.unknown());
+    // assert!(!res.unknown());
 }

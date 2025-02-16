@@ -7,34 +7,39 @@ use petgraph::graph::EdgeIndex;
 
 use crate::{
     automaton::{
-        dfa::{DFA, VASSCFG},
+        dfa::VASSCFG,
         ltc::{LTCSolverResult, LTCTranslation},
         path::{Path, PathNReaching},
         vass::InitializedVASS,
-        AutEdge, AutNode,
+        AutomatonEdge, AutomatonNode,
     },
     logger::{LogLevel, Logger},
     threading::thread_pool::ThreadPool,
+    validation::test_parikh_image,
 };
 
-use super::vass_z_reach::{solve_z_reach, solve_z_reach_for_cfg};
+use super::vass_z_reach::solve_z_reach_for_cfg;
 
 #[derive(Debug)]
-pub struct VASSReachSolver<N: AutNode, E: AutEdge> {
+pub struct VASSReachSolver<N: AutomatonNode, E: AutomatonEdge> {
     options: VASSReachSolverOptions,
     logger: Logger,
     ivass: InitializedVASS<N, E>,
     thread_pool: ThreadPool<LTCSolverResult>,
-    cfg: DFA<Vec<Option<N>>, i32>,
+    cfg: VASSCFG<Vec<Option<N>>>,
     mu: u32,
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
     pub fn new(options: VASSReachSolverOptions, ivass: InitializedVASS<N, E>) -> Self {
-        let logger = Logger::new(options.log_level.clone(), "VASS Reach Solver".to_string());
+        let logger = Logger::new(
+            options.log_level.clone(),
+            "VASS Reach Solver".to_string(),
+            options.log_file.clone(),
+        );
 
         let thread_pool = ThreadPool::<LTCSolverResult>::new(options.thread_pool_size);
 
@@ -65,6 +70,12 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
     }
 
     pub fn solve_n(&mut self) -> VASSReachSolverStatistics {
+        // IDEA: on paths, for each node, try to find loops back to that node and include them in the ltc check.
+        // this makes the ltc check more powerful and can cut away more paths.
+
+        // IDEA: check for n-reach on each counter individually, treating other counter updates as empty transitions.
+        // if a counter is not n-reachable, the entire thing can't be n-reachable either.
+
         let dimension = self.ivass.dimension();
 
         self.solver_start_time = Some(std::time::Instant::now());
@@ -114,25 +125,35 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
                 break;
             }
 
-            let z_reach_result = solve_z_reach_for_cfg(
-                &self.cfg,
-                &self.ivass.initial_valuation,
-                &self.ivass.final_valuation,
-            );
-            if z_reach_result.is_failure() {
-                self.logger.debug("CFG is not Z-Reachable");
-                result = false;
-                break;
-            }
-            if z_reach_result.can_build_n_run(
-                &self.cfg,
-                &self.ivass.initial_valuation,
-                &self.ivass.final_valuation,
-            ) {
-                self.logger.debug("CFG is N-Reachable");
-                result = true;
-                break;
-            }
+            // TODO: the Z-Reachability solver is not correct currently.
+            // let z_reach_result = solve_z_reach_for_cfg(
+            //     &self.cfg,
+            //     &self.ivass.initial_valuation,
+            //     &self.ivass.final_valuation,
+            //     Some(&self.logger),
+            // );
+            // if z_reach_result.is_failure() {
+            //     self.logger.debug("CFG is not Z-Reachable");
+            //     result = false;
+            //     break;
+            // }
+            // if z_reach_result.can_build_n_run(
+            //     &self.cfg,
+            //     &self.ivass.initial_valuation,
+            //     &self.ivass.final_valuation,
+            // ) {
+            //     self.logger.debug("CFG is N-Reachable");
+            //     result = true;
+            //     break;
+            // }
+            // if z_reach_result.is_success() {
+            //     test_parikh_image(
+            //         z_reach_result.get_parikh_image().unwrap(),
+            //         &self.cfg,
+            //         &self.ivass.initial_valuation,
+            //         &self.ivass.final_valuation
+            //     );
+            // }
             // TODO: when we can't build and run, we should cut the
             // parikh image or something similar.
 
@@ -165,6 +186,7 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
                     counters,
                     path.simple_print(|x| self.get_cfg_edge_weight(x))
                 ));
+                path.to_parikh_image().print(&self.logger, LogLevel::Debug);
 
                 // TODO: We should probably do the negative check first, cut the path,
                 // then handle cut paths with and without loops separately.
@@ -193,7 +215,10 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
                 } else if path.has_loop() {
                     self.logger.debug("Path has loop, checking LTC");
 
-                    let ltc_translation = LTCTranslation::from_path(&path);
+                    let mut ltc_translation = LTCTranslation::from_path(&path);
+                    // self.logger.debug(&format!("LTC: {:#?}", ltc_translation));
+                    ltc_translation = ltc_translation.expand(&self.cfg);
+                    // self.logger.debug(&format!("LTC: {:#?}", ltc_translation));
                     let ltc = ltc_translation.to_ltc(dimension, |x| self.get_cfg_edge_weight(x));
 
                     let initial_v = self.ivass.initial_valuation.clone();
@@ -264,18 +289,18 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
         statistics
     }
 
-    fn solve_z(&self) -> bool {
-        self.logger.debug("Solving VASS for Z-Reach");
+    // fn solve_z(&self) -> bool {
+    //     self.logger.debug("Solving VASS for Z-Reach");
 
-        let result = solve_z_reach(&self.ivass);
+    //     let result = solve_z_reach(&self.ivass, &self.logger);
 
-        self.logger.debug(&format!(
-            "Solved Z-Reach in {:?} with result: {:?}",
-            result.duration, result.status
-        ));
+    //     self.logger.debug(&format!(
+    //         "Solved Z-Reach in {:?} with result: {:?}",
+    //         result.duration, result.status
+    //     ));
 
-        result.is_success()
-    }
+    //     result.is_success()
+    // }
 
     fn max_mu_reached(&self) -> bool {
         self.options.max_mu.map(|x| x <= self.mu).unwrap_or(false)
@@ -357,7 +382,7 @@ impl<N: AutNode, E: AutEdge> VASSReachSolver<N, E> {
         *self.cfg.edge_weight(edge)
     }
 
-    fn intersect_cfg(&mut self, dfa: DFA<(), i32>) {
+    fn intersect_cfg(&mut self, dfa: VASSCFG<()>) {
         self.cfg = self.cfg.intersect(&dfa);
         self.cfg = self.cfg.minimize();
     }
@@ -398,6 +423,7 @@ pub struct VASSReachSolverOptions {
     max_iterations: Option<u32>,
     max_mu: Option<u32>,
     max_time: Option<std::time::Duration>,
+    log_file: Option<String>,
 }
 
 impl VASSReachSolverOptions {
@@ -407,6 +433,7 @@ impl VASSReachSolverOptions {
         max_iterations: Option<u32>,
         max_mu: Option<u32>,
         max_time: Option<std::time::Duration>,
+        log_file: Option<String>,
     ) -> Self {
         VASSReachSolverOptions {
             log_level,
@@ -414,6 +441,7 @@ impl VASSReachSolverOptions {
             max_iterations,
             max_mu,
             max_time,
+            log_file,
         }
     }
 
@@ -446,7 +474,12 @@ impl VASSReachSolverOptions {
         self
     }
 
-    pub fn to_solver<N: AutNode, E: AutEdge>(
+    pub fn with_log_file(mut self, file: &str) -> Self {
+        self.log_file = Some(file.to_string());
+        self
+    }
+
+    pub fn to_solver<N: AutomatonNode, E: AutomatonEdge>(
         self,
         ivass: InitializedVASS<N, E>,
     ) -> VASSReachSolver<N, E> {
@@ -462,6 +495,7 @@ impl Default for VASSReachSolverOptions {
             max_iterations: None,
             max_mu: None,
             max_time: None,
+            log_file: None,
         }
     }
 }

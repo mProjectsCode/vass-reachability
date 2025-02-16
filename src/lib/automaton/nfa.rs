@@ -1,24 +1,24 @@
 use hashbrown::HashMap;
 
 use petgraph::{
-    graph::{DiGraph, NodeIndex},
+    graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
     Direction,
 };
 
 use super::{
     dfa::{DfaNodeData, DFA},
-    AutBuild, AutEdge, AutNode, Automaton,
+    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
 };
 
 #[derive(Debug, Clone)]
-pub struct NFA<N: AutNode, E: AutEdge> {
+pub struct NFA<N: AutomatonNode, E: AutomatonEdge> {
     start: Option<NodeIndex<u32>>,
     pub graph: DiGraph<DfaNodeData<N>, Option<E>>,
     alphabet: Vec<E>,
 }
 
-impl<N: AutNode, E: AutEdge> NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
     pub fn new(alphabet: Vec<E>) -> Self {
         let graph = DiGraph::new();
 
@@ -215,17 +215,24 @@ impl<N: AutNode, E: AutEdge> NFA<N, E> {
     }
 }
 
-impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, Option<E>> for NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNodeData<N>, Option<E>>
+    for NFA<N, E>
+{
     fn add_state(&mut self, data: DfaNodeData<N>) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
 
-    fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: Option<E>) {
-        self.graph.add_edge(from, to, label);
+    fn add_transition(
+        &mut self,
+        from: NodeIndex<u32>,
+        to: NodeIndex<u32>,
+        label: Option<E>,
+    ) -> EdgeIndex<u32> {
+        self.graph.add_edge(from, to, label)
     }
 }
 
-impl<N: AutNode, E: AutEdge> Automaton<E> for NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for NFA<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         let mut current_states = vec![self.start.expect("NFA must have a start state")];
         self.extend_to_e_closure(&mut current_states);

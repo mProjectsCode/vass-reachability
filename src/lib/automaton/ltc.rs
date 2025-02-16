@@ -6,12 +6,12 @@ use z3::{
 };
 
 use super::{
-    dfa::{DfaNodeData, DFA},
+    dfa::{DfaNodeData, VASSCFG},
     nfa::NFA,
-    path::Path,
+    path::{Path, TransitionSequence},
     utils::dyck_transitions_to_ltc_transition,
-    vass::dimension_to_cfg_alphabet,
-    AutBuild,
+    vass::{dimension_to_cfg_alphabet, VASS},
+    AutBuild, AutomatonNode,
 };
 
 /// LTC (Loop Transition Chain) is more or less a GTS (Graph Transition System) with only a single loop for the graphs.
@@ -78,7 +78,7 @@ impl LTC {
 
     fn reach(
         &self,
-        only_n_counters: bool,
+        n_reach: bool,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> LTCSolverResult {
@@ -101,6 +101,7 @@ impl LTC {
             match element {
                 LTCElement::Loop((subtract, add)) => {
                     let loop_variable = Int::new_const(&ctx, i as u32);
+                    solver.assert(&loop_variable.ge(&zero));
 
                     // for each counter, we subtract the subtract value, then assert that we are positive and add the add value
                     for i in 0..self.dimension {
@@ -108,7 +109,7 @@ impl LTC {
                             &sums[i] - &Int::from_i64(&ctx, subtract[i] as i64) * &loop_variable;
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
-                        if only_n_counters {
+                        if n_reach {
                             solver.assert(&sums[i].ge(&zero));
                         }
 
@@ -123,7 +124,7 @@ impl LTC {
                         sums[i] = &sums[i] - &Int::from_i64(&ctx, subtract[i] as i64);
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
-                        if only_n_counters {
+                        if n_reach {
                             solver.assert(&sums[i].ge(&zero));
                         }
 
@@ -179,18 +180,8 @@ impl LTCSolverResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LTCTranslationElement {
-    Path(Vec<EdgeIndex<u32>>),
-    Loop(Vec<EdgeIndex<u32>>),
-}
-
-impl LTCTranslationElement {
-    pub fn path_from_transitions(transitions: Vec<(EdgeIndex<u32>, NodeIndex<u32>)>) -> Self {
-        LTCTranslationElement::Path(transitions.iter().map(|(edge, _)| *edge).collect())
-    }
-
-    pub fn loop_from_transitions(transitions: Vec<(EdgeIndex<u32>, NodeIndex<u32>)>) -> Self {
-        LTCTranslationElement::Loop(transitions.iter().map(|(edge, _)| *edge).collect())
-    }
+    Path(TransitionSequence),
+    Loop(TransitionSequence),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,38 +195,61 @@ impl LTCTranslation {
     }
 
     pub fn from_path(path: &Path) -> Self {
-        let mut stack: Vec<(EdgeIndex<u32>, NodeIndex<u32>)> = vec![];
+        let mut stack: TransitionSequence = vec![];
+        // This is used to track the node where the transition sequence in the `stack` started
+        let mut stack_start_node: Option<NodeIndex> = None;
         let mut ltc_translation = vec![];
 
         for transition in &path.transitions {
+            if let Some(last_node) = stack_start_node {
+                if transition.1 == last_node {
+                    stack.push(*transition);
+
+                    // only push the loop if the last element is not the same
+                    // that just means we ran the last loop again
+                    let _loop = LTCTranslationElement::Loop(stack);
+                    if ltc_translation.last() != Some(&_loop) {
+                        // We don't need to update the `stack_start_node` here, because we just did a full loop
+                        ltc_translation.push(_loop);
+                    }
+                    stack = vec![];
+                    continue;
+                }
+            }
+
             let existing_pos = stack.iter().position(|x| x.1 == transition.1);
 
+            stack.push(*transition);
+
             if let Some(pos) = existing_pos {
-                let transition_loop = stack.split_off(pos);
+                let transition_loop = stack.split_off(pos + 1);
                 // push the remaining transitions before the loop
                 if !stack.is_empty() {
-                    ltc_translation.push(LTCTranslationElement::path_from_transitions(stack));
+                    stack_start_node = Some(stack.last().unwrap().1);
+                    ltc_translation.push(LTCTranslationElement::Path(stack));
                 }
-                // only push the loop if the last element is not the same
-                // that just means we ran the last loop again
-                let _loop = LTCTranslationElement::loop_from_transitions(transition_loop);
-                if ltc_translation.last() != Some(&_loop) {
-                    ltc_translation.push(_loop);
+                if !transition_loop.is_empty() {
+                    // only push the loop if the last element is not the same
+                    // that just means we ran the last loop again
+                    let last = transition_loop.last().unwrap().1;
+                    let _loop = LTCTranslationElement::Loop(transition_loop);
+                    if ltc_translation.last() != Some(&_loop) {
+                        stack_start_node = Some(last);
+                        ltc_translation.push(_loop);
+                    }
                 }
-                stack = vec![*transition];
-            } else {
-                stack.push(*transition);
+
+                stack = vec![];
             }
         }
 
         if !stack.is_empty() {
             if let Some(LTCTranslationElement::Loop(l)) = ltc_translation.last() {
-                let edges = stack.iter().map(|(edge, _)| *edge).collect_vec();
-                if edges != *l {
-                    ltc_translation.push(LTCTranslationElement::Path(edges));
+                if stack != *l {
+                    ltc_translation.push(LTCTranslationElement::Path(stack));
                 }
             } else {
-                ltc_translation.push(LTCTranslationElement::path_from_transitions(stack));
+                ltc_translation.push(LTCTranslationElement::Path(stack));
             }
         }
 
@@ -244,11 +258,50 @@ impl LTCTranslation {
         }
     }
 
+    pub fn expand<N: AutomatonNode>(self, cfg: &VASSCFG<N>) -> Self {
+        let mut new_elements = vec![];
+
+        for translation in self.elements.into_iter() {
+            let LTCTranslationElement::Path(transitions) = translation else {
+                new_elements.push(translation);
+                continue;
+            };
+
+            let mut stack = vec![];
+            // let last = transitions.pop().expect("Path should not be empty");
+
+            for (edge, node) in transitions {
+                stack.push((edge, node));
+
+                let loop_in_node = cfg.find_loop_rooted_in_node(node);
+
+                match loop_in_node {
+                    Some(l) => {
+                        new_elements.push(LTCTranslationElement::Path(stack));
+                        stack = vec![];
+
+                        new_elements.push(LTCTranslationElement::Loop(l.transitions));
+                    }
+                    None => {}
+                }
+            }
+
+            // stack.push(last);
+            if !stack.is_empty() {
+                new_elements.push(LTCTranslationElement::Path(stack));
+            }
+        }
+
+        LTCTranslation {
+            elements: new_elements,
+        }
+    }
+
     pub fn to_dfa(
         &self,
         dimension: usize,
         get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32,
-    ) -> DFA<(), i32> {
+    ) -> VASSCFG<()> {
         let mut nfa = NFA::<(), i32>::new(dimension_to_cfg_alphabet(dimension));
 
         let start = nfa.add_state(DfaNodeData::new(false, ()));
@@ -258,34 +311,35 @@ impl LTCTranslation {
         for translation in &self.elements {
             match translation {
                 LTCTranslationElement::Path(edges) => {
-                    let mut current = nfa.add_state(DfaNodeData::new(false, ()));
-                    nfa.add_transition(current_end, current, None);
+                    let start = nfa.add_state(DfaNodeData::new(false, ()));
+                    nfa.add_transition(current_end, start, None);
+                    current_end = start;
 
                     for edge in edges {
                         let new = nfa.add_state(DfaNodeData::new(false, ()));
-                        nfa.add_transition(current, new, Some(get_edge_weight(*edge)));
-                        current = new;
+                        nfa.add_transition(current_end, new, Some(get_edge_weight(edge.0)));
+                        current_end = new;
                     }
-
-                    current_end = current;
                 }
                 LTCTranslationElement::Loop(edges) => {
+                    // CORRECT:
                     let loop_start = nfa.add_state(DfaNodeData::new(false, ()));
-                    let mut current = loop_start;
-                    nfa.add_transition(current_end, current, None);
+                    nfa.add_transition(current_end, loop_start, None);
+                    current_end = loop_start;
 
-                    // This is the code that would be needed when we deal with double loops in LTCs
+                    // FALSE: This is the code that would be needed when we deal with double loops in LTCs
+                    // but this is something we should do, as it would solve petri nets 3/unknown_15 and 3/unknown_47
                     // let loop_start = current_end;
                     // let mut current = current_end;
 
                     for edge in edges.iter().take(edges.len() - 1) {
                         let new = nfa.add_state(DfaNodeData::new(false, ()));
-                        nfa.add_transition(current, new, Some(get_edge_weight(*edge)));
-                        current = new;
+                        nfa.add_transition(current_end, new, Some(get_edge_weight(edge.0)));
+                        current_end = new;
                     }
 
                     let last_edge = edges.last().unwrap();
-                    nfa.add_transition(current, loop_start, Some(get_edge_weight(*last_edge)));
+                    nfa.add_transition(current_end, loop_start, Some(get_edge_weight(last_edge.0)));
 
                     current_end = loop_start;
                 }
@@ -293,6 +347,8 @@ impl LTCTranslation {
         }
 
         nfa.graph[current_end].accepting = true;
+
+        // dbg!(&nfa);
 
         let mut dfa = nfa.determinize_no_state_data();
         dfa.add_failure_state(());
@@ -309,7 +365,7 @@ impl LTCTranslation {
                 LTCTranslationElement::Path(edges) => {
                     let edge_weights: Vec<i32> = edges
                         .iter()
-                        .map(|&edge| get_edge_weight(edge))
+                        .map(|&edge| get_edge_weight(edge.0))
                         .collect_vec();
                     let (min_counters, counters) =
                         dyck_transitions_to_ltc_transition(&edge_weights, dimension);
@@ -318,7 +374,7 @@ impl LTCTranslation {
                 LTCTranslationElement::Loop(edges) => {
                     let edge_weights: Vec<i32> = edges
                         .iter()
-                        .map(|&edge| get_edge_weight(edge))
+                        .map(|&edge| get_edge_weight(edge.0))
                         .collect_vec();
                     let (min_counters, counters) =
                         dyck_transitions_to_ltc_transition(&edge_weights, dimension);

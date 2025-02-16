@@ -1,15 +1,21 @@
+use hashbrown::HashMap;
 use itertools::Itertools;
 use petgraph::{graph::EdgeIndex, graph::NodeIndex};
 
 use super::{
     dfa::{DfaNodeData, DFA},
+    parikh_image::ParikhImage,
     vass::dimension_to_cfg_alphabet,
     AutBuild, Automaton,
 };
 
+/// A transition sequence is a list of transitions, where each transition is a tuple of an edge and a node
+/// The edge is the edge taken and the node is the node reached by that edge.
+pub type TransitionSequence = Vec<(EdgeIndex<u32>, NodeIndex<u32>)>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Path {
-    pub transitions: Vec<(EdgeIndex<u32>, NodeIndex<u32>)>,
+    pub transitions: TransitionSequence,
     pub start: NodeIndex<u32>,
 }
 
@@ -126,6 +132,15 @@ impl Path {
                 .map(|x| format!("--({:?})-> {:?}", get_edge_weight(x.0), x.1.index()))
                 .join(" ")
         )
+    }
+
+    pub fn to_parikh_image(&self) -> ParikhImage {
+        let mut map = HashMap::new();
+        for (edge, _) in &self.transitions {
+            *map.entry(*edge).or_insert(0) += 1;
+        }
+
+        ParikhImage::new(map)
     }
 }
 

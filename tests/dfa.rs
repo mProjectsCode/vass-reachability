@@ -2,9 +2,10 @@ use itertools::Itertools;
 use vass_reachability::{
     automaton::{
         dfa::{DfaNodeData, DFA},
+        path::Path,
         AutBuild, Automaton,
     },
-    validation::same_language::{assert_same_language, same_language},
+    validation::same_language::{assert_inverse_language, assert_same_language, same_language},
 };
 
 #[test]
@@ -42,19 +43,25 @@ fn test_dfa_inversion() {
 
     dfa.add_failure_state(3);
 
-    let input = "ababab";
-    assert!(dfa.accepts(&input.chars().collect_vec()));
-
-    let input = "ababa";
-    assert!(!dfa.accepts(&input.chars().collect_vec()));
-
     let inverted = dfa.invert();
 
-    let input = "ababab";
-    assert!(!inverted.accepts(&input.chars().collect_vec()));
+    assert_inverse_language(&dfa, &inverted, 6);
 
-    let input = "ababa";
-    assert!(inverted.accepts(&input.chars().collect_vec()));
+    let double_inverted = inverted.invert();
+
+    assert_same_language(&dfa, &double_inverted, 6);
+
+    // let input = "ababab";
+    // assert!(dfa.accepts(&input.chars().collect_vec()));
+
+    // let input = "ababa";
+    // assert!(!dfa.accepts(&input.chars().collect_vec()));
+
+    // let input = "ababab";
+    // assert!(!inverted.accepts(&input.chars().collect_vec()));
+
+    // let input = "ababa";
+    // assert!(inverted.accepts(&input.chars().collect_vec()));
 }
 
 #[test]
@@ -338,4 +345,102 @@ fn minimize_5() {
     // dbg!(&minimized);
 
     assert_same_language(&dfa, &minimized, 8);
+}
+
+#[test]
+fn find_loop_1() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
+    let q3 = dfa.add_state(DfaNodeData::new(true, 3));
+
+    dfa.set_start(q0);
+
+    let e1 = dfa.add_transition(q0, q1, 'a');
+    let e2 = dfa.add_transition(q1, q2, 'b');
+    let e3 = dfa.add_transition(q2, q3, 'a');
+    let e4 = dfa.add_transition(q3, q0, 'b');
+
+    dfa.override_complete();
+
+    // loop in q0
+    let loop_ = dfa.find_loop_rooted_in_node(q0);
+    assert!(loop_.is_some());
+
+    let mut path = Path::new(q0);
+    path.add_edge(e1, q1);
+    path.add_edge(e2, q2);
+    path.add_edge(e3, q3);
+    path.add_edge(e4, q0);
+
+    assert_eq!(loop_.unwrap(), path);
+
+    // loop in q1
+    let loop_ = dfa.find_loop_rooted_in_node(q1);
+    assert!(loop_.is_some());
+
+    let mut path = Path::new(q1);
+    path.add_edge(e2, q2);
+    path.add_edge(e3, q3);
+    path.add_edge(e4, q0);
+    path.add_edge(e1, q1);
+
+    assert_eq!(loop_.unwrap(), path);
+}
+
+#[test]
+fn find_loop_2() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
+
+    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
+    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
+    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
+    let q3 = dfa.add_state(DfaNodeData::new(false, 3));
+    let q4 = dfa.add_state(DfaNodeData::new(false, 4));
+    let q5 = dfa.add_state(DfaNodeData::new(true, 5));
+
+    dfa.set_start(q0);
+
+    let e1 = dfa.add_transition(q0, q1, 'a');
+    let e2 = dfa.add_transition(q1, q0, 'b');
+    let _e3 = dfa.add_transition(q0, q2, 'b');
+    let _e4 = dfa.add_transition(q2, q3, 'a');
+    let _e5 = dfa.add_transition(q3, q0, 'a');
+    let _e6 = dfa.add_transition(q0, q4, 'c');
+    let e6 = dfa.add_transition(q4, q5, 'b');
+    let e7 = dfa.add_transition(q5, q5, 'a');
+    let e8 = dfa.add_transition(q5, q4, 'b');
+
+    dfa.override_complete();
+
+    // loop in q0
+    let loop_ = dfa.find_loop_rooted_in_node(q0);
+    assert!(loop_.is_some());
+
+    let mut path = Path::new(q0);
+    path.add_edge(e1, q1);
+    path.add_edge(e2, q0);
+
+    assert_eq!(loop_.unwrap(), path);
+
+    // loop in q4
+    let loop_ = dfa.find_loop_rooted_in_node(q4);
+    assert!(loop_.is_some());
+
+    let mut path = Path::new(q4);
+    path.add_edge(e6, q5);
+    path.add_edge(e8, q4);
+
+    assert_eq!(loop_.unwrap(), path);
+
+    // loop in q5
+    let loop_ = dfa.find_loop_rooted_in_node(q5);
+    assert!(loop_.is_some());
+
+    let mut path = Path::new(q5);
+    path.add_edge(e7, q5);
+
+    assert_eq!(loop_.unwrap(), path);
 }

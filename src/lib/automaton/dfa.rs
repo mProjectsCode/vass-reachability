@@ -1,6 +1,6 @@
-use std::{fmt::Debug, vec};
+use std::{collections::VecDeque, fmt::Debug, vec};
 
-use hashbrown::{hash_map::Entry, HashMap};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use itertools::Itertools;
 use petgraph::{
     graph::{DiGraph, EdgeIndex, NodeIndex},
@@ -10,15 +10,15 @@ use petgraph::{
 
 use crate::automaton::utils::VASSValuation;
 
-use super::{path::Path, AutBuild, AutEdge, AutNode, Automaton};
+use super::{path::Path, AutBuild, Automaton, AutomatonEdge, AutomatonNode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DfaNodeData<T: AutNode> {
+pub struct DfaNodeData<T: AutomatonNode> {
     pub accepting: bool,
     pub data: T,
 }
 
-impl<T: AutNode> DfaNodeData<T> {
+impl<T: AutomatonNode> DfaNodeData<T> {
     pub fn new(accepting: bool, data: T) -> Self {
         DfaNodeData { accepting, data }
     }
@@ -35,27 +35,27 @@ impl<T: AutNode> DfaNodeData<T> {
         DfaNodeData::new(!self.accepting, self.data.clone())
     }
 
-    pub fn join<TO: AutNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<(T, TO)> {
+    pub fn join<TO: AutomatonNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<(T, TO)> {
         DfaNodeData::new(
             self.accepting && other.accepting,
             (self.data.clone(), other.data.clone()),
         )
     }
 
-    pub fn join_left<TO: AutNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<T> {
+    pub fn join_left<TO: AutomatonNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<T> {
         DfaNodeData::new(self.accepting && other.accepting, self.data.clone())
     }
 }
 
 #[derive(Clone)]
-pub struct DFA<N: AutNode, E: AutEdge> {
+pub struct DFA<N: AutomatonNode, E: AutomatonEdge> {
     start: Option<NodeIndex<u32>>,
     pub graph: DiGraph<DfaNodeData<N>, E>,
     alphabet: Vec<E>,
     is_complete: bool,
 }
 
-impl<N: AutNode, E: AutEdge> DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
     pub fn new(alphabet: Vec<E>) -> Self {
         let graph = DiGraph::new();
 
@@ -242,7 +242,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     }
 
     /// Builds an intersection DFA from two DFAs. Both DFAs must have the same alphabet, a start state, and they must be complete.
-    pub fn intersect<NO: AutNode>(&self, other: &DFA<NO, E>) -> DFA<N, E> {
+    pub fn intersect<NO: AutomatonNode>(&self, other: &DFA<NO, E>) -> DFA<N, E> {
         assert!(self.start.is_some(), "Self must have a start state");
         assert!(other.start.is_some(), "Other must have a start state");
 
@@ -382,7 +382,7 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
     ///
     /// The inclusion holds if there is no accepting run in the intersection of self and the inverse of other.
     /// `L(Self) ⊆ L(Other) iff L(Self) ∩ L(invert(Other)) = ∅`
-    pub fn is_subset_of<NO: AutNode>(&self, other: &DFA<NO, E>) -> bool {
+    pub fn is_subset_of<NO: AutomatonNode>(&self, other: &DFA<NO, E>) -> bool {
         let inverted = other.clone().invert();
         let intersection = self.intersect(&inverted);
         // dbg!(&intersection);
@@ -390,14 +390,52 @@ impl<N: AutNode, E: AutEdge> DFA<N, E> {
 
         intersection.is_language_empty()
     }
+
+    pub fn find_loop_rooted_in_node(&self, node: NodeIndex<u32>) -> Option<Path> {
+        let mut visited = HashSet::new();
+        let mut stack = VecDeque::new();
+        stack.push_back(Path::new(node));
+
+        while let Some(mut path) = stack.pop_front() {
+            let last = path.end();
+
+            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+                let target = edge.target();
+
+                if path.start == target {
+                    path.add_edge(edge.id(), target);
+                    return Some(path);
+                }
+
+                match visited.entry(target) {
+                    hashbrown::hash_set::Entry::Occupied(_) => {}
+                    hashbrown::hash_set::Entry::Vacant(entry) => {
+                        entry.insert();
+                        let mut new_path = path.clone();
+                        new_path.add_edge(edge.id(), target);
+                        stack.push_back(new_path);
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
-impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, E> for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNodeData<N>, E>
+    for DFA<N, E>
+{
     fn add_state(&mut self, data: DfaNodeData<N>) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
 
-    fn add_transition(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, label: E) {
+    fn add_transition(
+        &mut self,
+        from: NodeIndex<u32>,
+        to: NodeIndex<u32>,
+        label: E,
+    ) -> EdgeIndex<u32> {
         let existing_edge = self
             .graph
             .edges_directed(from, Direction::Outgoing)
@@ -409,11 +447,11 @@ impl<N: AutNode, E: AutEdge> AutBuild<NodeIndex, DfaNodeData<N>, E> for DFA<N, E
             }
         }
 
-        self.graph.add_edge(from, to, label);
+        self.graph.add_edge(from, to, label)
     }
 }
 
-impl<N: AutNode, E: AutEdge> Automaton<E> for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for DFA<N, E> {
     fn accepts(&self, input: &[E]) -> bool {
         assert!(self.start.is_some(), "Self must have a start state");
 
@@ -448,7 +486,7 @@ impl<N: AutNode, E: AutEdge> Automaton<E> for DFA<N, E> {
     }
 }
 
-impl<N: AutNode, E: AutEdge> Debug for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge> Debug for DFA<N, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DFA")
             .field("alphabet", &self.alphabet)
@@ -493,26 +531,18 @@ impl<N: AutNode, E: AutEdge> Debug for DFA<N, E> {
     }
 }
 
-pub trait VASSCFG {
-    fn modulo_reach(
-        &self,
-        mu: u32,
-        initial_valuation: &[i32],
-        final_valuation: &[i32],
-    ) -> Option<Path>;
-}
+pub type VASSCFG<N> = DFA<N, i32>;
 
-impl<N: AutNode> VASSCFG for DFA<N, i32> {
-    fn modulo_reach(
+impl<N: AutomatonNode> VASSCFG<N> {
+    pub fn modulo_reach(
         &self,
         mu: u32,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> Option<Path> {
-        // let mut visited = std::collections::HashSet::new();
+        // For every node, we track which counter valuations we already visited.
         let mut visited = vec![std::collections::HashSet::new(); self.state_count()];
         let mut queue = std::collections::VecDeque::new();
-        let max_valuation = (mu as i32) - 1;
         let mut mod_initial_valuation: Box<[i32]> = Box::from(initial_valuation);
         let mut mod_final_valuation: Box<[i32]> = Box::from(final_valuation);
         mod_initial_valuation.mod_euclid_mut(mu);
@@ -528,23 +558,9 @@ impl<N: AutNode> VASSCFG for DFA<N, i32> {
                 let mut new_valuation: Box<[i32]> = valuation.clone();
 
                 let update = edge.weight();
-                if *update > 0 {
-                    let index = (update - 1) as usize;
-                    // new_valuation[index] = (new_valuation[index] + 1).rem_euclid(mu);
-                    if new_valuation[index] == max_valuation {
-                        new_valuation[index] = 0;
-                    } else {
-                        new_valuation[index] += 1;
-                    }
-                } else {
-                    let index = (-update - 1) as usize;
-                    // new_valuation[index] = (new_valuation[index] - 1).rem_euclid(mu);
-                    if new_valuation[index] == 0 {
-                        new_valuation[index] = max_valuation;
-                    } else {
-                        new_valuation[index] -= 1;
-                    }
-                }
+                let index = (update.abs() - 1) as usize;
+                new_valuation[index] =
+                    (new_valuation[index] + update.signum()).rem_euclid(mu as i32);
 
                 let target = edge.target();
 
@@ -574,12 +590,12 @@ impl<N: AutNode> VASSCFG for DFA<N, i32> {
 /// The alphabet is a reference to the alphabet of the DFA.
 /// The table contains None for states that have been merged with another state, as to minimize reallocations when merging states.
 #[derive(Debug, Clone)]
-pub struct DfaMinimizationTable<'a, N: AutNode, E: AutEdge> {
+pub struct DfaMinimizationTable<'a, N: AutomatonNode, E: AutomatonEdge> {
     pub table: Vec<Option<DfaMinimizationTableEntry<'a, N>>>,
     pub graph: &'a DFA<N, E>,
 }
 
-impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
+impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
     pub fn new(graph: &'a DFA<N, E>) -> Self {
         DfaMinimizationTable {
             table: vec![],
@@ -776,7 +792,7 @@ impl<'a, N: AutNode, E: AutEdge> DfaMinimizationTable<'a, N, E> {
 }
 
 #[derive(Debug, Clone)]
-pub struct DfaMinimizationTableEntry<'a, N: AutNode> {
+pub struct DfaMinimizationTableEntry<'a, N: AutomatonNode> {
     pub state: NodeIndex<u32>,
     pub data: &'a N,
     pub is_initial: bool,
@@ -784,7 +800,7 @@ pub struct DfaMinimizationTableEntry<'a, N: AutNode> {
     pub transitions: Vec<NodeIndex<u32>>,
 }
 
-impl<'a, N: AutNode> DfaMinimizationTableEntry<'a, N> {
+impl<'a, N: AutomatonNode> DfaMinimizationTableEntry<'a, N> {
     pub fn new(state: NodeIndex<u32>, data: &'a N, initial_state: bool, final_state: bool) -> Self {
         DfaMinimizationTableEntry {
             state,

@@ -1,3 +1,5 @@
+use std::vec;
+
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use vass_reachability::automaton::{ltc::LTCTranslation, path::Path, Automaton};
 
@@ -17,6 +19,8 @@ fn to_ltc() {
     let edge_weight = |edge: EdgeIndex<u32>| edge.index() as i32 + 1;
     let word = path.to_word(edge_weight);
     let translation = LTCTranslation::from_path(&path);
+
+    dbg!(&translation, &word);
 
     let ltc = translation.to_ltc(5, edge_weight);
     assert_eq!(ltc.elements.len(), 3);
@@ -50,14 +54,16 @@ fn to_ltc_3() {
     path.add_edge(EdgeIndex::new(1), NodeIndex::new(1));
 
     let edge_weight = |edge: EdgeIndex<u32>| edge.index() as i32 + 1;
-    let word = path.to_word(edge_weight);
     let translation = LTCTranslation::from_path(&path);
-
-    dbg!(&translation);
 
     let ltc = translation.to_ltc(2, edge_weight);
     assert_eq!(ltc.elements.len(), 2);
 
     let dfa = translation.to_dfa(2, edge_weight);
-    assert!(!dfa.accepts(&word));
+
+    assert!(!dfa.accepts(&vec![1]));
+    assert!(!dfa.accepts(&vec![1, 2]));
+    assert!(!dfa.accepts(&vec![1, 2, 2]));
+    assert!(!dfa.accepts(&vec![1, 2, 2, 2]));
+    assert!(dfa.accepts(&vec![2]));
 }

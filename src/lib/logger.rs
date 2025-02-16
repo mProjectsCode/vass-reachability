@@ -1,3 +1,9 @@
+use std::{
+    cell::RefCell,
+    fs::File,
+    io::{BufWriter, Write},
+};
+
 use colored::{ColoredString, Colorize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +24,15 @@ impl LogLevel {
         }
     }
 
+    pub fn to_string_no_color(&self) -> &'static str {
+        match self {
+            LogLevel::Debug => "DBG",
+            LogLevel::Info => "INF",
+            LogLevel::Warn => "WAR",
+            LogLevel::Error => "ERR",
+        }
+    }
+
     pub fn show(&self, other: &LogLevel) -> bool {
         match self {
             LogLevel::Debug => *other == LogLevel::Debug,
@@ -28,27 +43,56 @@ impl LogLevel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Logger {
     level: LogLevel,
-    name: String,
+    file: Option<RefCell<BufWriter<File>>>,
     debug_prefix: String,
     info_prefix: String,
     warn_prefix: String,
     error_prefix: String,
+    debug_prefix_no_color: String,
+    info_prefix_no_color: String,
+    warn_prefix_no_color: String,
+    error_prefix_no_color: String,
 }
 
 impl Logger {
-    pub fn new(level: LogLevel, name: String) -> Self {
+    pub fn new(level: LogLevel, name: String, log_file_path: Option<String>) -> Self {
         let n = format!("{name}:").dimmed();
+        let n_no_color = format!("{name}:");
+        let file = log_file_path.map(|path| {
+            let file = File::create(path).unwrap();
+            RefCell::new(BufWriter::new(file))
+        });
 
         Logger {
             level,
-            name,
+            file,
             debug_prefix: format!("[{}] {}", LogLevel::Debug.to_string(), n),
             info_prefix: format!("[{}] {}", LogLevel::Info.to_string(), n),
             warn_prefix: format!("[{}] {}", LogLevel::Warn.to_string(), n),
             error_prefix: format!("[{}] {}", LogLevel::Error.to_string(), n),
+            debug_prefix_no_color: format!(
+                "[{}] {}",
+                LogLevel::Debug.to_string_no_color(),
+                n_no_color
+            ),
+            info_prefix_no_color: format!(
+                "[{}] {}",
+                LogLevel::Info.to_string_no_color(),
+                n_no_color
+            ),
+            warn_prefix_no_color: format!(
+                "[{}] {}",
+                LogLevel::Warn.to_string_no_color(),
+                n_no_color
+            ),
+            error_prefix_no_color: format!(
+                "[{}] {}",
+                LogLevel::Error.to_string_no_color(),
+                n_no_color
+            ),
         }
     }
 
@@ -61,9 +105,22 @@ impl Logger {
         }
     }
 
+    pub fn get_prefix_no_color(&self, level: &LogLevel) -> &str {
+        match level {
+            LogLevel::Debug => &self.debug_prefix_no_color,
+            LogLevel::Info => &self.info_prefix_no_color,
+            LogLevel::Warn => &self.warn_prefix_no_color,
+            LogLevel::Error => &self.error_prefix_no_color,
+        }
+    }
+
     pub fn log(&self, level: LogLevel, message: &str) {
+        let msg = format!("{} {}", self.get_prefix(&level), message);
+        let msg_no_color = format!("{} {}", self.get_prefix_no_color(&level), message);
+
+        self.writeln(&msg_no_color);
         if level.show(&self.level) {
-            println!("{} {}", self.get_prefix(&level), message);
+            println!("{}", msg);
         }
     }
 
@@ -84,8 +141,18 @@ impl Logger {
     }
 
     pub fn empty(&self, level: LogLevel) {
+        self.writeln("");
         if level.show(&self.level) {
             println!();
+        }
+    }
+
+    fn writeln(&self, string: &str) {
+        if let Some(file) = &self.file {
+            let mut f = file.borrow_mut();
+
+            f.write_all(string.as_bytes()).unwrap();
+            f.write_all(b"\n").unwrap();
         }
     }
 
@@ -94,7 +161,15 @@ impl Logger {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// impl Drop for Logger {
+//     fn drop(&mut self) {
+//         if let Some(file) = &self.file {
+//             file.borrow_mut().flush().unwrap();
+//         }
+//     }
+// }
+
+#[derive(Debug, Clone)]
 pub struct ObjectBuilder<'a> {
     logger: &'a Logger,
     name: &'a str,
