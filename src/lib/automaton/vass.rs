@@ -8,6 +8,7 @@ use petgraph::{
 };
 
 use super::{
+    cfg::CFGCounterUpdate,
     dfa::{DfaNodeData, DFA},
     nfa::NFA,
     utils::VASSValuation,
@@ -101,14 +102,16 @@ impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, N, VassE
     }
 }
 
-pub fn marking_to_vec(marking: &[i32]) -> Vec<i32> {
+pub fn marking_to_vec(marking: &[i32]) -> Vec<CFGCounterUpdate> {
     let mut vec = vec![];
 
     for (d, m) in marking.iter().enumerate() {
+        let index = (d + 1) as i32;
+
         let label = if *m > 0 {
-            (d + 1) as i32
+            CFGCounterUpdate::new(index).unwrap()
         } else {
-            -((d + 1) as i32)
+            CFGCounterUpdate::new(-index).unwrap()
         };
 
         for _ in 0..m.abs() {
@@ -129,8 +132,8 @@ pub struct InitializedVASS<N: AutomatonNode, E: AutomatonEdge> {
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
-    pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, i32> {
-        let mut cfg = NFA::new(dimension_to_cfg_alphabet(self.vass.dimension));
+    pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, CFGCounterUpdate> {
+        let mut cfg = NFA::new(CFGCounterUpdate::alphabet(self.vass.dimension));
 
         let cfg_start = cfg.add_state(self.state_to_cfg_state(self.initial_node));
         cfg.set_start(cfg_start);
@@ -233,10 +236,4 @@ impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for InitializedVASS<N, E> 
     fn alphabet(&self) -> &Vec<E> {
         &self.vass.alphabet
     }
-}
-
-pub fn dimension_to_cfg_alphabet(dimension: usize) -> Vec<i32> {
-    (1..=dimension as i32)
-        .chain((1..=dimension as i32).map(|x| -x))
-        .collect()
 }

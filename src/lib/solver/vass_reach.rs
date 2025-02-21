@@ -1,21 +1,17 @@
-use std::{
-    fmt::Debug,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::sync::{atomic::AtomicBool, Arc};
 
 use petgraph::graph::EdgeIndex;
 
 use crate::{
     automaton::{
+        cfg::CFGCounterUpdate,
         dfa::VASSCFG,
-        ltc::{LTCSolverResult, LTCTranslation},
+        ltc::LTCTranslation,
         path::{Path, PathNReaching},
         vass::InitializedVASS,
         AutomatonEdge, AutomatonNode,
     },
     logger::{LogLevel, Logger},
-    threading::thread_pool::ThreadPool,
-    validation::test_parikh_image,
 };
 
 use super::vass_z_reach::solve_z_reach_for_cfg;
@@ -25,7 +21,7 @@ pub struct VASSReachSolver<N: AutomatonNode, E: AutomatonEdge> {
     options: VASSReachSolverOptions,
     logger: Logger,
     ivass: InitializedVASS<N, E>,
-    thread_pool: ThreadPool<LTCSolverResult>,
+    // thread_pool: ThreadPool<LTCSolverResult>,
     cfg: VASSCFG<Vec<Option<N>>>,
     mu: u32,
     step_count: u32,
@@ -41,7 +37,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
             options.log_file.clone(),
         );
 
-        let thread_pool = ThreadPool::<LTCSolverResult>::new(options.thread_pool_size);
+        // let thread_pool = ThreadPool::<LTCSolverResult>::new(options.thread_pool_size);
 
         let mut cfg = ivass.to_cfg();
         cfg.add_failure_state(vec![]);
@@ -60,7 +56,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
             options,
             logger,
             ivass,
-            thread_pool,
+            // thread_pool,
             cfg,
             mu: 2,
             step_count: 0,
@@ -83,17 +79,31 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
         self.print_start_banner();
         self.logger.empty(LogLevel::Info);
 
-        // let z_reach_result = self.solve_z();
-        // if !z_reach_result {
-        //     return VASSReachSolverStatistics::new(
-        //         false,
-        //         self.step_count,
-        //         self.mu,
-        //         self.get_solver_time().unwrap_or_default(),
-        //     );
-        // }
+        self.logger.info("Checking Z-Reachability");
+        let z_reach_time = std::time::Instant::now();
 
-        let mut result;
+        let z_reach_result = solve_z_reach_for_cfg(
+            &self.cfg,
+            &self.ivass.initial_valuation,
+            &self.ivass.final_valuation,
+            Some(&self.logger),
+        );
+        if z_reach_result.is_failure() {
+            self.logger.debug("CFG is not Z-Reachable");
+            return VASSReachSolverStatistics::new(
+                false,
+                self.step_count,
+                self.mu,
+                self.get_solver_time().unwrap_or_default(),
+            );
+        }
+
+        self.logger.info(&format!(
+            "Checked Z-Reachability in: {:?}",
+            z_reach_time.elapsed()
+        ));
+
+        let result;
         let mut step_time;
 
         loop {
@@ -120,42 +130,10 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
                 return self.max_time_reached_error();
             }
 
-            if self.handle_thread_pool() {
-                result = true;
-                break;
-            }
-
-            // TODO: the Z-Reachability solver is not correct currently.
-            // let z_reach_result = solve_z_reach_for_cfg(
-            //     &self.cfg,
-            //     &self.ivass.initial_valuation,
-            //     &self.ivass.final_valuation,
-            //     Some(&self.logger),
-            // );
-            // if z_reach_result.is_failure() {
-            //     self.logger.debug("CFG is not Z-Reachable");
-            //     result = false;
-            //     break;
-            // }
-            // if z_reach_result.can_build_n_run(
-            //     &self.cfg,
-            //     &self.ivass.initial_valuation,
-            //     &self.ivass.final_valuation,
-            // ) {
-            //     self.logger.debug("CFG is N-Reachable");
+            // if self.handle_thread_pool() {
             //     result = true;
             //     break;
             // }
-            // if z_reach_result.is_success() {
-            //     test_parikh_image(
-            //         z_reach_result.get_parikh_image().unwrap(),
-            //         &self.cfg,
-            //         &self.ivass.initial_valuation,
-            //         &self.ivass.final_valuation
-            //     );
-            // }
-            // TODO: when we can't build and run, we should cut the
-            // parikh image or something similar.
 
             let reach_path = self.run_modulo_bfs();
 
@@ -212,8 +190,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
                         cut_path.simple_to_dfa(true, dimension, |x| self.get_cfg_edge_weight(x));
 
                     self.intersect_cfg(dfa);
-                } else if path.has_loop() {
-                    self.logger.debug("Path has loop, checking LTC");
+                } else {
+                    self.logger.debug("Building and checking LTC");
 
                     let mut ltc_translation = LTCTranslation::from_path(&path);
                     // self.logger.debug(&format!("LTC: {:#?}", ltc_translation));
@@ -221,20 +199,48 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
                     // self.logger.debug(&format!("LTC: {:#?}", ltc_translation));
                     let ltc = ltc_translation.to_ltc(dimension, |x| self.get_cfg_edge_weight(x));
 
-                    let initial_v = self.ivass.initial_valuation.clone();
-                    let final_v = self.ivass.final_valuation.clone();
+                    let initial_v = &self.ivass.initial_valuation;
+                    let final_v = &self.ivass.final_valuation;
 
-                    self.thread_pool
-                        .schedule(move || ltc.reach_n(&initial_v, &final_v));
+                    // self.thread_pool
+                    //     .schedule(move || ltc.reach_n(&initial_v, &final_v));
 
-                    let dfa = ltc_translation.to_dfa(dimension, |x| self.get_cfg_edge_weight(x));
+                    let result_relaxed = ltc.reach_n_relaxed(initial_v, final_v);
 
-                    self.intersect_cfg(dfa);
-                } else {
-                    self.logger
-                        .debug("Path only modulo reaching, increasing mu");
+                    if result_relaxed.is_success() {
+                        self.logger.debug("LTC is relaxed N-Reachable");
 
-                    self.increment_mu();
+                        let result_strict = ltc.reach_n(initial_v, final_v);
+
+                        if result_strict.is_success() {
+                            self.logger.debug("LTC is N-Reachable");
+                            result = true;
+                            break;
+                        } else {
+                            self.logger.debug("LTC is not N-Reachable");
+
+                            let dfa = ltc_translation
+                                .to_dfa(false, dimension, |x| self.get_cfg_edge_weight(x));
+
+                            self.intersect_cfg(dfa);
+                        }
+                    } else {
+                        self.logger.debug("LTC is not N-Reachable");
+
+                        let dfa = ltc_translation
+                            .to_dfa(true, dimension, |x| self.get_cfg_edge_weight(x));
+
+                        self.intersect_cfg(dfa);
+                    }
+
+                    // let dfa = ltc_translation.to_dfa(dimension, |x| self.get_cfg_edge_weight(x));
+
+                    // self.intersect_cfg(dfa);
+
+                    if path.len() > (self.mu as usize) * dimension {
+                        self.logger.debug("Path too long, increasing mu");
+                        self.increment_mu();
+                    }
                 }
             }
 
@@ -247,33 +253,33 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
             .debug(&format!("Step time: {:?}", step_time.elapsed()));
         self.logger.empty(LogLevel::Info);
 
-        self.logger.info("Joining thread pool");
+        // self.logger.info("Joining thread pool");
 
-        if result {
-            self.thread_pool.join(false);
+        // if result {
+        //     self.thread_pool.join(false);
 
-            self.logger.debug(&format!(
-                "Canceled jobs: {:?}",
-                self.thread_pool.get_active_jobs()
-            ));
-        } else {
-            self.logger.debug(&format!(
-                "Waiting on {:?} active jobs",
-                self.thread_pool.get_active_jobs()
-            ));
+        //     self.logger.debug(&format!(
+        //         "Canceled jobs: {:?}",
+        //         self.thread_pool.get_active_jobs()
+        //     ));
+        // } else {
+        //     self.logger.debug(&format!(
+        //         "Waiting on {:?} active jobs",
+        //         self.thread_pool.get_active_jobs()
+        //     ));
 
-            self.thread_pool.join(true);
+        //     self.thread_pool.join(true);
 
-            assert_eq!(self.thread_pool.get_active_jobs(), 0);
+        //     assert_eq!(self.thread_pool.get_active_jobs(), 0);
 
-            for solver_result in self.thread_pool.get_finished_jobs() {
-                if solver_result.result {
-                    self.logger.debug("A thread found a solution");
-                    result = true;
-                    break;
-                }
-            }
-        }
+        //     for solver_result in self.thread_pool.get_finished_jobs() {
+        //         if solver_result.result {
+        //             self.logger.debug("A thread found a solution");
+        //             result = true;
+        //             break;
+        //         }
+        //     }
+        // }
 
         self.logger.empty(LogLevel::Info);
 
@@ -348,27 +354,27 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
         self.solver_start_time.map(|x| x.elapsed())
     }
 
-    fn handle_thread_pool(&self) -> bool {
-        if self.thread_pool.get_active_jobs() >= self.options.thread_pool_size * 4 {
-            self.logger.info(&format!(
-                "Waiting on thread pool to empty. Active jobs: {:?}, Target: {:?}",
-                self.thread_pool.get_active_jobs(),
-                self.options.thread_pool_size
-            ));
-            self.thread_pool
-                .block_until_x_active_jobs(self.options.thread_pool_size);
-        }
-        self.thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
+    // fn handle_thread_pool(&self) -> bool {
+    //     if self.thread_pool.get_active_jobs() >= self.options.thread_pool_size * 4 {
+    //         self.logger.info(&format!(
+    //             "Waiting on thread pool to empty. Active jobs: {:?}, Target: {:?}",
+    //             self.thread_pool.get_active_jobs(),
+    //             self.options.thread_pool_size
+    //         ));
+    //         self.thread_pool
+    //             .block_until_x_active_jobs(self.options.thread_pool_size);
+    //     }
+    //     self.thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
 
-        let finished_jobs = self.thread_pool.get_finished_jobs();
+    //     let finished_jobs = self.thread_pool.get_finished_jobs();
 
-        if finished_jobs.iter().any(|x| x.result) {
-            self.logger.debug("A thread found a solution");
-            return true;
-        }
+    //     if finished_jobs.iter().any(|x| x.result) {
+    //         self.logger.debug("A thread found a solution");
+    //         return true;
+    //     }
 
-        false
-    }
+    //     false
+    // }
 
     fn run_modulo_bfs(&self) -> Option<Path> {
         self.cfg.modulo_reach(
@@ -378,7 +384,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
         )
     }
 
-    fn get_cfg_edge_weight(&self, edge: EdgeIndex<u32>) -> i32 {
+    fn get_cfg_edge_weight(&self, edge: EdgeIndex<u32>) -> CFGCounterUpdate {
         *self.cfg.edge_weight(edge)
     }
 

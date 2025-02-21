@@ -1,20 +1,17 @@
 use hashbrown::HashMap;
+use itertools::Itertools;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     visit::EdgeRef,
 };
 use z3::{
-    ast::{Ast, Int},
+    ast::{Ast, Bool, Int},
     Config, Context, Solver,
 };
 
 use crate::{
-    automaton::{
-        dfa::{DFA, VASSCFG},
-        parikh_image::{self, ParikhImage},
-        AutomatonNode,
-    },
-    logger::{LogLevel, Logger},
+    automaton::{dfa::VASSCFG, parikh_image::ParikhImage, AutomatonNode},
+    logger::Logger,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +85,7 @@ impl VASSZReachSolverResult<ParikhImage, ()> {
 
     pub fn can_build_n_run<N: AutomatonNode>(
         &self,
-        cfg: &DFA<N, i32>,
+        cfg: &VASSCFG<N>,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> bool {
@@ -109,7 +106,7 @@ impl VASSZReachSolverResult<ParikhImage, ()> {
 
     pub fn can_build_z_run<N: AutomatonNode>(
         &self,
-        cfg: &DFA<N, i32>,
+        cfg: &VASSCFG<N>,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> bool {
@@ -133,7 +130,7 @@ fn rec_can_build_n_run<N: AutomatonNode>(
     parikh_image: ParikhImage,
     valuation: Box<[i32]>,
     final_valuation: &[i32],
-    cfg: &DFA<N, i32>,
+    cfg: &VASSCFG<N>,
     node_index: NodeIndex,
 ) -> bool {
     let is_final = cfg.graph[node_index].accepting;
@@ -158,16 +155,14 @@ fn rec_can_build_n_run<N: AutomatonNode>(
         }
 
         // next we check that taking the edge does not make a counter in the valuation negative
-        let edge_weight = edge.weight();
-        let counter = valuation[edge_weight.unsigned_abs() as usize - 1];
-        let increment = edge_weight.signum();
-        if counter + increment < 0 {
+        let update = edge.weight();
+        if valuation[update.counter()] + update.op() < 0 {
             continue;
         }
 
         // we can take the edge, so we update the parikh image and the valuation
         let mut valuation = valuation.clone();
-        valuation[edge_weight.unsigned_abs() as usize - 1] += increment;
+        update.apply(&mut valuation);
 
         let mut parikh = parikh_image.clone();
         parikh.image.insert(edge_index, edge_parikh - 1);
@@ -184,7 +179,7 @@ fn rec_can_build_z_run<N: AutomatonNode>(
     parikh_image: ParikhImage,
     valuation: Box<[i32]>,
     final_valuation: &[i32],
-    cfg: &DFA<N, i32>,
+    cfg: &VASSCFG<N>,
     node_index: NodeIndex,
 ) -> bool {
     let is_final = cfg.graph[node_index].accepting;
@@ -208,12 +203,11 @@ fn rec_can_build_z_run<N: AutomatonNode>(
             continue;
         }
 
-        let edge_weight = edge.weight();
-        let increment = edge_weight.signum();
+        let update = edge.weight();
 
         // we can take the edge, so we update the parikh image and the valuation
         let mut valuation = valuation.clone();
-        valuation[edge_weight.unsigned_abs() as usize - 1] += increment;
+        update.apply(&mut valuation);
 
         let mut parikh = parikh_image.clone();
         parikh.image.insert(edge_index, edge_parikh - 1);
@@ -226,86 +220,24 @@ fn rec_can_build_z_run<N: AutomatonNode>(
     false
 }
 
-// TODO: this does not yet enforce final and initial nodes
-// pub fn solve_z_reach<N: AutNode, E: AutEdge>(
-//     ivass: &InitializedVASS<N, E>,
-//     logger: &Logger,
-// ) -> VASSZReachSolverResult {
-//     let time = std::time::Instant::now();
-//     let config = Config::new();
-//     let ctx = Context::new(&config);
-//     let solver = Solver::new(&ctx);
-
-//     let zero = Int::from_i64(&ctx, 0);
-
-//     // a map that allows us to access the edge variables by their edge id
-//     let mut edge_map = HashMap::new();
-
-//     // all the counter sums along the path
-//     let mut sums: Box<[_]> = ivass
-//         .initial_valuation
-//         .iter()
-//         .map(|x| Int::from_i64(&ctx, *x as i64))
-//         .collect();
-
-//     for edge in ivass.vass.graph.edge_references() {
-//         let edge_marking = &edge.weight().1;
-
-//         // we need one variable for each edge
-//         let edge_var = Int::new_const(&ctx, format!("edge_{}", edge.id().index()).as_str());
-//         // CONSTRAINT: an edge can only be taken positive times
-//         solver.assert(&edge_var.ge(&zero));
-
-//         // add the edges effect to the counter sum
-//         for i in 0..ivass.vass.dimension {
-//             sums[i] = &sums[i] + &Int::from_i64(&ctx, edge_marking[i] as i64) * &edge_var;
-//         }
-
-//         edge_map.insert(edge.id(), edge_var);
-//     }
-
-//     for node in ivass.vass.graph.node_indices() {
-//         let outgoing = ivass
-//             .vass
-//             .graph
-//             .edges_directed(node, petgraph::Direction::Outgoing);
-//         let incoming = ivass
-//             .vass
-//             .graph
-//             .edges_directed(node, petgraph::Direction::Incoming);
-
-//         let mut outgoing_sum = Int::from_i64(&ctx, 0);
-//         let mut incoming_sum = Int::from_i64(&ctx, 0);
-
-//         for edge in outgoing {
-//             let edge_var = edge_map.get(&edge.id()).unwrap();
-//             outgoing_sum += edge_var;
-//         }
-
-//         for edge in incoming {
-//             let edge_var = edge_map.get(&edge.id()).unwrap();
-//             incoming_sum += edge_var;
-//         }
-
-//         // CONSTRAINT: the sum of all outgoing edges must be equal to the sum of all incoming edges for each node
-//         solver.assert(&outgoing_sum._eq(&incoming_sum));
-//     }
-
-//     // CONSTRAINT: the final valuation must be equal to the counter sums
-//     for (sum, target) in sums.iter().zip(&ivass.final_valuation) {
-//         solver.assert(&sum._eq(&Int::from_i64(&ctx, *target as i64)));
-//     }
-
-//     let result = match solver.check() {
-//         z3::SatResult::Sat => true,
-//         z3::SatResult::Unsat => false,
-//         z3::SatResult::Unknown => panic!("Solver returned unknown"),
-//     };
-
-//     VASSZReachSolverResult::from_bool(result, time.elapsed())
-// }
-
-// TODO: one reason this does not work correctly is that we can get non connected loops in the "path"
+/// Solves a VASS CFG for Z-Reachability.
+///
+/// The basic idea is to use a SAT solver to find a Z-Run through the CFG.
+///
+/// We create a variable for each edge in the CFG that represents how often the edge is taken.
+/// Additionally we have one variable for each accepting node that represents whether the node is used as the final node.
+/// We then create constraints that ensure that the sum of all incoming edges is equal to the sum of all outgoing edges for each node. (Kirchhoff Equations)
+/// We also create constraints that ensure that the final valuation is equal to the sum of all edge valuations plus the initial valuation.
+///
+/// We then check if the constraints are satisfiable.
+/// Due to the nature of the the Kirchhoff Equations, the Parikh Image generated by the solver may not form a connected Z-Run.
+/// Should a solution not be connected, we add an additional constraint that forces:
+///
+/// > If all edges in a connected component are taken, then at least one outgoing edge (to a node that is not part of the connected component) must be taken as well.
+///
+/// This constraint ensures that the connected component must either be bigger or connected to the main Z-Run in the next iteration.
+///
+/// Since this constraint act's on sets of nodes and there are only a limited number of subsets of nodes, the solver terminates.
 pub fn solve_z_reach_for_cfg<N: AutomatonNode>(
     cfg: &VASSCFG<N>,
     initial_valuation: &[i32],
@@ -336,9 +268,8 @@ pub fn solve_z_reach_for_cfg<N: AutomatonNode>(
         solver.assert(&edge_var.ge(&Int::from_i64(&ctx, 0)));
 
         // add the edges effect to the counter sum
-        let i = (edge_marking.unsigned_abs() - 1) as usize;
-        let sign = edge_marking.signum();
-        sums[i] = &sums[i] + &edge_var * sign as i64;
+        let i = edge_marking.counter();
+        sums[i] = &sums[i] + &edge_var * edge_marking.op_i64();
 
         edge_map.insert(edge.id(), edge_var);
     }
@@ -392,33 +323,71 @@ pub fn solve_z_reach_for_cfg<N: AutomatonNode>(
         solver.assert(&sum._eq(&Int::from_i64(&ctx, *target as i64)));
     }
 
-    let result = match solver.check() {
-        z3::SatResult::Sat => {
-            let model = solver.get_model();
-            let model = model.unwrap();
+    let mut steps = 1;
+    let result;
 
-            let parikh_image: HashMap<EdgeIndex, _> = edge_map
-                .iter()
-                .map(|(id, var)| {
-                    (
-                        *id,
-                        model.get_const_interp(var).unwrap().as_u64().unwrap() as u32,
-                    )
-                })
-                .filter(|(_, count)| *count > 0)
-                .collect();
+    loop {
+        match solver.check() {
+            z3::SatResult::Sat => {
+                let model = solver.get_model();
+                let model = model.unwrap();
 
-            let parikh_image = ParikhImage::new(parikh_image);
+                let parikh_image: HashMap<EdgeIndex, _> = edge_map
+                    .iter()
+                    .map(|(id, var)| {
+                        (
+                            *id,
+                            model.get_const_interp(var).unwrap().as_u64().unwrap() as u32,
+                        )
+                    })
+                    .filter(|(_, count)| *count > 0)
+                    .collect();
 
-            if let Some(logger) = logger {
-                parikh_image.print(logger, LogLevel::Debug);
+                let parikh_image = ParikhImage::new(parikh_image);
+                let (_, components) = parikh_image.clone().split_into_connected_components(cfg);
+
+                if components.is_empty() {
+                    result = SolverStatus::True(parikh_image);
+                    break;
+                }
+
+                for component in components {
+                    // bools that represent whether each individual edge in the component is taken
+                    let edges = component
+                        .iter_edges()
+                        .map(|edge| edge_map.get(&edge).unwrap().ge(&Int::from_i64(&ctx, 1)))
+                        .collect_vec();
+                    let edges_ref = edges.iter().collect_vec();
+
+                    // bool that represent whether each individual edge that is outgoing from the component is taken
+                    let outgoing = component
+                        .get_outgoing_edges(cfg)
+                        .iter()
+                        .map(|edge| edge_map.get(edge).unwrap().ge(&Int::from_i64(&ctx, 1)))
+                        .collect_vec();
+                    let outgoing_ref = outgoing.iter().collect_vec();
+
+                    let edges_ast = Bool::and(&ctx, &edges_ref);
+                    let outgoing_ast = Bool::or(&ctx, &outgoing_ref);
+
+                    // CONSTRAINT: if all edges in the component are taken, then at least one outgoing edge must be taken as well
+                    // this is because we need to leave the component.
+                    solver.assert(&edges_ast.implies(&outgoing_ast));
+                }
+
+                steps += 1;
             }
+            z3::SatResult::Unsat => {
+                result = SolverStatus::False(());
+                break;
+            }
+            z3::SatResult::Unknown => panic!("Solver returned unknown"),
+        };
+    }
 
-            SolverStatus::True(parikh_image)
-        }
-        z3::SatResult::Unsat => SolverStatus::False(()),
-        z3::SatResult::Unknown => panic!("Solver returned unknown"),
-    };
+    if let Some(l) = logger {
+        l.debug(&format!("Solved Z-Reach in {} steps", steps));
+    }
 
     VASSZReachSolverResult::new(result, time.elapsed())
 }

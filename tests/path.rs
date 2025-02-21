@@ -1,7 +1,9 @@
 use std::vec;
 
 use petgraph::graph::{EdgeIndex, NodeIndex};
-use vass_reachability::automaton::{ltc::LTCTranslation, path::Path, Automaton};
+use vass_reachability::automaton::{
+    cfg::CFGCounterUpdate, ltc::LTCTranslation, path::Path, Automaton,
+};
 
 #[test]
 fn to_ltc() {
@@ -16,7 +18,8 @@ fn to_ltc() {
     path.add_edge(EdgeIndex::new(1), NodeIndex::new(2));
     path.add_edge(EdgeIndex::new(4), NodeIndex::new(4));
 
-    let edge_weight = |edge: EdgeIndex<u32>| edge.index() as i32 + 1;
+    let edge_weight =
+        |edge: EdgeIndex<u32>| CFGCounterUpdate::new(edge.index() as i32 + 1).unwrap();
     let word = path.to_word(edge_weight);
     let translation = LTCTranslation::from_path(&path);
 
@@ -25,7 +28,7 @@ fn to_ltc() {
     let ltc = translation.to_ltc(5, edge_weight);
     assert_eq!(ltc.elements.len(), 3);
 
-    let dfa = translation.to_dfa(5, edge_weight);
+    let dfa = translation.to_dfa(false, 5, edge_weight);
     assert!(!dfa.accepts(&word));
 }
 
@@ -35,14 +38,15 @@ fn to_ltc_2() {
     path.add_edge(EdgeIndex::new(0), NodeIndex::new(1));
     path.add_edge(EdgeIndex::new(1), NodeIndex::new(1));
 
-    let edge_weight = |edge: EdgeIndex<u32>| edge.index() as i32 + 1;
+    let edge_weight =
+        |edge: EdgeIndex<u32>| CFGCounterUpdate::new(edge.index() as i32 + 1).unwrap();
     let word = path.to_word(edge_weight);
     let translation = LTCTranslation::from_path(&path);
 
     let ltc = translation.to_ltc(2, edge_weight);
     assert_eq!(ltc.elements.len(), 2);
 
-    let dfa = translation.to_dfa(2, edge_weight);
+    let dfa = translation.to_dfa(false, 2, edge_weight);
     assert!(!dfa.accepts(&word));
 }
 
@@ -53,17 +57,21 @@ fn to_ltc_3() {
     path.add_edge(EdgeIndex::new(1), NodeIndex::new(1));
     path.add_edge(EdgeIndex::new(1), NodeIndex::new(1));
 
-    let edge_weight = |edge: EdgeIndex<u32>| edge.index() as i32 + 1;
+    let edge_weight =
+        |edge: EdgeIndex<u32>| CFGCounterUpdate::new(edge.index() as i32 + 1).unwrap();
     let translation = LTCTranslation::from_path(&path);
 
     let ltc = translation.to_ltc(2, edge_weight);
     assert_eq!(ltc.elements.len(), 2);
 
-    let dfa = translation.to_dfa(2, edge_weight);
+    let dfa = translation.to_dfa(false, 2, edge_weight);
 
-    assert!(!dfa.accepts(&vec![1]));
-    assert!(!dfa.accepts(&vec![1, 2]));
-    assert!(!dfa.accepts(&vec![1, 2, 2]));
-    assert!(!dfa.accepts(&vec![1, 2, 2, 2]));
-    assert!(dfa.accepts(&vec![2]));
+    let _1 = CFGCounterUpdate::new(1).unwrap();
+    let _2 = CFGCounterUpdate::new(2).unwrap();
+
+    assert!(!dfa.accepts(&vec![_1]));
+    assert!(!dfa.accepts(&vec![_1, _2]));
+    assert!(!dfa.accepts(&vec![_1, _2, _2]));
+    assert!(!dfa.accepts(&vec![_1, _2, _2, _2]));
+    assert!(dfa.accepts(&vec![_2]));
 }

@@ -154,19 +154,5 @@ fn test_vass_z_reach_5() {
         None,
     );
 
-    assert!(res.is_success());
-
-    test_parikh_image(
-        res.get_parikh_image().unwrap(),
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-    );
-
-    // TODO: the solver is currently wrong
-    // assert!(res.can_build_z_run(
-    //     &cfg,
-    //     &initialized_vass.initial_valuation,
-    //     &initialized_vass.final_valuation,
-    // ));
+    assert!(res.is_failure());
 }

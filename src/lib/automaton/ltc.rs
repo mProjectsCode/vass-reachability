@@ -6,11 +6,11 @@ use z3::{
 };
 
 use super::{
+    cfg::CFGCounterUpdate,
     dfa::{DfaNodeData, VASSCFG},
     nfa::NFA,
     path::{Path, TransitionSequence},
     utils::dyck_transitions_to_ltc_transition,
-    vass::{dimension_to_cfg_alphabet, VASS},
     AutBuild, AutomatonNode,
 };
 
@@ -68,17 +68,26 @@ impl LTC {
 
     /// Reachability from 0 to 0 in the whole numbers, so intermediate valuations may be negative.
     pub fn reach_z(&self, initial_valuation: &[i32], final_valuation: &[i32]) -> LTCSolverResult {
-        self.reach(false, initial_valuation, final_valuation)
+        self.reach(false, false, initial_valuation, final_valuation)
     }
 
     /// Reachability from 0 to 0 in the natural numbers, so no intermediate valuation may be negative.
     pub fn reach_n(&self, initial_valuation: &[i32], final_valuation: &[i32]) -> LTCSolverResult {
-        self.reach(true, initial_valuation, final_valuation)
+        self.reach(true, true, initial_valuation, final_valuation)
+    }
+
+    pub fn reach_n_relaxed(
+        &self,
+        initial_valuation: &[i32],
+        final_valuation: &[i32],
+    ) -> LTCSolverResult {
+        self.reach(true, false, initial_valuation, final_valuation)
     }
 
     fn reach(
         &self,
         n_reach: bool,
+        assert_n_loops: bool,
         initial_valuation: &[i32],
         final_valuation: &[i32],
     ) -> LTCSolverResult {
@@ -109,7 +118,7 @@ impl LTC {
                             &sums[i] - &Int::from_i64(&ctx, subtract[i] as i64) * &loop_variable;
 
                         // if we want to solve reach in N, we need to assert after every subtraction that the counters are positive
-                        if n_reach {
+                        if n_reach && assert_n_loops {
                             solver.assert(&sums[i].ge(&zero));
                         }
 
@@ -175,6 +184,14 @@ pub struct LTCSolverResult {
 impl LTCSolverResult {
     pub fn new(result: bool, duration: std::time::Duration) -> Self {
         LTCSolverResult { result, duration }
+    }
+
+    pub fn is_success(&self) -> bool {
+        self.result
+    }
+
+    pub fn is_failure(&self) -> bool {
+        !self.result
     }
 }
 
@@ -275,14 +292,11 @@ impl LTCTranslation {
 
                 let loop_in_node = cfg.find_loop_rooted_in_node(node);
 
-                match loop_in_node {
-                    Some(l) => {
-                        new_elements.push(LTCTranslationElement::Path(stack));
-                        stack = vec![];
+                if let Some(l) = loop_in_node {
+                    new_elements.push(LTCTranslationElement::Path(stack));
+                    stack = vec![];
 
-                        new_elements.push(LTCTranslationElement::Loop(l.transitions));
-                    }
-                    None => {}
+                    new_elements.push(LTCTranslationElement::Loop(l.transitions));
                 }
             }
 
@@ -299,10 +313,11 @@ impl LTCTranslation {
 
     pub fn to_dfa(
         &self,
+        relaxed: bool,
         dimension: usize,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32,
+        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
     ) -> VASSCFG<()> {
-        let mut nfa = NFA::<(), i32>::new(dimension_to_cfg_alphabet(dimension));
+        let mut nfa = NFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
 
         let start = nfa.add_state(DfaNodeData::new(false, ()));
         nfa.set_start(start);
@@ -323,14 +338,25 @@ impl LTCTranslation {
                 }
                 LTCTranslationElement::Loop(edges) => {
                     // CORRECT:
-                    let loop_start = nfa.add_state(DfaNodeData::new(false, ()));
-                    nfa.add_transition(current_end, loop_start, None);
-                    current_end = loop_start;
+                    // let loop_start = nfa.add_state(DfaNodeData::new(false, ()));
+                    // nfa.add_transition(current_end, loop_start, None);
+                    // current_end = loop_start;
 
                     // FALSE: This is the code that would be needed when we deal with double loops in LTCs
                     // but this is something we should do, as it would solve petri nets 3/unknown_15 and 3/unknown_47
                     // let loop_start = current_end;
                     // let mut current = current_end;
+
+                    let loop_start = if relaxed {
+                        // don't add a transition to the loop start, so that the loops can be taken in any order
+                        current_end
+                    } else {
+                        // create an empty transition to the loop start, so that the loops have be taken in the order that they are in the LTC
+                        let loop_start = nfa.add_state(DfaNodeData::new(false, ()));
+                        nfa.add_transition(current_end, loop_start, None);
+                        current_end = loop_start;
+                        loop_start
+                    };
 
                     for edge in edges.iter().take(edges.len() - 1) {
                         let new = nfa.add_state(DfaNodeData::new(false, ()));
@@ -357,7 +383,11 @@ impl LTCTranslation {
         dfa
     }
 
-    pub fn to_ltc(&self, dimension: usize, get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32) -> LTC {
+    pub fn to_ltc(
+        &self,
+        dimension: usize,
+        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
+    ) -> LTC {
         let mut ltc = LTC::new(dimension);
 
         for translation in &self.elements {
@@ -365,7 +395,7 @@ impl LTCTranslation {
                 LTCTranslationElement::Path(edges) => {
                     let edge_weights: Vec<i32> = edges
                         .iter()
-                        .map(|&edge| get_edge_weight(edge.0))
+                        .map(|&edge| get_edge_weight(edge.0).into())
                         .collect_vec();
                     let (min_counters, counters) =
                         dyck_transitions_to_ltc_transition(&edge_weights, dimension);
@@ -374,7 +404,7 @@ impl LTCTranslation {
                 LTCTranslationElement::Loop(edges) => {
                     let edge_weights: Vec<i32> = edges
                         .iter()
-                        .map(|&edge| get_edge_weight(edge.0))
+                        .map(|&edge| get_edge_weight(edge.0).into())
                         .collect_vec();
                     let (min_counters, counters) =
                         dyck_transitions_to_ltc_transition(&edge_weights, dimension);

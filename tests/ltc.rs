@@ -60,11 +60,15 @@ fn ltc_language_1() {
 
     let translation = LTCTranslation::from_path(&path);
     let non_expanded_dfa = translation
-        .to_dfa(initialized_vass.dimension(), |edge| *cfg.edge_weight(edge))
+        .to_dfa(false, initialized_vass.dimension(), |edge| {
+            *cfg.edge_weight(edge)
+        })
         .invert();
     let expanded_translation = translation.expand(&cfg);
     let expanded_dfa = expanded_translation
-        .to_dfa(initialized_vass.dimension(), |edge| *cfg.edge_weight(edge))
+        .to_dfa(false, initialized_vass.dimension(), |edge| {
+            *cfg.edge_weight(edge)
+        })
         .invert();
 
     assert_subset_language(&non_expanded_dfa, &cfg, 6);
@@ -78,6 +82,8 @@ fn ltc_language_2() {
         InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json").to_vass();
     let cfg = initialized_vass.to_cfg();
 
+    dbg!(&cfg);
+
     let path = cfg.modulo_reach(
         6,
         &initialized_vass.initial_valuation,
@@ -88,11 +94,15 @@ fn ltc_language_2() {
 
     let translation = LTCTranslation::from_path(&path);
     let non_expanded_dfa = translation
-        .to_dfa(initialized_vass.dimension(), |edge| *cfg.edge_weight(edge))
+        .to_dfa(false, initialized_vass.dimension(), |edge| {
+            *cfg.edge_weight(edge)
+        })
         .invert();
     let expanded_translation = translation.expand(&cfg);
     let expanded_dfa = expanded_translation
-        .to_dfa(initialized_vass.dimension(), |edge| *cfg.edge_weight(edge))
+        .to_dfa(false, initialized_vass.dimension(), |edge| {
+            *cfg.edge_weight(edge)
+        })
         .invert();
 
     assert_subset_language(&non_expanded_dfa, &cfg, 6);

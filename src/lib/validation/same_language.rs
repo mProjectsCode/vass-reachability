@@ -56,6 +56,8 @@ pub fn assert_same_language<E: AutomatonEdge>(
     }
 }
 
+/// Assert that the language accepted by automaton `a` is the inverse of the language accepted by automaton `b`.
+/// Meaning no word is accepted by both and no word is accepted by none.
 pub fn assert_inverse_language<E: AutomatonEdge>(
     a: &impl Automaton<E>,
     b: &impl Automaton<E>,
@@ -100,6 +102,8 @@ pub fn assert_subset_language<E: AutomatonEdge>(
 
         for word in combinations {
             let word: Vec<E> = word.into_iter().cloned().collect_vec();
+
+            #[allow(clippy::single_match)]
             match (a.accepts(&word), b.accepts(&word)) {
                 (true, false) => {
                     panic!("{:?} is accepted by automaton `a` but not by automaton `b`. Thus the language of `a` is not a subset of `b`.", word);

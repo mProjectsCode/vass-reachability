@@ -1,11 +1,13 @@
+use std::fmt::Debug;
+
 use hashbrown::HashMap;
 use itertools::Itertools;
 use petgraph::{graph::EdgeIndex, graph::NodeIndex};
 
 use super::{
+    cfg::CFGCounterUpdate,
     dfa::{DfaNodeData, DFA},
     parikh_image::ParikhImage,
-    vass::dimension_to_cfg_alphabet,
     AutBuild, Automaton,
 };
 
@@ -51,6 +53,14 @@ impl Path {
         self.transitions.last().map(|x| x.1).unwrap_or(self.start)
     }
 
+    pub fn len(&self) -> usize {
+        self.transitions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.transitions.is_empty()
+    }
+
     pub fn slice(&self, index: usize) -> Self {
         Path {
             transitions: self.transitions[..=index].to_vec(),
@@ -62,9 +72,9 @@ impl Path {
         &self,
         trap: bool,
         dimension: usize,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32,
-    ) -> DFA<(), i32> {
-        let mut dfa = DFA::<(), i32>::new(dimension_to_cfg_alphabet(dimension));
+        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
+    ) -> DFA<(), CFGCounterUpdate> {
+        let mut dfa = DFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
 
         let mut current = dfa.add_state(DfaNodeData::new(false, ()));
         dfa.set_start(current);
@@ -88,7 +98,7 @@ impl Path {
         dfa.invert()
     }
 
-    pub fn to_word(&self, get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32) -> Vec<i32> {
+    pub fn to_word<T>(&self, get_edge_weight: impl Fn(EdgeIndex<u32>) -> T) -> Vec<T> {
         self.transitions
             .iter()
             .map(|&edge| get_edge_weight(edge.0))
@@ -99,18 +109,12 @@ impl Path {
         &self,
         initial_valuation: &[i32],
         final_valuation: &[i32],
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32,
+        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
     ) -> (PathNReaching, Vec<i32>) {
         let mut counters = initial_valuation.to_vec();
 
         for (i, edge) in self.transitions.iter().enumerate() {
-            let weight = get_edge_weight(edge.0);
-
-            if weight > 0 {
-                counters[(weight - 1) as usize] += 1;
-            } else {
-                counters[(-weight - 1) as usize] -= 1;
-            }
+            get_edge_weight(edge.0).apply(&mut counters);
 
             if counters.iter().any(|&x| x < 0) {
                 return (PathNReaching::Negative(i), counters);
@@ -123,7 +127,7 @@ impl Path {
         )
     }
 
-    pub fn simple_print(&self, get_edge_weight: impl Fn(EdgeIndex<u32>) -> i32) -> String {
+    pub fn simple_print<T: Debug>(&self, get_edge_weight: impl Fn(EdgeIndex<u32>) -> T) -> String {
         format!(
             "{:?} {}",
             self.start.index(),

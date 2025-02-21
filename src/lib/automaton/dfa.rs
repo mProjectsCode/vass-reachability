@@ -10,7 +10,7 @@ use petgraph::{
 
 use crate::automaton::utils::VASSValuation;
 
-use super::{path::Path, AutBuild, Automaton, AutomatonEdge, AutomatonNode};
+use super::{cfg::CFGCounterUpdate, path::Path, AutBuild, Automaton, AutomatonEdge, AutomatonNode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DfaNodeData<T: AutomatonNode> {
@@ -531,7 +531,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> Debug for DFA<N, E> {
     }
 }
 
-pub type VASSCFG<N> = DFA<N, i32>;
+pub type VASSCFG<N> = DFA<N, CFGCounterUpdate>;
 
 impl<N: AutomatonNode> VASSCFG<N> {
     pub fn modulo_reach(
@@ -558,9 +558,7 @@ impl<N: AutomatonNode> VASSCFG<N> {
                 let mut new_valuation: Box<[i32]> = valuation.clone();
 
                 let update = edge.weight();
-                let index = (update.abs() - 1) as usize;
-                new_valuation[index] =
-                    (new_valuation[index] + update.signum()).rem_euclid(mu as i32);
+                update.apply_mod(&mut new_valuation, mu as i32);
 
                 let target = edge.target();
 

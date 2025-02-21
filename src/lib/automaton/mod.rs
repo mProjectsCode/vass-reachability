@@ -4,6 +4,7 @@ pub mod dfa;
 // pub mod dyck;
 pub mod ltc;
 // pub mod modulo;
+pub mod cfg;
 pub mod nfa;
 pub mod parikh_image;
 pub mod path;
