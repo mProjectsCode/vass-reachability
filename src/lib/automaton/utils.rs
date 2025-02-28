@@ -1,5 +1,8 @@
 use std::ops::Neg;
 
+use crate::automaton::dfa::cfg::CFGCounterUpdate;
+
+/// Utility methods for working with valuations of VASS.
 pub trait VASSValuation {
     fn neg(&self) -> Self;
     fn neg_mut(&mut self);
@@ -41,20 +44,53 @@ impl VASSValuation for Box<[i32]> {
     }
 }
 
-pub fn dyck_transitions_to_ltc_transition(
-    transitions: &[i32],
+/// Converts a sequence of CFG counter updates to a pair of valuations.
+///
+/// The first valuation is the minimum valuation that is reached by the updates.
+/// It needs to be subtracted from the counters first.
+/// The second valuation is the valuation that needs to be added after
+/// subtracting the first valuation to reach the final valuation.
+pub fn cfg_updates_to_ltc_transition(
+    updates: impl Iterator<Item = CFGCounterUpdate>,
     dimension: usize,
 ) -> (Box<[i32]>, Box<[i32]>) {
-    let mut min_couners = vec![0; dimension].into_boxed_slice();
+    let mut min_counters = vec![0; dimension].into_boxed_slice();
     let mut counters = vec![0; dimension].into_boxed_slice();
 
-    for t in transitions {
-        if *t > 0 {
-            counters[(t - 1) as usize] += 1;
-        } else {
-            min_couners[(-t - 1) as usize] += 1;
+    for update in updates {
+        update.apply(&mut counters);
+        for (i, counter) in counters.iter().enumerate() {
+            min_counters[i] = min_counters[i].min(*counter);
         }
     }
 
-    (min_couners, counters)
+    for min_counter in min_counters.iter_mut() {
+        *min_counter = min_counter.abs();
+    }
+
+    for (i, counter) in counters.iter_mut().enumerate() {
+        *counter += min_counters[i];
+    }
+
+    (min_counters, counters)
+}
+
+pub fn vass_update_to_cfg_updates(marking: &[i32]) -> Vec<CFGCounterUpdate> {
+    let mut vec = vec![];
+
+    for (d, m) in marking.iter().enumerate() {
+        let index = (d + 1) as i32;
+
+        let label = if *m > 0 {
+            CFGCounterUpdate::new(index).unwrap()
+        } else {
+            CFGCounterUpdate::new(-index).unwrap()
+        };
+
+        for _ in 0..m.abs() {
+            vec.push(label);
+        }
+    }
+
+    vec
 }

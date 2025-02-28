@@ -1,8 +1,10 @@
+use itertools::{Itertools, repeat_n};
+
 use crate::automaton::{Automaton, AutomatonEdge};
-use itertools::{repeat_n, Itertools};
 
 /// Checks if two automata accept the same language.
-/// This is done by checking if the alphabets are the same and then checking if the automata accept the same words up to a certain length.
+/// This is done by checking if the alphabets are the same and then checking if
+/// the automata accept the same words up to a certain length.
 pub fn same_language<E: AutomatonEdge>(
     a: &impl Automaton<E>,
     b: &impl Automaton<E>,
@@ -45,10 +47,16 @@ pub fn assert_same_language<E: AutomatonEdge>(
             let word: Vec<E> = word.into_iter().cloned().collect_vec();
             match (a.accepts(&word), b.accepts(&word)) {
                 (true, false) => {
-                    panic!("{:?} is accepted by automaton `a` but not by automaton `b`. Thus their languages are not equal.", word);
+                    panic!(
+                        "{:?} is accepted by automaton `a` but not by automaton `b`. Thus their languages are not equal.",
+                        word
+                    );
                 }
                 (false, true) => {
-                    panic!("{:?} is accepted by automaton `b` but not by automaton `a`. Thus their languages are not equal.", word);
+                    panic!(
+                        "{:?} is accepted by automaton `b` but not by automaton `a`. Thus their languages are not equal.",
+                        word
+                    );
                 }
                 _ => {}
             }
@@ -56,8 +64,9 @@ pub fn assert_same_language<E: AutomatonEdge>(
     }
 }
 
-/// Assert that the language accepted by automaton `a` is the inverse of the language accepted by automaton `b`.
-/// Meaning no word is accepted by both and no word is accepted by none.
+/// Assert that the language accepted by automaton `a` is the inverse of the
+/// language accepted by automaton `b`. Meaning no word is accepted by both and
+/// no word is accepted by none.
 pub fn assert_inverse_language<E: AutomatonEdge>(
     a: &impl Automaton<E>,
     b: &impl Automaton<E>,
@@ -75,10 +84,16 @@ pub fn assert_inverse_language<E: AutomatonEdge>(
             let word: Vec<E> = word.into_iter().cloned().collect_vec();
             match (a.accepts(&word), b.accepts(&word)) {
                 (true, true) => {
-                    panic!("{:?} is accepted by automaton `a` and by automaton `b`. Thus their languages are not inverse.", word);
+                    panic!(
+                        "{:?} is accepted by automaton `a` and by automaton `b`. Thus their languages are not inverse.",
+                        word
+                    );
                 }
                 (false, false) => {
-                    panic!("{:?} is accepted by automaton `b` and by automaton `a`. Thus their languages are not inverse.", word);
+                    panic!(
+                        "{:?} is accepted by automaton `b` and by automaton `a`. Thus their languages are not inverse.",
+                        word
+                    );
                 }
                 _ => {}
             }
@@ -86,7 +101,8 @@ pub fn assert_inverse_language<E: AutomatonEdge>(
     }
 }
 
-/// Assert that the language accepted by automaton `a` is a subset of the language accepted by automaton `b`.
+/// Assert that the language accepted by automaton `a` is a subset of the
+/// language accepted by automaton `b`.
 pub fn assert_subset_language<E: AutomatonEdge>(
     a: &impl Automaton<E>,
     b: &impl Automaton<E>,
@@ -106,7 +122,10 @@ pub fn assert_subset_language<E: AutomatonEdge>(
             #[allow(clippy::single_match)]
             match (a.accepts(&word), b.accepts(&word)) {
                 (true, false) => {
-                    panic!("{:?} is accepted by automaton `a` but not by automaton `b`. Thus the language of `a` is not a subset of `b`.", word);
+                    panic!(
+                        "{:?} is accepted by automaton `a` but not by automaton `b`. Thus the language of `a` is not a subset of `b`.",
+                        word
+                    );
                 }
                 _ => {}
             }

@@ -1,11 +1,11 @@
 use vass_reachability::{
     automaton::{
-        petri_net::{InitializedPetriNet, PetriNet},
-        vass::VASS,
         AutBuild,
+        petri_net::{PetriNet, initialized::InitializedPetriNet},
+        vass::VASS,
     },
     boxed_slice,
-    solver::vass_z_reach::solve_z_reach_for_cfg,
+    solver::vass_z_reach::VASSZReachSolverOptions,
     validation::test_parikh_image,
 };
 
@@ -22,12 +22,14 @@ fn test_vass_z_reach_1() {
     let initialized_vass = vass.init(boxed_slice![0, 0], boxed_slice![0, 0], q0, q1);
     let cfg = initialized_vass.to_cfg();
 
-    let res = solve_z_reach_for_cfg(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-        None,
-    );
+    let res = VASSZReachSolverOptions::default()
+        .with_time_limit(std::time::Duration::from_secs(5))
+        .to_solver(
+            cfg.clone(),
+            initialized_vass.initial_valuation.clone(),
+            initialized_vass.final_valuation.clone(),
+        )
+        .solve();
 
     assert!(res.is_success());
 
@@ -58,12 +60,14 @@ fn test_vass_z_reach_2() {
     let initialized_vass = vass.init(boxed_slice![0, 0], boxed_slice![1, 0], q0, q1);
     let cfg = initialized_vass.to_cfg();
 
-    let res = solve_z_reach_for_cfg(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-        None,
-    );
+    let res = VASSZReachSolverOptions::default()
+        .with_time_limit(std::time::Duration::from_secs(5))
+        .to_solver(
+            cfg.clone(),
+            initialized_vass.initial_valuation.clone(),
+            initialized_vass.final_valuation.clone(),
+        )
+        .solve();
 
     assert!(res.is_failure());
 }
@@ -80,12 +84,14 @@ fn test_vass_z_reach_3() {
     let initialized_vass = vass.init(boxed_slice![0, 0], boxed_slice![0, 0], q0, q1);
     let cfg = initialized_vass.to_cfg();
 
-    let res = solve_z_reach_for_cfg(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-        None,
-    );
+    let res = VASSZReachSolverOptions::default()
+        .with_time_limit(std::time::Duration::from_secs(5))
+        .to_solver(
+            cfg.clone(),
+            initialized_vass.initial_valuation.clone(),
+            initialized_vass.final_valuation.clone(),
+        )
+        .solve();
 
     assert!(res.is_success());
 
@@ -116,12 +122,14 @@ fn test_vass_z_reach_4() {
     let initialized_vass = initialized_petri_net.to_vass();
     let cfg = initialized_vass.to_cfg();
 
-    let res = solve_z_reach_for_cfg(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-        None,
-    );
+    let res = VASSZReachSolverOptions::default()
+        .with_time_limit(std::time::Duration::from_secs(5))
+        .to_solver(
+            cfg.clone(),
+            initialized_vass.initial_valuation.clone(),
+            initialized_vass.final_valuation.clone(),
+        )
+        .solve();
 
     assert!(res.is_success());
 
@@ -144,15 +152,17 @@ fn test_vass_z_reach_5() {
     let initialized_vass =
         InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json").to_vass();
     let mut cfg = initialized_vass.to_cfg();
-    cfg.add_failure_state(vec![]);
+    cfg.add_failure_state(());
     cfg = cfg.minimize();
 
-    let res = solve_z_reach_for_cfg(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-        None,
-    );
+    let res = VASSZReachSolverOptions::default()
+        .with_time_limit(std::time::Duration::from_secs(5))
+        .to_solver(
+            cfg.clone(),
+            initialized_vass.initial_valuation.clone(),
+            initialized_vass.final_valuation.clone(),
+        )
+        .solve();
 
     assert!(res.is_failure());
 }

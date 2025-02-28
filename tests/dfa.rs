@@ -1,9 +1,9 @@
 use itertools::Itertools;
 use vass_reachability::{
     automaton::{
-        dfa::{DfaNodeData, DFA},
-        path::Path,
         AutBuild, Automaton,
+        dfa::{DFA, node::DfaNode},
+        path::Path,
     },
     validation::same_language::{assert_inverse_language, assert_same_language, same_language},
 };
@@ -11,9 +11,9 @@ use vass_reachability::{
 #[test]
 fn test_dfa() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(true, 2));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(true, 2));
     dfa.set_start(q0);
 
     dfa.add_transition(q0, q1, 'a');
@@ -32,9 +32,9 @@ fn test_dfa() {
 #[test]
 fn test_dfa_inversion() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(true, 2));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(true, 2));
     dfa.set_start(q0);
 
     dfa.add_transition(q0, q1, 'a');
@@ -67,8 +67,8 @@ fn test_dfa_inversion() {
 #[test]
 fn test_dfa_intersection() {
     let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa1.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa1.add_state(DfaNodeData::new(true, 1));
+    let q0 = dfa1.add_state(DfaNode::new(false, 0));
+    let q1 = dfa1.add_state(DfaNode::new(true, 1));
     dfa1.set_start(q0);
 
     // a* b b*
@@ -77,8 +77,8 @@ fn test_dfa_intersection() {
     dfa1.add_transition(q1, q1, 'b');
 
     let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa2.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa2.add_state(DfaNodeData::new(true, 1));
+    let q0 = dfa2.add_state(DfaNode::new(false, 0));
+    let q1 = dfa2.add_state(DfaNode::new(true, 1));
     dfa2.set_start(q0);
 
     // a b*
@@ -91,8 +91,8 @@ fn test_dfa_intersection() {
     // we want to figure out if L2 is a subset of L1
     // so (a b*) is a subset of (a* b b*)
     // which is wrong, since "a" is not in (a* b b*)
-    // the inclusion holds if there is no accepting run in the intersection of L2 and inv L1
-    // A ⊆ B iff A ∩ inv(B) = ∅
+    // the inclusion holds if there is no accepting run in the intersection of L2
+    // and inv L1 A ⊆ B iff A ∩ inv(B) = ∅
 
     assert!(!dfa2.is_subset_of(&dfa1));
 }
@@ -100,8 +100,8 @@ fn test_dfa_intersection() {
 #[test]
 fn test_dfa_intersection_2() {
     let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa1.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa1.add_state(DfaNodeData::new(true, 1));
+    let q0 = dfa1.add_state(DfaNode::new(false, 0));
+    let q1 = dfa1.add_state(DfaNode::new(true, 1));
     dfa1.set_start(q0);
 
     // a* b b*
@@ -110,8 +110,8 @@ fn test_dfa_intersection_2() {
     dfa1.add_transition(q1, q1, 'b');
 
     let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa2.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa2.add_state(DfaNodeData::new(true, 1));
+    let q0 = dfa2.add_state(DfaNode::new(false, 0));
+    let q1 = dfa2.add_state(DfaNode::new(true, 1));
     dfa2.set_start(q0);
 
     // a b*
@@ -130,8 +130,8 @@ fn test_dfa_intersection_2() {
 #[test]
 fn test_dfa_intersection_3() {
     let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa1.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa1.add_state(DfaNodeData::new(true, 1));
+    let q0 = dfa1.add_state(DfaNode::new(false, 0));
+    let q1 = dfa1.add_state(DfaNode::new(true, 1));
     dfa1.set_start(q0);
 
     // a* b b*
@@ -140,8 +140,8 @@ fn test_dfa_intersection_3() {
     dfa1.add_transition(q1, q1, 'b');
 
     let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa2.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa2.add_state(DfaNodeData::new(true, 1));
+    let q0 = dfa2.add_state(DfaNode::new(false, 0));
+    let q1 = dfa2.add_state(DfaNode::new(true, 1));
     dfa2.set_start(q0);
 
     // a* b
@@ -160,12 +160,12 @@ fn test_dfa_intersection_3() {
 #[test]
 fn minimize_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
-    let q3 = dfa.add_state(DfaNodeData::new(true, 3));
-    let q4 = dfa.add_state(DfaNodeData::new(false, 4));
-    let q5 = dfa.add_state(DfaNodeData::new(true, 5));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(false, 2));
+    let q3 = dfa.add_state(DfaNode::new(true, 3));
+    let q4 = dfa.add_state(DfaNode::new(false, 4));
+    let q5 = dfa.add_state(DfaNode::new(true, 5));
     dfa.set_start(q0);
 
     dfa.add_transition(q0, q1, 'a');
@@ -193,12 +193,12 @@ fn minimize_1() {
 fn minimize_2() {
     // example:  https://en.wikipedia.org/wiki/DFA_minimization
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(true, 2));
-    let q3 = dfa.add_state(DfaNodeData::new(true, 3));
-    let q4 = dfa.add_state(DfaNodeData::new(true, 4));
-    let q5 = dfa.add_state(DfaNodeData::new(false, 5));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(true, 2));
+    let q3 = dfa.add_state(DfaNode::new(true, 3));
+    let q4 = dfa.add_state(DfaNode::new(true, 4));
+    let q5 = dfa.add_state(DfaNode::new(false, 5));
     dfa.set_start(q0);
 
     dfa.add_transition(q0, q1, 'a');
@@ -226,10 +226,10 @@ fn minimize_2() {
 fn minimize_3() {
     let mut dfa = DFA::<u32, char>::new(vec!['a']);
 
-    let q0 = dfa.add_state(DfaNodeData::new(true, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(true, 2));
-    let q3 = dfa.add_state(DfaNodeData::new(false, 3));
+    let q0 = dfa.add_state(DfaNode::new(true, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(true, 2));
+    let q3 = dfa.add_state(DfaNode::new(false, 3));
 
     dfa.set_start(q0);
 
@@ -250,9 +250,9 @@ fn minimize_3() {
 fn minimize_4() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c', 'd']);
 
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(true, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(true, 1));
+    let q2 = dfa.add_state(DfaNode::new(false, 2));
 
     dfa.set_start(q0);
 
@@ -280,15 +280,15 @@ fn minimize_4() {
 fn minimize_5() {
     let mut dfa = DFA::<u32, i32>::new(vec![1, 2, -1, -2]);
 
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
-    let q3 = dfa.add_state(DfaNodeData::new(false, 3));
-    let q4 = dfa.add_state(DfaNodeData::new(false, 4));
-    let q5 = dfa.add_state(DfaNodeData::new(true, 5));
-    let q6 = dfa.add_state(DfaNodeData::new(false, 6));
-    let q7 = dfa.add_state(DfaNodeData::new(false, 7));
-    let q8 = dfa.add_state(DfaNodeData::new(false, 8));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(false, 2));
+    let q3 = dfa.add_state(DfaNode::new(false, 3));
+    let q4 = dfa.add_state(DfaNode::new(false, 4));
+    let q5 = dfa.add_state(DfaNode::new(true, 5));
+    let q6 = dfa.add_state(DfaNode::new(false, 6));
+    let q7 = dfa.add_state(DfaNode::new(false, 7));
+    let q8 = dfa.add_state(DfaNode::new(false, 8));
 
     dfa.set_start(q0);
 
@@ -351,10 +351,10 @@ fn minimize_5() {
 fn find_loop_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
 
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
-    let q3 = dfa.add_state(DfaNodeData::new(true, 3));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(false, 2));
+    let q3 = dfa.add_state(DfaNode::new(true, 3));
 
     dfa.set_start(q0);
 
@@ -394,12 +394,12 @@ fn find_loop_1() {
 fn find_loop_2() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
 
-    let q0 = dfa.add_state(DfaNodeData::new(false, 0));
-    let q1 = dfa.add_state(DfaNodeData::new(false, 1));
-    let q2 = dfa.add_state(DfaNodeData::new(false, 2));
-    let q3 = dfa.add_state(DfaNodeData::new(false, 3));
-    let q4 = dfa.add_state(DfaNodeData::new(false, 4));
-    let q5 = dfa.add_state(DfaNodeData::new(true, 5));
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(false, 2));
+    let q3 = dfa.add_state(DfaNode::new(false, 3));
+    let q4 = dfa.add_state(DfaNode::new(false, 4));
+    let q5 = dfa.add_state(DfaNode::new(true, 5));
 
     dfa.set_start(q0);
 

@@ -1,126 +1,16 @@
 use hashbrown::HashMap;
+use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
-use petgraph::{
-    graph::{EdgeIndex, NodeIndex},
-    stable_graph::StableDiGraph,
-    visit::EdgeRef,
-    Direction,
-};
-
-use super::{
-    cfg::CFGCounterUpdate,
-    dfa::{DfaNodeData, DFA},
-    nfa::NFA,
-    utils::VASSValuation,
+use crate::automaton::{
     AutBuild, Automaton, AutomatonEdge, AutomatonNode,
+    dfa::{
+        cfg::{CFGCounterUpdate, VASSCFG},
+        node::DfaNode,
+    },
+    nfa::NFA,
+    utils::{self, VASSValuation},
+    vass::VASS,
 };
-
-pub type VassEdge<E> = (E, Box<[i32]>);
-
-// todo epsilon transitions
-#[derive(Debug, Clone)]
-pub struct VASS<N: AutomatonNode, E: AutomatonEdge> {
-    pub graph: StableDiGraph<N, VassEdge<E>>,
-    pub alphabet: Vec<E>,
-    pub dimension: usize,
-}
-
-impl<N: AutomatonNode, E: AutomatonEdge> VASS<N, E> {
-    pub fn new(dimension: usize, alphabet: Vec<E>) -> Self {
-        let graph = StableDiGraph::new();
-        VASS {
-            alphabet,
-            graph,
-            dimension,
-        }
-    }
-
-    pub fn init(
-        self,
-        initial_valuation: Box<[i32]>,
-        final_valuation: Box<[i32]>,
-        initial_node: NodeIndex<u32>,
-        final_node: NodeIndex<u32>,
-    ) -> InitializedVASS<N, E> {
-        assert!(
-            initial_valuation.len() == self.dimension,
-            "Initial valuation has to have the same length as the dimension"
-        );
-        assert!(
-            final_valuation.len() == self.dimension,
-            "Final valuation has to have the same length as the dimension"
-        );
-
-        InitializedVASS {
-            vass: self,
-            initial_valuation,
-            final_valuation,
-            initial_node,
-            final_node,
-        }
-    }
-
-    pub fn state_count(&self) -> usize {
-        self.graph.node_count()
-    }
-
-    pub fn transition_count(&self) -> usize {
-        self.graph.edge_count()
-    }
-}
-
-impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, N, VassEdge<E>>
-    for VASS<N, E>
-{
-    fn add_state(&mut self, data: N) -> NodeIndex<u32> {
-        self.graph.add_node(data)
-    }
-
-    fn add_transition(
-        &mut self,
-        from: NodeIndex<u32>,
-        to: NodeIndex<u32>,
-        label: VassEdge<E>,
-    ) -> EdgeIndex<u32> {
-        assert!(
-            label.1.len() == self.dimension,
-            "Update has to have the same length as the dimension"
-        );
-
-        let existing_edge = self
-            .graph
-            .edges_directed(from, Direction::Outgoing)
-            .find(|edge| *edge.weight() == label);
-        if let Some(edge) = existing_edge {
-            let target = edge.target();
-            if target != to {
-                panic!("Transition conflict, adding the new transition causes this automaton to no longer be a VASS, as VASS have to be deterministic. Existing: {:?} -{:?}-> {:?}. New: {:?} -{:?}-> {:?}", from, label, target, from, label, to);
-            }
-        }
-
-        self.graph.add_edge(from, to, label)
-    }
-}
-
-pub fn marking_to_vec(marking: &[i32]) -> Vec<CFGCounterUpdate> {
-    let mut vec = vec![];
-
-    for (d, m) in marking.iter().enumerate() {
-        let index = (d + 1) as i32;
-
-        let label = if *m > 0 {
-            CFGCounterUpdate::new(index).unwrap()
-        } else {
-            CFGCounterUpdate::new(-index).unwrap()
-        };
-
-        for _ in 0..m.abs() {
-            vec.push(label);
-        }
-    }
-
-    vec
-}
 
 #[derive(Debug, Clone)]
 pub struct InitializedVASS<N: AutomatonNode, E: AutomatonEdge> {
@@ -132,7 +22,7 @@ pub struct InitializedVASS<N: AutomatonNode, E: AutomatonEdge> {
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
-    pub fn to_cfg(&self) -> DFA<Vec<Option<N>>, CFGCounterUpdate> {
+    pub fn to_cfg(&self) -> VASSCFG<()> {
         let mut cfg = NFA::new(CFGCounterUpdate::alphabet(self.vass.dimension));
 
         let cfg_start = cfg.add_state(self.state_to_cfg_state(self.initial_node));
@@ -158,7 +48,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
                 };
 
                 let vass_label = &vass_edge.weight().1;
-                let marking_vec = marking_to_vec(vass_label);
+                let marking_vec = utils::vass_update_to_cfg_updates(vass_label);
 
                 if marking_vec.is_empty() {
                     cfg.add_transition(cfg_state, cfg_target, None);
@@ -166,7 +56,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
                     let mut cfg_source = cfg_state;
 
                     for label in marking_vec.iter().take(marking_vec.len() - 1) {
-                        let target = cfg.add_state(DfaNodeData::new(false, None));
+                        let target = cfg.add_state(DfaNode::new(false, None));
                         cfg.add_transition(cfg_source, target, Some(*label));
                         cfg_source = target;
                     }
@@ -180,8 +70,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
         cfg.determinize()
     }
 
-    fn state_to_cfg_state(&self, state: NodeIndex<u32>) -> DfaNodeData<Option<N>> {
-        DfaNodeData::new(
+    fn state_to_cfg_state(&self, state: NodeIndex<u32>) -> DfaNode<Option<N>> {
+        DfaNode::new(
             state == self.final_node,
             Some(self.vass.graph[state].clone()),
         )

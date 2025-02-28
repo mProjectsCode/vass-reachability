@@ -1,6 +1,6 @@
 use std::vec;
 
-use vass_reachability::automaton::{vass::VASS, AutBuild, Automaton};
+use vass_reachability::automaton::{AutBuild, Automaton, vass::VASS};
 
 #[test]
 fn test_vass() {

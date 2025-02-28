@@ -1,6 +1,6 @@
 use z3::{
-    ast::{Ast, Int},
     Config, Context, SatResult, Solver,
+    ast::{Ast, Int},
 };
 
 #[test]

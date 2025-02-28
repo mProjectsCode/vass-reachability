@@ -1,7 +1,9 @@
-use crate::automaton::{dfa::VASSCFG, parikh_image::ParikhImage, AutomatonNode};
+use crate::automaton::{AutomatonNode, dfa::cfg::VASSCFG, path::parikh_image::ParikhImage};
 
 pub mod same_language;
 
+/// Tests that a given Parikh image is arrives at the final valuation in a VASS
+/// CFG.
 pub fn test_parikh_image<N: AutomatonNode>(
     parikh_image: &ParikhImage,
     cfg: &VASSCFG<N>,

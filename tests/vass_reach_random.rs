@@ -1,9 +1,9 @@
 use std::{fs, time::Duration};
 
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use vass_reachability::{
     automaton::petri_net::PetriNet,
-    solver::vass_reach::{VASSReachSolverOptions, VASSReachSolverResult},
+    solver::{SolverStatus, vass_reach::VASSReachSolverOptions},
 };
 
 fn random_vass_test(
@@ -68,13 +68,13 @@ fn random_vass_test(
             .with_time_limit(Duration::from_secs(timeout)) // some time that is long enough, but makes the test run in a reasonable time
             .with_log_level(vass_reachability::logger::LogLevel::Error)
             .to_solver(initialized_vass)
-            .solve_n();
+            .solve();
 
-        if res.unknown() {
+        if res.is_unknown() {
             initialized_petri_net.to_file(&format!("{}/unknown_{}.json", path, _i));
         }
 
-        println!("{}: {:?}", _i, res.result);
+        println!("{}: {:?}", _i, res.status);
         results.push(res);
     }
 
@@ -83,7 +83,7 @@ fn random_vass_test(
 
     let solved = results
         .iter()
-        .filter(|r| !matches!(r.result, VASSReachSolverResult::Unknown(_)))
+        .filter(|r| !matches!(r.status, SolverStatus::Unknown(_)))
         .count();
 
     println!("Solved {solved} of {count}");
@@ -91,6 +91,6 @@ fn random_vass_test(
 
 #[test]
 fn test_vass_reach_random() {
-    random_vass_test(1, 3, 3, 3, 50, 10, "3");
-    random_vass_test(2, 4, 8, 4, 50, 10, "4");
+    random_vass_test(1, 3, 3, 3, 50, 30, "3");
+    random_vass_test(2, 4, 8, 4, 50, 30, "4");
 }

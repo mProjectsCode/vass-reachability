@@ -1,56 +1,25 @@
 use std::{collections::VecDeque, fmt::Debug, vec};
 
-use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use hashbrown::{HashMap, HashSet, hash_map::Entry};
 use itertools::Itertools;
+use minimization::{DfaMinimizationTable, DfaMinimizationTableEntry};
+use node::DfaNode;
 use petgraph::{
+    Direction,
     graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
-    Direction,
 };
 
-use crate::automaton::utils::VASSValuation;
+use super::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, path::Path};
 
-use super::{cfg::CFGCounterUpdate, path::Path, AutBuild, Automaton, AutomatonEdge, AutomatonNode};
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DfaNodeData<T: AutomatonNode> {
-    pub accepting: bool,
-    pub data: T,
-}
-
-impl<T: AutomatonNode> DfaNodeData<T> {
-    pub fn new(accepting: bool, data: T) -> Self {
-        DfaNodeData { accepting, data }
-    }
-
-    pub fn accepting(&self) -> bool {
-        self.accepting
-    }
-
-    pub fn data(&self) -> &T {
-        &self.data
-    }
-
-    pub fn invert(&self) -> Self {
-        DfaNodeData::new(!self.accepting, self.data.clone())
-    }
-
-    pub fn join<TO: AutomatonNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<(T, TO)> {
-        DfaNodeData::new(
-            self.accepting && other.accepting,
-            (self.data.clone(), other.data.clone()),
-        )
-    }
-
-    pub fn join_left<TO: AutomatonNode>(&self, other: &DfaNodeData<TO>) -> DfaNodeData<T> {
-        DfaNodeData::new(self.accepting && other.accepting, self.data.clone())
-    }
-}
+pub mod cfg;
+pub mod minimization;
+pub mod node;
 
 #[derive(Clone)]
 pub struct DFA<N: AutomatonNode, E: AutomatonEdge> {
     start: Option<NodeIndex<u32>>,
-    pub graph: DiGraph<DfaNodeData<N>, E>,
+    pub graph: DiGraph<DfaNode<N>, E>,
     alphabet: Vec<E>,
     is_complete: bool,
 }
@@ -75,7 +44,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         self.start
     }
 
-    /// Sets the DFA to be complete. This is useful when we don't want to spend the time to check if the DFA is complete.
+    /// Sets the DFA to be complete. This is useful when we don't want to spend
+    /// the time to check if the DFA is complete.
     pub fn override_complete(&mut self) {
         self.is_complete = true;
     }
@@ -88,7 +58,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         self.graph.edge_weight(edge).unwrap()
     }
 
-    /// Adds a failure state if needed. This turns the DFA into a complete DFA, which is needed for some algorithms.
+    /// Adds a failure state if needed. This turns the DFA into a complete DFA,
+    /// which is needed for some algorithms.
     pub fn add_failure_state(&mut self, data: N) -> Option<NodeIndex<u32>> {
         let mut failure_transitions = Vec::new();
 
@@ -106,7 +77,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         }
 
         if !failure_transitions.is_empty() {
-            let failure_state = self.add_state(DfaNodeData::new(false, data));
+            let failure_state = self.add_state(DfaNode::new(false, data));
 
             for (state, letter) in failure_transitions {
                 self.add_transition(state, failure_state, letter.clone());
@@ -126,6 +97,11 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         None
     }
 
+    /// Assert that the DFA is complete.
+    /// This means that every state has a transition for every letter in the
+    /// alphabet.
+    ///
+    /// If the DFA is not complete, this function will panic.
     pub fn assert_complete(&self) {
         for state in self.graph.node_indices() {
             for letter in self.alphabet.iter() {
@@ -217,8 +193,10 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         table.to_dfa()
     }
 
-    /// Inverts self, creating a new DFA where the accepting states are inverted.
-    /// The DFA must have a start state and be complete.
+    /// Inverts self, creating a new DFA where the accepting states are
+    /// inverted. The DFA must have a start state and be complete.
+    ///
+    /// See [`DFA::invert_mut`] for a version that modifies the DFA in place.
     pub fn invert(&self) -> DFA<N, E> {
         assert!(self.start.is_some(), "DFA must have a start state");
         assert!(self.is_complete, "DFA must be complete to invert");
@@ -241,7 +219,19 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         inverted
     }
 
-    /// Builds an intersection DFA from two DFAs. Both DFAs must have the same alphabet, a start state, and they must be complete.
+    /// Inverts self, modifying the DFA in place. The DFA must be complete.
+    ///
+    /// See [`DFA::invert`] for a version that creates a new DFA.
+    pub fn invert_mut(&mut self) {
+        assert!(self.is_complete, "DFA must be complete to invert");
+
+        for node in self.graph.node_indices() {
+            self.graph[node].invert_mut();
+        }
+    }
+
+    /// Builds an intersection DFA from two DFAs. Both DFAs must have the same
+    /// alphabet, a start state, and they must be complete.
     pub fn intersect<NO: AutomatonNode>(&self, other: &DFA<NO, E>) -> DFA<N, E> {
         assert!(self.start.is_some(), "Self must have a start state");
         assert!(other.start.is_some(), "Other must have a start state");
@@ -306,9 +296,9 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         intersected
     }
 
-    pub fn bfs(&self, is_target: impl Fn(NodeIndex<u32>, &DfaNodeData<N>) -> bool) -> Vec<Path> {
-        let mut visited = std::collections::HashSet::new();
-        let mut queue = std::collections::VecDeque::new();
+    pub fn bfs(&self, is_target: impl Fn(NodeIndex<u32>, &DfaNode<N>) -> bool) -> Vec<Path> {
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
         let mut paths = Vec::new();
 
         assert!(self.start.is_some(), "Self must have a start state");
@@ -339,10 +329,13 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         self.bfs(|_, data| data.accepting)
     }
 
-    /// Not sure about this algorithm, but we first check if the graph has any accepting states. If it doesn't, we can return false immediately.
-    /// Then we do a simple DFS from the start state, and if we find an accepting state, we return true.
-    /// (the second part is probably not necessary, as there should only be one connected component and if that contains an accepting state,
-    /// we should be able to reach it from the start state with some input, so we could always return true)
+    /// Not sure about this algorithm, but we first check if the graph has any
+    /// accepting states. If it doesn't, we can return false immediately.
+    /// Then we do a simple DFS from the start state, and if we find an
+    /// accepting state, we return true. (the second part is probably not
+    /// necessary, as there should only be one connected component and if that
+    /// contains an accepting state, we should be able to reach it from the
+    /// start state with some input, so we could always return true)
     pub fn has_accepting_run(&self) -> bool {
         if self
             .graph
@@ -373,17 +366,21 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         false
     }
 
-    /// Checks if `L(Self) = ∅` by checking if there is no accepting run in the DFA.
+    /// Checks if `L(Self) = ∅` by checking if there is no accepting run in the
+    /// DFA.
     pub fn is_language_empty(&self) -> bool {
         !self.has_accepting_run()
     }
 
-    /// Checks if self is a subset of other. Both must be complete DFAs with the same alphabet.
+    /// Checks if self is a subset of other. Both must be complete DFAs with the
+    /// same alphabet.
     ///
-    /// The inclusion holds if there is no accepting run in the intersection of self and the inverse of other.
-    /// `L(Self) ⊆ L(Other) iff L(Self) ∩ L(invert(Other)) = ∅`
+    /// The inclusion holds if there is no accepting run in the intersection of
+    /// self and the inverse of other. `L(Self) ⊆ L(Other) iff L(Self) ∩
+    /// L(invert(Other)) = ∅`
     pub fn is_subset_of<NO: AutomatonNode>(&self, other: &DFA<NO, E>) -> bool {
-        let inverted = other.clone().invert();
+        let mut inverted = other.clone();
+        inverted.invert_mut();
         let intersection = self.intersect(&inverted);
         // dbg!(&intersection);
         // println!("{:?}", Dot::new(&intersection.graph));
@@ -421,12 +418,49 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
 
         None
     }
+
+    pub fn to_graphviz(&self) -> String {
+        let mut dot = String::new();
+        dot.push_str("digraph finite_state_machine {\n");
+        dot.push_str("fontname=\"Helvetica,Arial,sans-serif\"\n");
+        dot.push_str("node [fontname=\"Helvetica,Arial,sans-serif\"]\n");
+        dot.push_str("edge [fontname=\"Helvetica,Arial,sans-serif\"]\n");
+        dot.push_str("rankdir=LR;\n");
+
+        let accepting_states = self
+            .graph
+            .node_indices()
+            .filter(|node| self.graph[*node].accepting)
+            .collect::<Vec<_>>();
+
+        dot.push_str(&format!(
+            "node [shape = doublecircle]; {};\n",
+            accepting_states
+                .iter()
+                .map(|node| node.index().to_string())
+                .join(" ")
+        ));
+        dot.push_str("node [shape = circle];\n");
+
+        for edge in self.graph.edge_references() {
+            dot.push_str(&format!(
+                "{:?} -> {:?} [ label = \"{:?}\" ];\n",
+                edge.source().index(),
+                edge.target().index(),
+                edge.weight()
+            ));
+        }
+
+        dot.push_str("}\n");
+
+        dot
+    }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNodeData<N>, E>
+impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNode<N>, E>
     for DFA<N, E>
 {
-    fn add_state(&mut self, data: DfaNodeData<N>) -> NodeIndex<u32> {
+    fn add_state(&mut self, data: DfaNode<N>) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
 
@@ -443,7 +477,10 @@ impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNodeD
         if let Some(edge) = existing_edge {
             let target = edge.target();
             if target != to {
-                panic!("Transition conflict, adding the new transition causes this automaton to no longer be a DFA. Existing: {:?} -{:?}-> {:?}. New: {:?} -{:?}-> {:?}", from, label, target, from, label, to);
+                panic!(
+                    "Transition conflict, adding the new transition causes this automaton to no longer be a DFA. Existing: {:?} -{:?}-> {:?}. New: {:?} -{:?}-> {:?}",
+                    from, label, target, from, label, to
+                );
             }
         }
 
@@ -528,288 +565,5 @@ impl<N: AutomatonNode, E: AutomatonEdge> Debug for DFA<N, E> {
                     .collect_vec(),
             )
             .finish()
-    }
-}
-
-pub type VASSCFG<N> = DFA<N, CFGCounterUpdate>;
-
-impl<N: AutomatonNode> VASSCFG<N> {
-    pub fn modulo_reach(
-        &self,
-        mu: u32,
-        initial_valuation: &[i32],
-        final_valuation: &[i32],
-    ) -> Option<Path> {
-        // For every node, we track which counter valuations we already visited.
-        let mut visited = vec![std::collections::HashSet::new(); self.state_count()];
-        let mut queue = std::collections::VecDeque::new();
-        let mut mod_initial_valuation: Box<[i32]> = Box::from(initial_valuation);
-        let mut mod_final_valuation: Box<[i32]> = Box::from(final_valuation);
-        mod_initial_valuation.mod_euclid_mut(mu);
-        mod_final_valuation.mod_euclid_mut(mu);
-
-        assert!(self.start.is_some(), "Self must have a start state");
-        queue.push_back((Path::new(self.start.unwrap()), mod_initial_valuation));
-
-        while let Some((path, valuation)) = queue.pop_front() {
-            let last = path.end();
-
-            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
-                let mut new_valuation: Box<[i32]> = valuation.clone();
-
-                let update = edge.weight();
-                update.apply_mod(&mut new_valuation, mu as i32);
-
-                let target = edge.target();
-
-                if visited[target.index()].insert(new_valuation.clone()) {
-                    let mut new_path = path.clone();
-                    new_path.add_edge(edge.id(), target);
-
-                    if self.graph[target].accepting && new_valuation == mod_final_valuation {
-                        // paths.push(new_path);
-                        // Optimization: we only search for the shortest path, so we can stop when we find one
-                        return Some(new_path);
-                    } else {
-                        queue.push_back((new_path, new_valuation));
-                    }
-                }
-            }
-        }
-
-        None
-    }
-}
-
-/// Represents the table used in the minimization of a DFA.
-/// The table is a vector of entries, where each entry is a state in the DFA.
-/// Each entry contains the state, whether it is an initial state, whether it is a final state, and the transitions to other states.
-/// The transitions are represented as a vector of states, where the index of the state corresponds to the index of the symbol in the alphabet.
-/// The alphabet is a reference to the alphabet of the DFA.
-/// The table contains None for states that have been merged with another state, as to minimize reallocations when merging states.
-#[derive(Debug, Clone)]
-pub struct DfaMinimizationTable<'a, N: AutomatonNode, E: AutomatonEdge> {
-    pub table: Vec<Option<DfaMinimizationTableEntry<'a, N>>>,
-    pub graph: &'a DFA<N, E>,
-}
-
-impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
-    pub fn new(graph: &'a DFA<N, E>) -> Self {
-        DfaMinimizationTable {
-            table: vec![],
-            graph,
-        }
-    }
-
-    // Iterate over the table, returning the entries that are not None.
-    fn iter_some(&self) -> impl Iterator<Item = &DfaMinimizationTableEntry<'a, N>> {
-        self.table.iter().filter_map(|entry| entry.as_ref())
-    }
-
-    // Iterate over the table, returning the entries that are not None.
-    fn iter_mut_some(&mut self) -> impl Iterator<Item = &mut DfaMinimizationTableEntry<'a, N>> {
-        self.table.iter_mut().filter_map(|entry| entry.as_mut())
-    }
-
-    /// Add a new entry to the minimization table.
-    /// Make sure that the transitions are sorted the same way as the alphabet.
-    pub fn add_entry(&mut self, entry: DfaMinimizationTableEntry<'a, N>) {
-        self.table.push(Some(entry));
-    }
-
-    pub fn minimize(&mut self) {
-        for entry in self.iter_some() {
-            assert_eq!(
-                entry.transitions.len(),
-                self.graph.alphabet.len(),
-                "All entries must have transitions for all symbols in the alphabet. Entry: {:?}",
-                entry
-            );
-        }
-
-        let equivalent_states = self.find_equivalent_states();
-
-        // dbg!(&equivalent_states);
-        // dbg!(&self.table);
-
-        for (i, j) in equivalent_states {
-            if self.table[i].is_none() || self.table[j].is_none() {
-                continue;
-            }
-
-            let entry_b = self.table[j].take().unwrap();
-            let entry_a = self.table[i].as_mut().unwrap();
-
-            let state_a = entry_a.state;
-
-            // we need to merge the two entries
-            // the new entry will have the state of entry_a, and the initial state and final state will be true if either of the two entries had it set to true
-            // since we only merge final with final and non-final with non-final, we can just take the final state of entry_a
-            entry_a.is_initial = entry_a.is_initial || entry_b.is_initial;
-
-            // dbg!(&self.table);
-
-            // then we need to change every reference of the state of entry_b to entry_a
-            for entry in self.iter_mut_some() {
-                for transition in entry.transitions.iter_mut() {
-                    if *transition == entry_b.state {
-                        *transition = state_a;
-                    }
-                }
-            }
-        }
-
-        // dbg!(&self.table);
-    }
-
-    pub fn to_dfa(&self) -> DFA<N, E> {
-        let mut dfa = DFA::new(self.graph.alphabet.clone());
-
-        let mut state_map = HashMap::new();
-
-        for entry in self.iter_some() {
-            let state = dfa.add_state(DfaNodeData::new(entry.is_final, entry.data.clone()));
-            if entry.is_initial {
-                dfa.set_start(state);
-            }
-
-            state_map.insert(entry.state, state);
-        }
-
-        for entry in self.iter_some() {
-            let from = state_map[&entry.state];
-
-            for (i, symbol) in self.graph.alphabet.iter().enumerate() {
-                let target = entry.transitions[i];
-                let to = state_map[&target];
-                dfa.add_transition(from, to, (*symbol).clone());
-            }
-        }
-
-        dfa.override_complete();
-
-        dfa
-    }
-
-    fn find_equivalent_states(&self) -> Vec<(usize, usize)> {
-        let state_count = self.table.len();
-        let mut table = vec![vec![false; state_count]; state_count];
-
-        // mark all pairs of states (q1, q2) where q1 is accepting and q2 is not accepting
-        for i_data in self.iter_some() {
-            for j_data in self.iter_some() {
-                let i = i_data.state.index();
-                let j = j_data.state.index();
-
-                if i >= j {
-                    continue;
-                }
-
-                if table[i][j] {
-                    continue;
-                }
-
-                if i_data.is_final != j_data.is_final {
-                    table[i][j] = true;
-                }
-            }
-        }
-
-        // while there is an unmarked pair (q1, q2) in the table and a letter with q1 -> q3 and q2 -> q4 so that (q3, q4) is marked, mark (q1, q2)
-        let mut changed = true;
-        while changed {
-            changed = false;
-
-            for i_data in self.iter_some() {
-                for j_data in self.iter_some() {
-                    let i = i_data.state.index();
-                    let j = j_data.state.index();
-
-                    if i >= j {
-                        continue;
-                    }
-
-                    if table[i][j] {
-                        continue;
-                    }
-
-                    for l in 0..self.graph.alphabet.len() {
-                        let mut i_target = i_data.transitions[l].index();
-                        let mut j_target = j_data.transitions[l].index();
-
-                        if i_target >= j_target {
-                            (i_target, j_target) = (j_target, i_target);
-                        }
-
-                        if table[i_target][j_target] {
-                            table[i][j] = true;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // println!("Table:");
-
-        // for i in 0..state_count {
-        //     for j in 0..state_count {
-        //         if table[i][j] {
-        //             print!("x")
-        //         }
-        //         else {
-        //             print!(".")
-        //         }
-        //     }
-
-        //     println!();
-        // }
-
-        // dbg!(&table);
-
-        let mut equivalent_states = vec![];
-
-        for i_data in self.iter_some() {
-            for j_data in self.iter_some() {
-                let i = i_data.state.index();
-                let j = j_data.state.index();
-
-                if i >= j {
-                    continue;
-                }
-
-                if !table[i][j] {
-                    // println!("States {:?} and {:?} are equivalent", i_data.data, j_data.data);
-                    equivalent_states.push((i, j));
-                }
-            }
-        }
-
-        equivalent_states
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct DfaMinimizationTableEntry<'a, N: AutomatonNode> {
-    pub state: NodeIndex<u32>,
-    pub data: &'a N,
-    pub is_initial: bool,
-    pub is_final: bool,
-    pub transitions: Vec<NodeIndex<u32>>,
-}
-
-impl<'a, N: AutomatonNode> DfaMinimizationTableEntry<'a, N> {
-    pub fn new(state: NodeIndex<u32>, data: &'a N, initial_state: bool, final_state: bool) -> Self {
-        DfaMinimizationTableEntry {
-            state,
-            data,
-            is_initial: initial_state,
-            is_final: final_state,
-            transitions: vec![],
-        }
-    }
-
-    pub fn add_transition(&mut self, target: NodeIndex<u32>) {
-        self.transitions.push(target);
     }
 }

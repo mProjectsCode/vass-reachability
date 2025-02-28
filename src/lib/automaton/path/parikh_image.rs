@@ -4,9 +4,11 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use crate::logger::{LogLevel, Logger};
-
-use super::{dfa::DFA, AutomatonEdge, AutomatonNode};
+use super::Path;
+use crate::{
+    automaton::{AutomatonEdge, AutomatonNode, dfa::DFA},
+    logger::{LogLevel, Logger},
+};
 
 #[derive(Debug, Clone)]
 pub struct ParikhImage {
@@ -96,10 +98,12 @@ impl ParikhImage {
         (main_component, components)
     }
 
-    /// Create a new Parikh Image that contains the connected component that the start node is in.
-    /// The connected component is determined by a depth-first search.
+    /// Create a new Parikh Image that contains the connected component that the
+    /// start node is in. The connected component is determined by a
+    /// depth-first search.
     ///
-    /// Edges that are part of the connected component are removed from the original Parikh Image.
+    /// Edges that are part of the connected component are removed from the
+    /// original Parikh Image.
     fn split_connected_component<N: AutomatonNode, E: AutomatonEdge>(
         &mut self,
         visited: &mut [bool],
@@ -139,8 +143,9 @@ impl ParikhImage {
         component
     }
 
-    /// Get the edges that go from the connected components, formed by this parikh image, to the outside.
-    /// So from a node that is connected to by one edge of the parikh image to a node that is not connected.
+    /// Get the edges that go from the connected components, formed by this
+    /// parikh image, to the outside. So from a node that is connected to by
+    /// one edge of the parikh image to a node that is not connected.
     pub fn get_outgoing_edges<N: AutomatonNode, E: AutomatonEdge>(
         &self,
         dfa: &DFA<N, E>,
@@ -159,7 +164,8 @@ impl ParikhImage {
 
         let mut edges = HashSet::new();
 
-        // next we get all edges that go from a connected node to a node outside the connected component
+        // next we get all edges that go from a connected node to a node outside the
+        // connected component
         for node in &connected_nodes {
             for edge in dfa.graph.edges(*node) {
                 if !connected_nodes.contains(&edge.target()) {
@@ -183,5 +189,17 @@ impl ParikhImage {
             .iter()
             .filter(|(_, count)| **count > 0)
             .map(|(edge, _)| *edge)
+    }
+}
+
+impl From<&Path> for ParikhImage {
+    fn from(path: &Path) -> Self {
+        let mut map = HashMap::new();
+
+        for (edge, _) in &path.transitions {
+            *map.entry(*edge).or_insert(0) += 1;
+        }
+
+        ParikhImage::new(map)
     }
 }

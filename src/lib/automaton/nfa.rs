@@ -1,20 +1,17 @@
 use hashbrown::HashMap;
-
 use petgraph::{
+    Direction,
     graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
-    Direction,
 };
 
-use super::{
-    dfa::{DfaNodeData, DFA},
-    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
-};
+use super::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, dfa::DFA};
+use crate::automaton::dfa::node::DfaNode;
 
 #[derive(Debug, Clone)]
 pub struct NFA<N: AutomatonNode, E: AutomatonEdge> {
     start: Option<NodeIndex<u32>>,
-    pub graph: DiGraph<DfaNodeData<N>, Option<E>>,
+    pub graph: DiGraph<DfaNode<N>, Option<E>>,
     alphabet: Vec<E>,
 }
 
@@ -34,71 +31,16 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
     }
 
     /// Determinizes a NFA to a DFA.
-    /// This is done by creating a new DFA where each state is a set of states from the NFA.
-    /// This respects epsilon transitions.
-    pub fn determinize(&self) -> DFA<Vec<N>, E> {
+    /// This is done by creating a new DFA where each state is a set of states
+    /// from the NFA. This respects epsilon transitions.
+    pub fn determinize(&self) -> DFA<(), E> {
         let nfa_start = self.start.expect("NFA must have a start state");
         let mut state_map = HashMap::new();
 
         let mut dfa = DFA::new(self.alphabet.clone());
 
-        let start_state_set = self.e_closure(nfa_start);
-        let dfa_start = dfa.add_state(self.state_from_set(&start_state_set));
-        dfa.set_start(dfa_start);
-
-        state_map.insert(start_state_set.clone(), dfa_start);
-
-        let mut stack = vec![start_state_set];
-
-        while let Some(state) = stack.pop() {
-            for symbol in &self.alphabet {
-                let mut target_state = vec![];
-
-                for &node in &state {
-                    for edge in self.graph.edges_directed(node, Direction::Outgoing) {
-                        if edge.weight().as_ref() == Some(symbol) {
-                            target_state.push(edge.target());
-                        }
-                    }
-                }
-
-                self.extend_to_e_closure(&mut target_state);
-
-                if target_state.is_empty() {
-                    continue;
-                }
-
-                target_state.sort();
-                target_state.dedup();
-
-                let target_dfa_state = if let Some(&x) = state_map.get(&target_state) {
-                    x
-                } else {
-                    let new_state = dfa.add_state(self.state_from_set(&target_state));
-                    state_map.insert(target_state.clone(), new_state);
-                    stack.push(target_state);
-                    new_state
-                };
-
-                dfa.add_transition(state_map[&state], target_dfa_state, symbol.clone());
-            }
-        }
-
-        dfa.override_complete();
-
-        dfa
-    }
-
-    /// Determinizes a NFA to a DFA.
-    /// This is done by creating a new DFA where each state is a set of states from the NFA.
-    /// This respects epsilon transitions.
-    pub fn determinize_no_state_data(&self) -> DFA<(), E> {
-        let nfa_start = self.start.expect("NFA must have a start state");
-        let mut state_map = HashMap::new();
-
-        let mut dfa = DFA::new(self.alphabet.clone());
-
-        let start_state_set = self.e_closure(nfa_start);
+        let mut start_state_set = vec![nfa_start];
+        self.extend_to_e_closure(&mut start_state_set);
         let dfa_start = dfa.add_state(self.state_from_set_no_data(&start_state_set));
         dfa.set_start(dfa_start);
 
@@ -145,28 +87,6 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         dfa
     }
 
-    /// Calculates the epsilon closure of a state.
-    /// Meaning all states reachable only by epsilon transitions.
-    pub fn e_closure(&self, state: NodeIndex<u32>) -> Vec<NodeIndex<u32>> {
-        let mut stack = vec![state];
-        let mut closure = vec![state];
-
-        while let Some(state) = stack.pop() {
-            for edge in self.graph.edges_directed(state, Direction::Outgoing) {
-                if edge.weight().is_none() {
-                    let target = edge.target();
-
-                    if !closure.contains(&target) {
-                        closure.push(target);
-                        stack.push(target);
-                    }
-                }
-            }
-        }
-
-        closure
-    }
-
     /// Calculates the epsilon closure of a set of states.
     /// This set is duplicate free.
     pub fn extend_to_e_closure(&self, states: &mut Vec<NodeIndex<u32>>) {
@@ -190,35 +110,35 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         self.graph[state].accepting()
     }
 
-    // checks if a set of states contains an accepting state
+    /// Checks if a set of states contains an accepting state.
     pub fn is_accepting_set(&self, states: &[NodeIndex<u32>]) -> bool {
         states.iter().any(|&x| self.is_accepting(x))
     }
 
-    // creates a state from a set of states
-    pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNodeData<Vec<N>> {
-        DfaNodeData::new(self.is_accepting_set(states), self.node_data_set(states))
+    /// Creates a state from a set of states.
+    pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNode<Vec<N>> {
+        DfaNode::new(self.is_accepting_set(states), self.node_data_set(states))
     }
 
-    // creates a state from a set of states
-    pub fn state_from_set_no_data(&self, states: &[NodeIndex<u32>]) -> DfaNodeData<()> {
-        DfaNodeData::new(self.is_accepting_set(states), ())
+    /// Creates a state from a set of states.
+    pub fn state_from_set_no_data(&self, states: &[NodeIndex<u32>]) -> DfaNode<()> {
+        DfaNode::new(self.is_accepting_set(states), ())
     }
 
     pub fn node_data(&self, node: NodeIndex<u32>) -> &N {
         self.graph[node].data()
     }
 
-    // maps a set of states to their data
+    /// Maps a set of states to their data.
     pub fn node_data_set(&self, nodes: &[NodeIndex<u32>]) -> Vec<N> {
         nodes.iter().map(|&x| self.node_data(x).clone()).collect()
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNodeData<N>, Option<E>>
+impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNode<N>, Option<E>>
     for NFA<N, E>
 {
-    fn add_state(&mut self, data: DfaNodeData<N>) -> NodeIndex<u32> {
+    fn add_state(&mut self, data: DfaNode<N>) -> NodeIndex<u32> {
         self.graph.add_node(data)
     }
 

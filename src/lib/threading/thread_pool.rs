@@ -1,8 +1,8 @@
 use std::{
     sync::{
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
         mpsc::{self, TryRecvError},
-        Arc, Mutex,
     },
     thread,
 };
@@ -69,8 +69,10 @@ impl<T: Send + 'static> ThreadPool<T> {
     }
 
     /// Join the thread pool, waiting for all jobs to finish.
-    /// If `wait_for_scheduled_jobs` is false, the thread pool will cancel scheduled jobs, but will still wait for running jobs to finish.
-    /// This is destructive, and the thread pool cannot be used to spawn new jobs after this.
+    /// If `wait_for_scheduled_jobs` is false, the thread pool will cancel
+    /// scheduled jobs, but will still wait for running jobs to finish. This
+    /// is destructive, and the thread pool cannot be used to spawn new jobs
+    /// after this.
     pub fn join(&mut self, wait_for_scheduled_jobs: bool) {
         if self.joined {
             return;
@@ -122,8 +124,9 @@ impl<T: Send + 'static> ThreadPool<T> {
         }
     }
 
-    /// Blocks the calling thread until there are `x` active jobs, but only if there are more than `y` active jobs.
-    /// Will return immediately if the thread pool has been joined.
+    /// Blocks the calling thread until there are `x` active jobs, but only if
+    /// there are more than `y` active jobs. Will return immediately if the
+    /// thread pool has been joined.
     pub fn block_until_x_active_jobs_if_above_y(&self, x: usize, y: usize) {
         if self.get_active_jobs() > y {
             self.block_until_x_active_jobs(x);
@@ -153,22 +156,24 @@ impl Worker {
     ) -> Worker {
         let (send_stop, receive_stop) = mpsc::channel();
 
-        let thread = thread::spawn(move || loop {
-            match receive_stop.try_recv() {
-                Ok(_) | Err(TryRecvError::Disconnected) => break,
-                _ => {}
+        let thread = thread::spawn(move || {
+            loop {
+                match receive_stop.try_recv() {
+                    Ok(_) | Err(TryRecvError::Disconnected) => break,
+                    _ => {}
+                }
+
+                let job = match receiver.lock().unwrap().recv() {
+                    Ok(job) => job,
+                    Err(_) => break,
+                };
+
+                let result = job();
+
+                active_jobs.fetch_sub(1, Ordering::SeqCst);
+
+                results.lock().unwrap().push(result);
             }
-
-            let job = match receiver.lock().unwrap().recv() {
-                Ok(job) => job,
-                Err(_) => break,
-            };
-
-            let result = job();
-
-            active_jobs.fetch_sub(1, Ordering::SeqCst);
-
-            results.lock().unwrap().push(result);
         });
 
         Worker {

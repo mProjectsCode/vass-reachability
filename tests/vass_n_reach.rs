@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use vass_reachability::{
-    automaton::{petri_net::PetriNet, vass::VASS, AutBuild},
+    automaton::{AutBuild, petri_net::PetriNet, vass::VASS},
     boxed_slice,
     solver::vass_reach::VASSReachSolverOptions,
 };
@@ -23,9 +23,9 @@ fn test_vass_n_reach_1() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(res.reachable());
+    assert!(res.is_success());
 }
 
 #[test]
@@ -45,9 +45,9 @@ fn test_vass_n_reach_2() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(!res.reachable());
+    assert!(!res.is_success());
 }
 
 #[test]
@@ -66,9 +66,9 @@ fn test_vass_n_reach_3() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(!res.reachable());
+    assert!(!res.is_success());
 }
 
 #[test]
@@ -108,9 +108,9 @@ fn test_vass_n_reach_4() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(!res.reachable());
+    assert!(!res.is_success());
 }
 
 #[test]
@@ -134,9 +134,9 @@ fn test_vass_n_reach_5() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(!res.reachable());
+    assert!(!res.is_success());
 }
 
 #[test]
@@ -144,8 +144,8 @@ fn test_vass_n_reach_6() {
     let mut petri_net = PetriNet::new(4);
 
     petri_net.add_transition(vec![(1, 1)], vec![(1, 2)]);
-    petri_net.add_transition(vec![(1, 3)], vec![(1, 2)]);
     petri_net.add_transition(vec![(1, 2)], vec![(1, 3), (1, 4)]);
+    petri_net.add_transition(vec![(1, 3)], vec![(1, 2)]);
 
     let initialized_petri_net = petri_net.init(boxed_slice![1, 0, 0, 0], boxed_slice![0, 1, 0, 3]);
 
@@ -158,9 +158,9 @@ fn test_vass_n_reach_6() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(res.reachable());
+    assert!(res.is_success());
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn test_vass_n_reach_7() {
         .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
         .with_log_level(vass_reachability::logger::LogLevel::Info)
         .to_solver(initialized_vass)
-        .solve_n();
+        .solve();
 
-    assert!(!res.reachable());
+    assert!(!res.is_success());
 }

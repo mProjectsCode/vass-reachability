@@ -118,7 +118,7 @@ impl Logger {
         let msg = format!("{} {}", self.get_prefix(&level), message);
         let msg_no_color = format!("{} {}", self.get_prefix_no_color(&level), message);
 
-        self.writeln(&msg_no_color);
+        self.writeln_to_file(&msg_no_color);
         if level.show(&self.level) {
             println!("{}", msg);
         }
@@ -141,13 +141,13 @@ impl Logger {
     }
 
     pub fn empty(&self, level: LogLevel) {
-        self.writeln("");
+        self.writeln_to_file("");
         if level.show(&self.level) {
             println!();
         }
     }
 
-    fn writeln(&self, string: &str) {
+    fn writeln_to_file(&self, string: &str) {
         if let Some(file) = &self.file {
             let mut f = file.borrow_mut();
 
