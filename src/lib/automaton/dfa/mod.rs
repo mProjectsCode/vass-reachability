@@ -10,7 +10,14 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use super::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, path::Path};
+use super::{
+    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
+    path::{
+        Path,
+        path_like::{EdgeListLike, PathLike},
+    },
+};
+use crate::automaton::nfa::NFA;
 
 pub mod cfg;
 pub mod minimization;
@@ -193,6 +200,37 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         table.to_dfa()
     }
 
+    /// Remove all trapping states from the DFA. A trapping state is a state
+    /// from which a final state can never be reached.
+    pub fn remove_trapping_states(&mut self) {
+        let mut trapping = HashSet::new();
+        let mut non_trapping = HashSet::new();
+
+        for node in self.graph.node_indices() {
+            if trapping.contains(&node) || non_trapping.contains(&node) {
+                continue;
+            }
+
+            let paths = self.bfs(Some(node), |index, data| {
+                data.accepting || non_trapping.contains(&index)
+            });
+
+            if paths.is_empty() {
+                trapping.insert(node);
+            } else {
+                for path in paths {
+                    for (_, node) in path {
+                        non_trapping.insert(node);
+                    }
+                }
+            }
+        }
+
+        for node in trapping {
+            self.graph.remove_node(node);
+        }
+    }
+
     /// Inverts self, creating a new DFA where the accepting states are
     /// inverted. The DFA must have a start state and be complete.
     ///
@@ -228,6 +266,39 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         for node in self.graph.node_indices() {
             self.graph[node].invert_mut();
         }
+    }
+
+    pub fn reverse(&self) -> DFA<(), E> {
+        assert!(self.start.is_some(), "DFA must have a start state");
+        assert!(self.is_complete, "DFA must be complete to reverse");
+
+        let mut reversed = NFA::new(self.alphabet.clone());
+        let start = reversed.add_state(DfaNode::new(false, ()));
+        reversed.set_start(start);
+
+        let mut node_hash = HashMap::new();
+
+        for node in self.graph.node_indices() {
+            let new_node = reversed.add_state(DfaNode::new(false, ()));
+            node_hash.insert(node, new_node);
+
+            if node == self.start.unwrap() {
+                reversed.set_accepting(new_node);
+            }
+
+            if self.graph[node].accepting {
+                reversed.add_transition(start, new_node, None);
+            }
+        }
+
+        for edge in self.graph.edge_references() {
+            let source = node_hash.get(&edge.target()).unwrap();
+            let target = node_hash.get(&edge.source()).unwrap();
+
+            reversed.add_transition(*source, *target, Some(edge.weight().clone()));
+        }
+
+        reversed.determinize()
     }
 
     /// Builds an intersection DFA from two DFAs. Both DFAs must have the same
@@ -296,13 +367,17 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         intersected
     }
 
-    pub fn bfs(&self, is_target: impl Fn(NodeIndex<u32>, &DfaNode<N>) -> bool) -> Vec<Path> {
+    pub fn bfs(
+        &self,
+        start: Option<NodeIndex>,
+        is_target: impl Fn(NodeIndex<u32>, &DfaNode<N>) -> bool,
+    ) -> Vec<Path> {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         let mut paths = Vec::new();
 
-        assert!(self.start.is_some(), "Self must have a start state");
-        queue.push_back(Path::new(self.start.unwrap()));
+        let start = start.unwrap_or(self.start.expect("Self must have a start state"));
+        queue.push_back(Path::new(start));
 
         while let Some(path) = queue.pop_front() {
             let last = path.end();
@@ -316,7 +391,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
             for edge in self.graph.edges_directed(last, Direction::Outgoing) {
                 if !visited.contains(&edge.target()) {
                     let mut new_path = path.clone();
-                    new_path.add_edge(edge.id(), edge.target());
+                    new_path.add(edge.id(), edge.target());
                     queue.push_back(new_path);
                 }
             }
@@ -325,8 +400,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         paths
     }
 
-    pub fn bfs_accepting_states(&self) -> Vec<Path> {
-        self.bfs(|_, data| data.accepting)
+    pub fn bfs_accepting_states(&self, start: Option<NodeIndex>) -> Vec<Path> {
+        self.bfs(start, |_, data| data.accepting)
     }
 
     /// Not sure about this algorithm, but we first check if the graph has any
@@ -399,8 +474,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
             for edge in self.graph.edges_directed(last, Direction::Outgoing) {
                 let target = edge.target();
 
-                if path.start == target {
-                    path.add_edge(edge.id(), target);
+                if path.start() == target {
+                    path.add(edge.id(), target);
                     return Some(path);
                 }
 
@@ -409,7 +484,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
                     hashbrown::hash_set::Entry::Vacant(entry) => {
                         entry.insert();
                         let mut new_path = path.clone();
-                        new_path.add_edge(edge.id(), target);
+                        new_path.add(edge.id(), target);
                         stack.push_back(new_path);
                     }
                 }
@@ -419,13 +494,48 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         None
     }
 
-    pub fn to_graphviz(&self) -> String {
+    pub fn find_loops_rooted_in_node(
+        &self,
+        node: NodeIndex<u32>,
+        length_limit: Option<usize>,
+    ) -> Vec<Path> {
+        let mut stack = VecDeque::new();
+        let mut loops = Vec::new();
+        stack.push_back(Path::new(node));
+
+        while let Some(mut path) = stack.pop_front() {
+            let last = path.end();
+
+            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+                let target = edge.target();
+
+                if path.start() == target {
+                    path.add(edge.id(), target);
+                    loops.push(path.clone());
+                    continue;
+                }
+
+                if !path.transitions_contain_node(target)
+                    && path.len() < length_limit.unwrap_or(usize::MAX)
+                {
+                    let mut new_path = path.clone();
+                    new_path.add(edge.id(), target);
+                    stack.push_back(new_path);
+                }
+            }
+        }
+
+        loops
+    }
+
+    pub fn to_graphviz(&self, edges: Option<impl EdgeListLike>) -> String {
         let mut dot = String::new();
         dot.push_str("digraph finite_state_machine {\n");
         dot.push_str("fontname=\"Helvetica,Arial,sans-serif\"\n");
         dot.push_str("node [fontname=\"Helvetica,Arial,sans-serif\"]\n");
         dot.push_str("edge [fontname=\"Helvetica,Arial,sans-serif\"]\n");
         dot.push_str("rankdir=LR;\n");
+        dot.push_str("node [shape=point,label=\"\"]START\n");
 
         let accepting_states = self
             .graph
@@ -442,12 +552,26 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         ));
         dot.push_str("node [shape = circle];\n");
 
+        if let Some(start) = self.start {
+            dot.push_str(&format!("START -> {:?};\n", start.index()));
+        }
+
         for edge in self.graph.edge_references() {
+            let mut attrs = vec![(
+                "label",
+                format!("\"{:?} ({})\"", edge.weight(), edge.id().index()),
+            )];
+
+            if let Some(edges) = &edges {
+                if edges.has_edge(edge.id()) {
+                    attrs.push(("color", "red".to_string()));
+                }
+            }
             dot.push_str(&format!(
-                "{:?} -> {:?} [ label = \"{:?}\" ];\n",
+                "{:?} -> {:?} [ {} ];\n",
                 edge.source().index(),
                 edge.target().index(),
-                edge.weight()
+                attrs.iter().map(|(k, v)| format!("{}={}", k, v)).join(" ")
             ));
         }
 

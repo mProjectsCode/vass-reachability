@@ -78,8 +78,8 @@ pub fn cfg_updates_to_ltc_transition(
 pub fn vass_update_to_cfg_updates(marking: &[i32]) -> Vec<CFGCounterUpdate> {
     let mut vec = vec![];
 
-    for (d, m) in marking.iter().enumerate() {
-        let index = (d + 1) as i32;
+    for (i, m) in marking.iter().enumerate() {
+        let index = (i + 1) as i32;
 
         let label = if *m > 0 {
             CFGCounterUpdate::new(index).unwrap()

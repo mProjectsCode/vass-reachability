@@ -1,20 +1,38 @@
-use std::{fmt::Display, num::NonZeroI32};
+use std::{
+    fmt::{Debug, Display},
+    num::NonZeroI32,
+    ops::Neg,
+};
 
 use petgraph::{Direction, prelude::EdgeRef};
 
-use crate::automaton::{AutomatonNode, dfa::DFA, path::Path, utils::VASSValuation};
+use super::node::DfaNode;
+use crate::automaton::{
+    AutBuild, AutomatonNode,
+    dfa::DFA,
+    path::{Path, path_like::PathLike},
+    utils::VASSValuation,
+};
 
 /// A counter update in a CFG.
 ///
 /// This is encoded as a non zero i32.
 /// The counter index is the absolute value of the integer minus 1.
 /// The increment or decrement value is the sign of the integer.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CFGCounterUpdate(pub NonZeroI32);
 
 impl CFGCounterUpdate {
     pub fn new(weight: i32) -> Option<Self> {
         NonZeroI32::new(weight).map(CFGCounterUpdate)
+    }
+
+    pub fn to_positive(&self) -> Self {
+        CFGCounterUpdate(self.0.abs())
+    }
+
+    pub fn to_negative(&self) -> Self {
+        CFGCounterUpdate(self.0.abs().neg())
     }
 
     /// Constructs an alphabet of counter updates for a CFG with `counter_count`
@@ -31,6 +49,10 @@ impl CFGCounterUpdate {
     /// Returns the counter index.
     pub fn counter(&self) -> usize {
         (self.0.get().abs() - 1) as usize
+    }
+
+    pub fn abs(&self) -> u32 {
+        self.0.get().unsigned_abs()
     }
 
     /// Returns the increment or decrement value of the counter update.
@@ -52,6 +74,10 @@ impl CFGCounterUpdate {
 
     pub fn apply_mod(&self, counters: &mut [i32], modulo: i32) {
         counters[self.counter()] = (counters[self.counter()] + self.op()).rem_euclid(modulo);
+    }
+
+    pub fn apply_rev(&self, counters: &mut [i32]) {
+        counters[self.counter()] -= self.op();
     }
 }
 
@@ -83,7 +109,13 @@ impl TryFrom<i32> for CFGCounterUpdate {
 
 impl Display for CFGCounterUpdate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl Debug for CFGCounterUpdate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -110,8 +142,13 @@ impl<N: AutomatonNode> VASSCFG<N> {
         mod_initial_valuation.mod_euclid_mut(mu);
         mod_final_valuation.mod_euclid_mut(mu);
 
-        assert!(self.start.is_some(), "Self must have a start state");
-        queue.push_back((Path::new(self.start.unwrap()), mod_initial_valuation));
+        let start = self.start.expect("CFG should have a start node");
+        let initial_path = Path::new(start);
+        if self.graph[start].accepting && mod_initial_valuation == mod_final_valuation {
+            return Some(initial_path);
+        }
+
+        queue.push_back((initial_path, mod_initial_valuation));
 
         while let Some((path, valuation)) = queue.pop_front() {
             let last = path.end();
@@ -126,7 +163,7 @@ impl<N: AutomatonNode> VASSCFG<N> {
 
                 if visited[target.index()].insert(new_valuation.clone()) {
                     let mut new_path = path.clone();
-                    new_path.add_edge(edge.id(), target);
+                    new_path.add(edge.id(), target);
 
                     if self.graph[target].accepting && new_valuation == mod_final_valuation {
                         // paths.push(new_path);
@@ -142,4 +179,69 @@ impl<N: AutomatonNode> VASSCFG<N> {
 
         None
     }
+}
+
+pub fn build_bounded_counting_cfg(
+    dimension: usize,
+    counter: CFGCounterUpdate,
+    limit: u32,
+    start: usize,
+) -> VASSCFG<()> {
+    // if limit == 0 {
+    //     panic!("Limit must be greater than 0");
+    // }
+
+    let counter_up = counter.to_positive();
+    let counter_down = counter.to_negative();
+
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(dimension));
+
+    let negative = cfg.add_state(DfaNode::new(false, ()));
+    let overflow = cfg.add_state(DfaNode::new(true, ()));
+
+    // once negative always stays negative
+    for c in CFGCounterUpdate::alphabet(dimension) {
+        cfg.add_transition(negative, negative, c);
+        cfg.add_transition(overflow, overflow, c);
+    }
+
+    let mut states = vec![negative];
+    states.extend((0..=limit).map(|_| cfg.add_state(DfaNode::new(true, ()))));
+    states.push(overflow);
+
+    for i in 1..states.len() - 1 {
+        let prev = states[i - 1];
+        let current = states[i];
+        let next = states[i + 1];
+        cfg.add_transition(current, prev, counter_down);
+        cfg.add_transition(current, next, counter_up);
+
+        for c in CFGCounterUpdate::alphabet(dimension) {
+            if c != counter_up && c != counter_down {
+                cfg.add_transition(current, current, c);
+            }
+        }
+
+        if i == start + 1 {
+            cfg.set_start(current);
+        }
+    }
+
+    // cfg.assert_complete();
+    cfg.override_complete();
+
+    // println!("{}", cfg.to_graphviz(None as Option<Path>));
+
+    cfg
+}
+
+pub fn build_rev_limited_counting_cfg(
+    dimension: usize,
+    counter: CFGCounterUpdate,
+    limit: u32,
+    end: usize,
+) -> VASSCFG<()> {
+    let cfg = build_bounded_counting_cfg(dimension, counter, limit, end);
+
+    cfg.reverse()
 }

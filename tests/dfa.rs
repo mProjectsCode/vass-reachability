@@ -3,7 +3,7 @@ use vass_reachability::{
     automaton::{
         AutBuild, Automaton,
         dfa::{DFA, node::DfaNode},
-        path::Path,
+        path::{Path, path_like::PathLike},
     },
     validation::same_language::{assert_inverse_language, assert_same_language, same_language},
 };
@@ -370,10 +370,10 @@ fn find_loop_1() {
     assert!(loop_.is_some());
 
     let mut path = Path::new(q0);
-    path.add_edge(e1, q1);
-    path.add_edge(e2, q2);
-    path.add_edge(e3, q3);
-    path.add_edge(e4, q0);
+    path.add(e1, q1);
+    path.add(e2, q2);
+    path.add(e3, q3);
+    path.add(e4, q0);
 
     assert_eq!(loop_.unwrap(), path);
 
@@ -382,10 +382,10 @@ fn find_loop_1() {
     assert!(loop_.is_some());
 
     let mut path = Path::new(q1);
-    path.add_edge(e2, q2);
-    path.add_edge(e3, q3);
-    path.add_edge(e4, q0);
-    path.add_edge(e1, q1);
+    path.add(e2, q2);
+    path.add(e3, q3);
+    path.add(e4, q0);
+    path.add(e1, q1);
 
     assert_eq!(loop_.unwrap(), path);
 }
@@ -420,8 +420,8 @@ fn find_loop_2() {
     assert!(loop_.is_some());
 
     let mut path = Path::new(q0);
-    path.add_edge(e1, q1);
-    path.add_edge(e2, q0);
+    path.add(e1, q1);
+    path.add(e2, q0);
 
     assert_eq!(loop_.unwrap(), path);
 
@@ -430,8 +430,8 @@ fn find_loop_2() {
     assert!(loop_.is_some());
 
     let mut path = Path::new(q4);
-    path.add_edge(e6, q5);
-    path.add_edge(e8, q4);
+    path.add(e6, q5);
+    path.add(e8, q4);
 
     assert_eq!(loop_.unwrap(), path);
 
@@ -440,7 +440,104 @@ fn find_loop_2() {
     assert!(loop_.is_some());
 
     let mut path = Path::new(q5);
-    path.add_edge(e7, q5);
+    path.add(e7, q5);
 
     assert_eq!(loop_.unwrap(), path);
+}
+
+#[test]
+fn find_loops_1() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
+
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(false, 2));
+    let q3 = dfa.add_state(DfaNode::new(false, 3));
+    let q4 = dfa.add_state(DfaNode::new(false, 4));
+    let q5 = dfa.add_state(DfaNode::new(true, 5));
+
+    dfa.set_start(q0);
+
+    let _e1 = dfa.add_transition(q0, q1, 'a');
+    let _e2 = dfa.add_transition(q1, q0, 'b');
+    let _e3 = dfa.add_transition(q0, q2, 'b');
+    let _e4 = dfa.add_transition(q2, q3, 'a');
+    let _e5 = dfa.add_transition(q3, q0, 'a');
+    let _e6 = dfa.add_transition(q0, q4, 'c');
+    let _e6 = dfa.add_transition(q4, q5, 'b');
+    let _e7 = dfa.add_transition(q5, q5, 'a');
+    let _e8 = dfa.add_transition(q5, q4, 'b');
+
+    dfa.override_complete();
+
+    // loop in q0
+    let loops = dfa.find_loops_rooted_in_node(q0, None);
+    assert_eq!(loops.len(), 2);
+    for loop_ in loops {
+        assert_eq!(loop_.start(), q0);
+        assert_eq!(loop_.end(), q0);
+    }
+
+    // loop in q4
+    let loops = dfa.find_loops_rooted_in_node(q4, None);
+    assert_eq!(loops.len(), 1);
+    for loop_ in loops {
+        assert_eq!(loop_.start(), q4);
+        assert_eq!(loop_.end(), q4);
+    }
+
+    // loop in q5
+    let loops = dfa.find_loops_rooted_in_node(q5, None);
+    assert_eq!(loops.len(), 2);
+    for loop_ in loops {
+        assert_eq!(loop_.start(), q5);
+        assert_eq!(loop_.end(), q5);
+    }
+}
+
+#[test]
+fn reverse_1() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(true, 2));
+
+    dfa.set_start(q0);
+    dfa.add_transition(q0, q1, 'a');
+    dfa.add_transition(q1, q2, 'b');
+
+    dfa.add_failure_state(3);
+
+    let reversed = dfa.reverse();
+
+    assert!(dfa.accepts(&['a', 'b']));
+    assert!(!dfa.accepts(&['b', 'a']));
+
+    assert!(reversed.accepts(&['b', 'a']));
+    assert!(!reversed.accepts(&['a', 'b']));
+}
+
+#[test]
+fn reverse_2() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
+    let q0 = dfa.add_state(DfaNode::new(false, 0));
+    let q1 = dfa.add_state(DfaNode::new(false, 1));
+    let q2 = dfa.add_state(DfaNode::new(true, 2));
+
+    dfa.set_start(q0);
+    dfa.add_transition(q0, q1, 'a');
+    dfa.add_transition(q1, q2, 'b');
+    dfa.add_transition(q1, q2, 'c');
+
+    dfa.add_failure_state(3);
+
+    let reversed = dfa.reverse();
+
+    assert!(dfa.accepts(&['a', 'b']));
+    assert!(dfa.accepts(&['a', 'c']));
+    assert!(!dfa.accepts(&['b', 'a']));
+
+    assert!(reversed.accepts(&['b', 'a']));
+    assert!(reversed.accepts(&['c', 'a']));
+    assert!(!reversed.accepts(&['a', 'b']));
 }

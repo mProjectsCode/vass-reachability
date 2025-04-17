@@ -8,7 +8,7 @@ use crate::automaton::{
     },
     ltc::{LTC, LTCElement},
     nfa::NFA,
-    path::{Path, transition_sequence::TransitionSequence},
+    path::{Path, path_like::PathLike, transition_sequence::TransitionSequence},
     utils::cfg_updates_to_ltc_transition,
 };
 
@@ -83,7 +83,7 @@ impl LTCTranslation {
                     new_elements.push(LTCTranslationElement::Path(stack));
                     stack = TransitionSequence::new();
 
-                    new_elements.push(LTCTranslationElement::Loop(l.transitions));
+                    new_elements.push(LTCTranslationElement::Loop(l.into()));
                 }
             }
 
@@ -189,7 +189,7 @@ impl From<&Path> for LTCTranslation {
         let mut stack_start_node: Option<NodeIndex> = None;
         let mut ltc_translation = vec![];
 
-        for (edge_index, node_index) in &path.transitions {
+        for (edge_index, node_index) in path.iter() {
             if let Some(last_node) = stack_start_node {
                 if *node_index == last_node {
                     stack.add(*edge_index, *node_index);

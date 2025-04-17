@@ -30,6 +30,10 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         self.start = Some(start);
     }
 
+    pub fn set_accepting(&mut self, state: NodeIndex<u32>) {
+        self.graph[state].accepting = true;
+    }
+
     /// Determinizes a NFA to a DFA.
     /// This is done by creating a new DFA where each state is a set of states
     /// from the NFA. This respects epsilon transitions.

@@ -84,16 +84,19 @@ impl<T: Send + 'static> ThreadPool<T> {
 
         if !wait_for_scheduled_jobs {
             for worker in &mut self.workers {
-                worker.send_stop.send(()).unwrap();
+                let _ = worker.send_stop.send(());
             }
         }
 
         for worker in &mut self.workers {
             // println!("Joining worker {}", worker.id);
-            match worker.thread.take().unwrap().join() {
-                Ok(_) => (),
-                Err(_) => println!("Worker {} failed to join", worker.id),
-            };
+            let handle = worker.thread.take();
+            if let Some(handle) = handle {
+                match handle.join() {
+                    Ok(_) => (),
+                    Err(_) => println!("Worker {} failed to join", worker.id),
+                };
+            }
         }
     }
 
@@ -104,6 +107,10 @@ impl<T: Send + 'static> ThreadPool<T> {
     /// Get the number of active jobs.
     pub fn get_active_jobs(&self) -> usize {
         self.active_jobs.load(Ordering::SeqCst)
+    }
+
+    pub fn is_idle(&self) -> bool {
+        self.get_active_jobs() == 0
     }
 
     /// Blocks the calling thread until there are no active jobs.

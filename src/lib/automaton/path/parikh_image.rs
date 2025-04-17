@@ -150,17 +150,7 @@ impl ParikhImage {
         &self,
         dfa: &DFA<N, E>,
     ) -> HashSet<EdgeIndex> {
-        // first we get all nodes that are connected to the current component
-        let mut connected_nodes = HashSet::new();
-
-        for edge in dfa.graph.edge_references() {
-            if self.get(edge.id()) == 0 {
-                continue;
-            }
-
-            connected_nodes.insert(edge.source());
-            connected_nodes.insert(edge.target());
-        }
+        let connected_nodes = self.get_connected_nodes(dfa);
 
         let mut edges = HashSet::new();
 
@@ -175,6 +165,48 @@ impl ParikhImage {
         }
 
         edges
+    }
+
+    pub fn get_incoming_edges<N: AutomatonNode, E: AutomatonEdge>(
+        &self,
+        dfa: &DFA<N, E>,
+    ) -> HashSet<EdgeIndex> {
+        let connected_nodes = self.get_connected_nodes(dfa);
+
+        let mut edges = HashSet::new();
+
+        // next we get all edges that go from a node outside the connected component
+        // to a connected node
+        for node in &connected_nodes {
+            for edge in dfa
+                .graph
+                .edges_directed(*node, petgraph::Direction::Incoming)
+            {
+                if !connected_nodes.contains(&edge.source()) {
+                    edges.insert(edge.id());
+                }
+            }
+        }
+
+        edges
+    }
+
+    pub fn get_connected_nodes<N: AutomatonNode, E: AutomatonEdge>(
+        &self,
+        dfa: &DFA<N, E>,
+    ) -> HashSet<NodeIndex> {
+        let mut connected_nodes = HashSet::new();
+
+        for edge in dfa.graph.edge_references() {
+            if self.get(edge.id()) == 0 {
+                continue;
+            }
+
+            connected_nodes.insert(edge.source());
+            connected_nodes.insert(edge.target());
+        }
+
+        connected_nodes
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (EdgeIndex, u32)> + use<'_> {

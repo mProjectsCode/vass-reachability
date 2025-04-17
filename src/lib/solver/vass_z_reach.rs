@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::{
+    sync::{Arc, atomic::AtomicBool},
+    thread,
+};
 
 use hashbrown::HashMap;
 use itertools::Itertools;
@@ -22,6 +25,7 @@ pub struct VASSZReachSolverOptions {
     logger: Option<Logger>,
     max_iterations: Option<u32>,
     max_time: Option<std::time::Duration>,
+    stop_signal: Option<Arc<AtomicBool>>,
 }
 
 impl VASSZReachSolverOptions {
@@ -40,6 +44,11 @@ impl VASSZReachSolverOptions {
         self
     }
 
+    pub fn with_stop_signal(mut self, signal: Arc<AtomicBool>) -> Self {
+        self.stop_signal = Some(signal);
+        self
+    }
+
     pub fn to_solver<N: AutomatonNode>(
         self,
         cfg: VASSCFG<N>,
@@ -54,6 +63,7 @@ impl VASSZReachSolverOptions {
 pub enum VASSZReachSolverError {
     Timeout,
     MaxIterationsReached,
+    SolverUnknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -264,6 +274,11 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
         final_valuation: Box<[i32]>,
         options: VASSZReachSolverOptions,
     ) -> Self {
+        let stop_signal = options
+            .stop_signal
+            .clone()
+            .unwrap_or(Arc::new(AtomicBool::new(false)));
+
         VASSZReachSolver {
             cfg,
             initial_valuation,
@@ -271,13 +286,11 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
             options,
             step_count: 0,
             solver_start_time: None,
-            stop_signal: Arc::new(AtomicBool::new(false)),
+            stop_signal,
         }
     }
 
     pub fn solve(&mut self) -> VASSZReachSolverResult {
-        self.start_watchdog();
-
         self.solver_start_time = Some(std::time::Instant::now());
 
         let mut config = Config::new();
@@ -285,6 +298,43 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
         let ctx = Context::new(&config);
         let solver = Solver::new(&ctx);
 
+        let context_handle = ctx.handle();
+
+        let start_time = self.solver_start_time.unwrap();
+        let stop_signal = self.stop_signal.clone();
+        let max_time = self.options.max_time;
+
+        let mut result = None;
+
+        thread::scope(|s| {
+            s.spawn(|| {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+
+                    if let Some(max_time) = max_time {
+                        if start_time.elapsed() >= max_time {
+                            stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    }
+
+                    if stop_signal.load(std::sync::atomic::Ordering::SeqCst) {
+                        context_handle.interrupt();
+                        break;
+                    }
+                }
+            });
+
+            result = Some(self.solve_inner(&ctx, &solver));
+
+            stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        result.expect("Thread panicked")
+
+        // self.start_watchdog(context_handle);
+    }
+
+    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult {
         // a map that allows us to access the edge variables by their edge id
         let mut edge_map = HashMap::new();
 
@@ -292,16 +342,16 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
         let mut sums: Box<[_]> = self
             .initial_valuation
             .iter()
-            .map(|x| Int::from_i64(&ctx, *x as i64))
+            .map(|x| Int::from_i64(ctx, *x as i64))
             .collect();
 
         for edge in self.cfg.graph.edge_references() {
             let edge_marking = edge.weight();
 
             // we need one variable for each edge
-            let edge_var = Int::new_const(&ctx, format!("edge_{}", edge.id().index()));
+            let edge_var = Int::new_const(ctx, format!("edge_{}", edge.id().index()));
             // CONSTRAINT: an edge can only be taken positive times
-            solver.assert(&edge_var.ge(&Int::from_i64(&ctx, 0)));
+            solver.assert(&edge_var.ge(&Int::from_i64(ctx, 0)));
 
             // add the edges effect to the counter sum
             let i = edge_marking.counter();
@@ -310,7 +360,7 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
             edge_map.insert(edge.id(), edge_var);
         }
 
-        let mut final_var_sum = Int::from_i64(&ctx, 0);
+        let mut final_var_sum = Int::from_i64(ctx, 0);
 
         for node in self.cfg.graph.node_indices() {
             let outgoing = self
@@ -322,19 +372,19 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
                 .graph
                 .edges_directed(node, petgraph::Direction::Incoming);
 
-            let mut outgoing_sum = Int::from_i64(&ctx, 0);
+            let mut outgoing_sum = Int::from_i64(ctx, 0);
             // the start node has one additional incoming connection
             let mut incoming_sum = if Some(node) == self.cfg.get_start() {
-                Int::from_i64(&ctx, 1)
+                Int::from_i64(ctx, 1)
             } else {
-                Int::from_i64(&ctx, 0)
+                Int::from_i64(ctx, 0)
             };
 
             if self.cfg.graph[node].accepting {
                 // for each accepting node, we need some additional variable that denotes
                 // whether the node is used as the final node
-                let final_var = Int::new_const(&ctx, format!("node_{}_final", node.index()));
-                solver.assert(&final_var.ge(&Int::from_i64(&ctx, 0)));
+                let final_var = Int::new_const(ctx, format!("node_{}_final", node.index()));
+                solver.assert(&final_var.ge(&Int::from_i64(ctx, 0)));
 
                 outgoing_sum += &final_var;
                 final_var_sum += &final_var;
@@ -356,11 +406,11 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
         }
 
         // CONSTRAINT: only one final variable can be set
-        solver.assert(&final_var_sum._eq(&Int::from_i64(&ctx, 1)));
+        solver.assert(&final_var_sum._eq(&Int::from_i64(ctx, 1)));
 
         // CONSTRAINT: the final valuation must be equal to the counter sums
         for (sum, target) in sums.iter().zip(&self.final_valuation) {
-            solver.assert(&sum._eq(&Int::from_i64(&ctx, *target as i64)));
+            solver.assert(&sum._eq(&Int::from_i64(ctx, *target as i64)));
         }
 
         self.step_count = 1;
@@ -370,6 +420,11 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
             match solver.check() {
                 z3::SatResult::Sat => {
                     let model = solver.get_model();
+                    if model.is_none() {
+                        status = SolverStatus::Unknown(VASSZReachSolverError::SolverUnknown);
+                        break;
+                    }
+
                     let model = model.unwrap();
 
                     let parikh_image: HashMap<EdgeIndex, _> = edge_map
@@ -413,26 +468,28 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
                         // taken
                         let edges = component
                             .iter_edges()
-                            .map(|edge| edge_map.get(&edge).unwrap().ge(&Int::from_i64(&ctx, 1)))
+                            .map(|edge| edge_map.get(&edge).unwrap().ge(&Int::from_i64(ctx, 1)))
                             .collect_vec();
                         let edges_ref = edges.iter().collect_vec();
 
-                        // bool that represent whether each individual edge that is outgoing from
+                        // bool that represent whether each individual edge that is incoming from
                         // the component is taken
-                        let outgoing = component
-                            .get_outgoing_edges(&self.cfg)
+                        let incoming = component
+                            .get_incoming_edges(&self.cfg)
                             .iter()
-                            .map(|edge| edge_map.get(edge).unwrap().ge(&Int::from_i64(&ctx, 1)))
+                            .map(|edge| edge_map.get(edge).unwrap().ge(&Int::from_i64(ctx, 1)))
                             .collect_vec();
-                        let outgoing_ref = outgoing.iter().collect_vec();
+                        let incoming_ref = incoming.iter().collect_vec();
 
-                        let edges_ast = Bool::and(&ctx, &edges_ref);
-                        let outgoing_ast = Bool::or(&ctx, &outgoing_ref);
+                        let edges_ast = Bool::and(ctx, &edges_ref);
+                        let incoming_ast = Bool::or(ctx, &incoming_ref);
 
                         // CONSTRAINT: if all edges in the component are taken, then at least one
-                        // outgoing edge must be taken as well this is because we
-                        // need to leave the component.
-                        solver.assert(&edges_ast.implies(&outgoing_ast));
+                        // incoming edge must be taken as well this is because we
+                        // need to enter the component.
+                        // outgoing edges don't work because we my leave the component via a final
+                        // state
+                        solver.assert(&edges_ast.implies(&incoming_ast));
                     }
 
                     self.step_count += 1;
@@ -441,7 +498,10 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
                     status = SolverStatus::False(());
                     break;
                 }
-                z3::SatResult::Unknown => panic!("Solver returned unknown"),
+                z3::SatResult::Unknown => {
+                    status = SolverStatus::Unknown(VASSZReachSolverError::SolverUnknown);
+                    break;
+                }
             };
         }
 
@@ -450,16 +510,6 @@ impl<N: AutomatonNode> VASSZReachSolver<N> {
         }
 
         self.get_solver_result(status)
-    }
-
-    fn start_watchdog(&self) {
-        if let Some(max_time) = self.options.max_time {
-            let stop_signal = self.stop_signal.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(max_time);
-                stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
-            });
-        }
     }
 
     fn max_iterations_reached(&self) -> bool {

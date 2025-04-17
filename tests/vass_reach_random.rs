@@ -1,37 +1,82 @@
 use std::{fs, time::Duration};
 
+use itertools::Itertools;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use vass_reachability::{
-    automaton::petri_net::PetriNet,
+    automaton::{
+        AutBuild,
+        petri_net::PetriNet,
+        vass::{VASS, initialized::InitializedVASS},
+    },
     solver::{SolverStatus, vass_reach::VASSReachSolverOptions},
 };
 
-fn random_vass_test(
-    seed: u64,
+pub struct RandomOptions {
+    pub seed: u64,
+    pub count: usize,
+    pub solver_options: VASSReachSolverOptions,
+    pub folder_name: Option<String>,
+}
+
+impl Default for RandomOptions {
+    fn default() -> Self {
+        RandomOptions {
+            seed: 1,
+            count: 10,
+            solver_options: VASSReachSolverOptions::default()
+                .with_time_limit(Duration::from_secs(10)),
+            folder_name: None,
+        }
+    }
+}
+
+impl RandomOptions {
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    pub fn with_count(mut self, count: usize) -> Self {
+        self.count = count;
+        self
+    }
+
+    pub fn with_solver_options(mut self, solver_options: VASSReachSolverOptions) -> Self {
+        self.solver_options = solver_options;
+        self
+    }
+
+    pub fn with_folder_name(mut self, folder_name: String) -> Self {
+        self.folder_name = Some(folder_name);
+        self
+    }
+}
+
+fn random_petri_net_test(
+    options: RandomOptions,
     place_count: usize,
     transition_count: usize,
     max_tokens_per_transition: usize,
-    count: usize,
-    timeout: u64,
-    folder_name: &str,
 ) {
-    let mut r = StdRng::seed_from_u64(seed);
+    let mut r = StdRng::seed_from_u64(options.seed);
     let mut results = vec![];
 
     println!();
-    println!("Solving {} random Petri nets", count);
+    println!("Solving {} random Petri nets", options.count);
     println!("places: {}", place_count);
     println!("transitions: {}", transition_count);
     println!("max tokens per transition: {}", max_tokens_per_transition);
     println!();
 
-    let path = format!("test_data/petri_nets/{}", folder_name);
+    let path = options.folder_name.map(|s| format!("test_data/{s}"));
 
-    if !fs::exists(&path).unwrap() {
-        fs::create_dir(&path).unwrap();
+    if let Some(path) = &path {
+        if !fs::exists(&path).unwrap() {
+            fs::create_dir(&path).unwrap();
+        }
     }
 
-    for _i in 0..count {
+    for _i in 0..options.count {
         let mut petri_net = PetriNet::new(place_count);
 
         for _ in 0..transition_count {
@@ -57,21 +102,18 @@ fn random_vass_test(
 
         let initialized_petri_net = petri_net.init(initial_m, final_m);
 
-        // if _i == 4 {
-        //     dbg!(&initialized_petri_net);
-        //     break;
-        // }
-
         let initialized_vass = initialized_petri_net.to_vass();
 
-        let res = VASSReachSolverOptions::default()
-            .with_time_limit(Duration::from_secs(timeout)) // some time that is long enough, but makes the test run in a reasonable time
-            .with_log_level(vass_reachability::logger::LogLevel::Error)
+        let res = options
+            .solver_options
+            .clone()
             .to_solver(initialized_vass)
             .solve();
 
         if res.is_unknown() {
-            initialized_petri_net.to_file(&format!("{}/unknown_{}.json", path, _i));
+            if let Some(path) = &path {
+                initialized_petri_net.to_file(&format!("{}/unknown_{}.json", path, _i));
+            }
         }
 
         println!("{}: {:?}", _i, res.status);
@@ -86,11 +128,147 @@ fn random_vass_test(
         .filter(|r| !matches!(r.status, SolverStatus::Unknown(_)))
         .count();
 
-    println!("Solved {solved} of {count}");
+    println!("Solved {solved} of {}", options.count);
+}
+
+fn random_vass_test(
+    options: RandomOptions,
+    state_count: usize,
+    dimension: usize,
+    transition_count: usize,
+    max_tokens_per_transition: i32,
+) {
+    let mut r = StdRng::seed_from_u64(options.seed);
+    let mut results = vec![];
+
+    println!();
+    println!("Solving {} random VASS", options.count);
+    println!("dimension: {}", dimension);
+    println!("states: {}", state_count);
+    println!("transitions: {}", transition_count);
+    println!("max tokens per transition: {}", max_tokens_per_transition);
+    println!();
+
+    // let path = options.folder_name.map(|s| format!("test_data/{s}"));
+
+    // if let Some(path) = &path {
+    //     if !fs::exists(&path).unwrap() {
+    //         fs::create_dir(&path).unwrap();
+    //     }
+    // }
+
+    let alphabet = (0..transition_count).collect_vec();
+
+    for _i in 0..options.count {
+        let mut vass = VASS::<(), usize>::new(dimension, alphabet.clone());
+
+        let mut states = vec![];
+        for _i in 0..state_count {
+            let state = vass.add_state(());
+            states.push(state);
+        }
+
+        for i in 0..transition_count {
+            let from = r.gen_range(0..state_count);
+            let to = r.gen_range(0..state_count);
+
+            let mut input = vec![];
+
+            for p in 0..dimension {
+                input.push(r.gen_range(-max_tokens_per_transition..=max_tokens_per_transition));
+            }
+
+            vass.add_transition(states[from], states[to], (i, input.into_boxed_slice()));
+        }
+
+        let initial_m: Box<[i32]> = (0..dimension)
+            .into_iter()
+            .map(|_| r.gen_range(0..=max_tokens_per_transition))
+            .collect();
+
+        let final_m: Box<[i32]> = (0..dimension)
+            .into_iter()
+            .map(|_| r.gen_range(0..=max_tokens_per_transition))
+            .collect();
+
+        let initialized_vass = vass.init(initial_m, final_m, states[0], states[state_count - 1]);
+
+        let res = options
+            .solver_options
+            .clone()
+            .to_solver(initialized_vass)
+            .solve();
+
+        // if res.is_unknown() {
+        //     if let Some(path) = &path {
+        //         initialized_petri_net.to_file(&format!("{}/unknown_{}.json", path,
+        // _i));     }
+        // }
+
+        println!("{}: {:?}", _i, res.status);
+        results.push(res);
+    }
+
+    println!();
+    println!("{:?}", results);
+
+    let solved = results
+        .iter()
+        .filter(|r| !matches!(r.status, SolverStatus::Unknown(_)))
+        .count();
+
+    println!("Solved {solved} of {}", options.count);
 }
 
 #[test]
 fn test_vass_reach_random() {
-    random_vass_test(1, 3, 3, 3, 50, 30, "3");
-    random_vass_test(2, 4, 8, 4, 50, 30, "4");
+    // random_vass_test(1, 3, 3, 3, 1000, 20, "3");
+    let options = RandomOptions::default()
+        .with_seed(1)
+        .with_count(1000)
+        .with_solver_options(
+            VASSReachSolverOptions::default()
+                .with_iteration_limit(1000)
+                .with_time_limit(Duration::from_secs(10))
+                .with_log_level(vass_reachability::logger::LogLevel::Error),
+        );
+    // .with_folder_name("petri_nets/3".to_string());
+    random_petri_net_test(options, 3, 3, 3);
+
+    let options = RandomOptions::default()
+        .with_seed(2)
+        .with_count(100)
+        .with_solver_options(
+            VASSReachSolverOptions::default()
+                .with_iteration_limit(1000)
+                .with_time_limit(Duration::from_secs(20))
+                .with_log_level(vass_reachability::logger::LogLevel::Error),
+        )
+        .with_folder_name("petri_nets/4".to_string());
+
+    // random_petri_net_test(options, 4, 8, 4);
+
+    let options = RandomOptions::default()
+        .with_seed(3)
+        .with_count(1000)
+        .with_solver_options(
+            VASSReachSolverOptions::default()
+                .with_iteration_limit(1000)
+                .with_time_limit(Duration::from_secs(20))
+                .with_log_level(vass_reachability::logger::LogLevel::Error),
+        );
+
+    // random_vass_test(options, 6, 4, 10, 2);
+
+    // let options = RandomOptions::default()
+    //     .with_seed(3)
+    //     .with_count(100)
+    //     .with_solver_options(
+    //         VASSReachSolverOptions::default()
+    //             .with_iteration_limit(1000)
+    //             .with_time_limit(Duration::from_secs(20))
+    //             .with_log_level(vass_reachability::logger::LogLevel::Error),
+    //     );
+
+    // random_vass_test(options, 6, 4, 20, 3);
 }

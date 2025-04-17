@@ -14,10 +14,11 @@ use crate::{
         AutomatonEdge, AutomatonNode,
         dfa::cfg::{CFGCounterUpdate, VASSCFG},
         ltc::translation::LTCTranslation,
-        path::{Path, PathNReaching},
+        path::{Path, PathNReaching, path_like::PathLike},
         vass::initialized::InitializedVASS,
     },
     logger::{LogLevel, Logger},
+    threading::thread_pool::ThreadPool,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -138,7 +139,8 @@ pub struct VASSReachSolver<N: AutomatonNode, E: AutomatonEdge> {
     options: VASSReachSolverOptions,
     logger: Logger,
     ivass: InitializedVASS<N, E>,
-    // thread_pool: ThreadPool<LTCSolverResult>,
+    thread_pool: ThreadPool<VASSZReachSolverResult>,
+    z_reach_stop_signal: Arc<AtomicBool>,
     cfg: VASSCFG<()>,
     mu: u32,
     step_count: u32,
@@ -154,20 +156,21 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
             options.log_file.clone(),
         );
 
-        // let thread_pool =
-        // ThreadPool::<LTCSolverResult>::new(options.thread_pool_size);
+        let thread_pool = ThreadPool::<VASSZReachSolverResult>::new(options.thread_pool_size);
 
         let mut cfg = ivass.to_cfg();
         cfg.add_failure_state(());
         cfg = cfg.minimize();
 
         let stop_signal = Arc::new(AtomicBool::new(false));
+        let z_reach_stop_signal = Arc::new(AtomicBool::new(false));
 
         VASSReachSolver {
             options,
             logger,
             ivass,
-            // thread_pool,
+            thread_pool,
+            z_reach_stop_signal,
             cfg,
             mu: 2,
             step_count: 0,
@@ -184,6 +187,9 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
         // IDEA: check for n-reach on each counter individually, treating other counter
         // updates as empty transitions. if a counter is not n-reachable, the
         // entire thing can't be n-reachable either.
+
+        // IDEA: if negative, cut away with automaton that counts until highest value
+        // reached on that counter
 
         self.start_watchdog();
 
@@ -215,14 +221,17 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
                 .log(LogLevel::Info);
 
             if self.max_iterations_reached() {
+                self.thread_pool.join(false);
                 return self.max_iterations_reached_result();
             }
 
             if self.max_mu_reached() {
+                self.thread_pool.join(false);
                 return self.max_mu_reached_result();
             }
 
             if self.max_time_reached() {
+                self.thread_pool.join(false);
                 return self.max_time_reached_result();
             }
 
@@ -231,12 +240,40 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
             //     break;
             // }
 
-            if self.step_count.rem(10) == 0 {
-                let z_reachable = self.check_z_reach();
-                if z_reachable.is_failure() {
-                    result = false;
-                    break;
-                }
+            // every 100 iterations we cancel the current Z-Reach solver and wait for it to
+            // finish
+            if self.step_count.rem(100) == 0 && !self.thread_pool.is_idle() {
+                self.z_reach_stop_signal
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.logger
+                    .info("Waiting on thread pool to finish Z-Reach checks");
+                self.thread_pool.block_until_no_active_jobs();
+            }
+
+            // every iteration we check if the Z-Reach solver is done
+            let finished_jobs = self.thread_pool.get_finished_jobs();
+            if finished_jobs.iter().any(|x| x.is_failure()) {
+                self.logger.debug("A thread was not Z-Reachable");
+                result = false;
+                break;
+            }
+
+            // every iteration we check if the Z-Reach solver is done
+            // and start a new one if it is
+            if self.thread_pool.is_idle() {
+                let z_reach_stop_signal = self.z_reach_stop_signal.clone();
+                z_reach_stop_signal.store(false, std::sync::atomic::Ordering::SeqCst);
+
+                let cfg = self.cfg.clone();
+                let initial_valuation = self.ivass.initial_valuation.clone();
+                let final_valuation = self.ivass.final_valuation.clone();
+                self.thread_pool.schedule(|| {
+                    VASSZReachSolverOptions::default()
+                        .with_time_limit(std::time::Duration::from_secs(10 * 60))
+                        .with_stop_signal(z_reach_stop_signal)
+                        .to_solver(cfg, initial_valuation, final_valuation)
+                        .solve()
+                });
             }
 
             let reach_path = self.run_modulo_bfs();
@@ -273,8 +310,9 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
 
                 let mut to_intersect = vec![];
 
-                // When a path becomes negative at some index, we also cut away the prefix until
-                // that point
+                // ---
+                // Bounded counting separator
+                // ---
                 if let PathNReaching::Negative(index) = reaching {
                     self.logger
                         .debug(&format!("Path does not stay positive at index {:?}", index));
@@ -286,24 +324,53 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
                         cut_path.to_fancy_string(|x| self.get_cfg_edge_weight(x).to_string())
                     ));
 
-                    let dfa =
-                        cut_path.to_negative_cut_dfa(dimension, |x| self.get_cfg_edge_weight(x));
+                    let dfa = cut_path.to_bounded_counting_cfg(
+                        dimension,
+                        &self.ivass.initial_valuation,
+                        |x| self.get_cfg_edge_weight(x),
+                    );
 
                     to_intersect.push(dfa);
                 }
 
+                // ---
+                // Rev bounded counting separator
+                // ---
+                let becomes_negative_rev = path
+                    .becomes_negative_reverse(&self.ivass.final_valuation, |x| {
+                        self.get_cfg_edge_weight(x)
+                    });
+                if let Some(index) = becomes_negative_rev {
+                    self.logger
+                        .debug(&format!("Path becomes negative at index {:?}", index));
+
+                    let cut_path = path.slice_end(index);
+
+                    self.logger.debug(&format!(
+                        "Cut path {:?}",
+                        cut_path.to_fancy_string(|x| self.get_cfg_edge_weight(x).to_string())
+                    ));
+
+                    let dfa = cut_path.to_rev_bounded_counting_cfg(
+                        dimension,
+                        &self.ivass.initial_valuation,
+                        |x| self.get_cfg_edge_weight(x),
+                    );
+
+                    to_intersect.push(dfa);
+                }
+
+                // ---
+                // LTC
+                // ---
+
                 self.logger.debug("Building and checking LTC");
 
                 let ltc_translation = LTCTranslation::from(&path).expand(&self.cfg);
-                // self.logger.debug(&format!("LTC: {}", ltc_translation.to_fancy_string(|x|
-                // self.get_cfg_edge_weight(x).to_string())));
                 let ltc = ltc_translation.to_ltc(dimension, |x| self.get_cfg_edge_weight(x));
 
                 let initial_v = &self.ivass.initial_valuation;
                 let final_v = &self.ivass.final_valuation;
-
-                // self.thread_pool
-                //     .schedule(move || ltc.reach_n(&initial_v, &final_v));
 
                 let result_relaxed = ltc.reach_n_relaxed(initial_v, final_v);
 
@@ -380,6 +447,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
         //         }
         //     }
         // }
+
+        self.thread_pool.join(false);
 
         self.logger.empty(LogLevel::Info);
 
@@ -497,7 +566,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> VASSReachSolver<N, E> {
 
     fn check_z_reach(&self) -> VASSZReachSolverResult {
         let result = VASSZReachSolverOptions::default()
-            .with_time_limit(std::time::Duration::from_secs(5))
+            .with_time_limit(std::time::Duration::from_secs(10 * 60))
             .to_solver(
                 self.cfg.clone(),
                 self.ivass.initial_valuation.clone(),
