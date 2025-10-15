@@ -1,2 +1,2 @@
-/target
-/logs
+/packages/*/target
+/packages/*/logs

@@ -1,0 +1,55 @@
+{
+  "net": {
+    "place_count": 1,
+    "transitions": [
+      {
+        "input": [
+          [
+            0,
+            1
+          ]
+        ],
+        "output": [
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      {
+        "input": [
+          [
+            2,
+            1
+          ]
+        ],
+        "output": [
+          [
+            0,
+            1
+          ]
+        ]
+      },
+      {
+        "input": [
+          [
+            2,
+            1
+          ]
+        ],
+        "output": [
+          [
+            0,
+            1
+          ]
+        ]
+      }
+    ]
+  },
+  "initial_marking": [
+    1
+  ],
+  "final_marking": [
+    0
+  ]
+}
