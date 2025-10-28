@@ -1,6 +1,6 @@
 use hashbrown::{HashMap, HashSet};
 use petgraph::{
-    graph::{EdgeIndex, NodeIndex},
+    graph::{self, DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
 };
 
@@ -73,23 +73,22 @@ impl ParikhImage {
     /// Split the Parikh Image into possibly multiple connected components.
     /// The main connected component is the one that contains the start node.
     /// The connected components are determined by a depth-first search.
-    pub fn split_into_connected_components<N: AutomatonNode, E: AutomatonEdge>(
+    pub fn split_into_connected_components<N, E>(
         mut self,
-        dfa: &DFA<N, E>,
+        graph: &DiGraph<N, E>,
+        start: NodeIndex,
     ) -> (ParikhImage, Vec<ParikhImage>) {
         let mut components = vec![];
-        let mut visited = vec![false; dfa.graph.node_count()];
+        let mut visited = vec![false; graph.node_count()];
 
-        let start = dfa.get_start().expect("DFA has no start state");
+        let main_component = self.split_connected_component(&mut visited, graph, start);
 
-        let main_component = self.split_connected_component(&mut visited, dfa, start);
-
-        for node in dfa.graph.node_indices() {
+        for node in graph.node_indices() {
             if visited[node.index()] {
                 continue;
             }
 
-            let component = self.split_connected_component(&mut visited, dfa, node);
+            let component = self.split_connected_component(&mut visited, graph, node);
             if !component.is_empty() {
                 components.push(component);
             }
@@ -104,10 +103,10 @@ impl ParikhImage {
     ///
     /// Edges that are part of the connected component are removed from the
     /// original Parikh Image.
-    fn split_connected_component<N: AutomatonNode, E: AutomatonEdge>(
+    fn split_connected_component<N, E>(
         &mut self,
         visited: &mut [bool],
-        dfa: &DFA<N, E>,
+        graph: &DiGraph<N, E>,
         start: NodeIndex,
     ) -> ParikhImage {
         let mut stack = vec![start];
@@ -120,7 +119,7 @@ impl ParikhImage {
 
             visited[node.index()] = true;
 
-            for e in dfa.graph.edges(node) {
+            for e in graph.edges(node) {
                 let edge = e.id();
 
                 if self.get(edge) == 0 {
@@ -146,18 +145,15 @@ impl ParikhImage {
     /// Get the edges that go from the connected components, formed by this
     /// parikh image, to the outside. So from a node that is connected to by
     /// one edge of the parikh image to a node that is not connected.
-    pub fn get_outgoing_edges<N: AutomatonNode, E: AutomatonEdge>(
-        &self,
-        dfa: &DFA<N, E>,
-    ) -> HashSet<EdgeIndex> {
-        let connected_nodes = self.get_connected_nodes(dfa);
+    pub fn get_outgoing_edges<N, E>(&self, graph: &DiGraph<N, E>) -> HashSet<EdgeIndex> {
+        let connected_nodes = self.get_connected_nodes(graph);
 
         let mut edges = HashSet::new();
 
         // next we get all edges that go from a connected node to a node outside the
         // connected component
         for node in &connected_nodes {
-            for edge in dfa.graph.edges(*node) {
+            for edge in graph.edges(*node) {
                 if !connected_nodes.contains(&edge.target()) {
                     edges.insert(edge.id());
                 }
@@ -167,21 +163,15 @@ impl ParikhImage {
         edges
     }
 
-    pub fn get_incoming_edges<N: AutomatonNode, E: AutomatonEdge>(
-        &self,
-        dfa: &DFA<N, E>,
-    ) -> HashSet<EdgeIndex> {
-        let connected_nodes = self.get_connected_nodes(dfa);
+    pub fn get_incoming_edges<N, E>(&self, graph: &DiGraph<N, E>) -> HashSet<EdgeIndex> {
+        let connected_nodes = self.get_connected_nodes(graph);
 
         let mut edges = HashSet::new();
 
         // next we get all edges that go from a node outside the connected component
         // to a connected node
         for node in &connected_nodes {
-            for edge in dfa
-                .graph
-                .edges_directed(*node, petgraph::Direction::Incoming)
-            {
+            for edge in graph.edges_directed(*node, petgraph::Direction::Incoming) {
                 if !connected_nodes.contains(&edge.source()) {
                     edges.insert(edge.id());
                 }
@@ -191,13 +181,10 @@ impl ParikhImage {
         edges
     }
 
-    pub fn get_connected_nodes<N: AutomatonNode, E: AutomatonEdge>(
-        &self,
-        dfa: &DFA<N, E>,
-    ) -> HashSet<NodeIndex> {
+    pub fn get_connected_nodes<N, E>(&self, graph: &DiGraph<N, E>) -> HashSet<NodeIndex> {
         let mut connected_nodes = HashSet::new();
 
-        for edge in dfa.graph.edge_references() {
+        for edge in graph.edge_references() {
             if self.get(edge.id()) == 0 {
                 continue;
             }

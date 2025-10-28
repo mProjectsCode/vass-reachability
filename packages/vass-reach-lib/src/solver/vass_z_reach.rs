@@ -468,9 +468,10 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
                         .collect();
 
                     let parikh_image = ParikhImage::new(parikh_image);
-                    let (_, components) = parikh_image
-                        .clone()
-                        .split_into_connected_components(&self.cfg);
+                    let (_, components) = parikh_image.clone().split_into_connected_components(
+                        &self.cfg.graph,
+                        self.cfg.get_start().unwrap(),
+                    );
 
                     if components.is_empty() {
                         status = SolverStatus::True(parikh_image);
@@ -504,7 +505,7 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
                         // bool that represent whether each individual edge that is incoming from
                         // the component is taken
                         let incoming = component
-                            .get_incoming_edges(&self.cfg)
+                            .get_incoming_edges(&self.cfg.graph)
                             .iter()
                             .map(|edge| edge_map.get(edge).unwrap().ge(&Int::from_i64(ctx, 1)))
                             .collect_vec();

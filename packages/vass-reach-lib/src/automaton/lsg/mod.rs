@@ -2,7 +2,10 @@ use std::iter::Peekable;
 
 use hashbrown::HashMap;
 use itertools::Itertools;
-use petgraph::{graph::NodeIndex, prelude::StableDiGraph, visit::EdgeRef};
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+};
 
 use crate::automaton::{
     Automaton, AutomatonNode,
@@ -10,26 +13,30 @@ use crate::automaton::{
     path::{Path, path_like::PathLike},
 };
 
+pub mod extender;
+
 #[derive(Debug, Clone)]
 pub struct LSGGraph {
-    pub graph: StableDiGraph<NodeIndex, CFGCounterUpdate>,
+    pub graph: DiGraph<NodeIndex, CFGCounterUpdate>,
+    // start index in the graph, this index refers to the node in the StableDiGraph, not the CFG
     pub start: NodeIndex,
+    // end index in the graph, this index refers to the node in the StableDiGraph, not the CFG
     pub end: NodeIndex,
 }
 
 impl LSGGraph {
     pub fn new(
-        graph: StableDiGraph<NodeIndex, CFGCounterUpdate>,
+        graph: DiGraph<NodeIndex, CFGCounterUpdate>,
         start: NodeIndex,
         end: NodeIndex,
     ) -> Self {
         assert!(
-            graph.contains_node(start),
+            start.index() < graph.node_count(),
             "Start node {:?} must be in the graph",
             start
         );
         assert!(
-            graph.contains_node(end),
+            end.index() < graph.node_count(),
             "End node {:?} must be in the graph",
             end
         );
@@ -39,9 +46,26 @@ impl LSGGraph {
 }
 
 #[derive(Debug, Clone)]
+pub struct LSGPath {
+    pub path: Path,
+}
+
+impl LSGPath {
+    pub fn new(path: Path) -> Self {
+        LSGPath { path }
+    }
+}
+
+impl From<Path> for LSGPath {
+    fn from(path: Path) -> Self {
+        LSGPath::new(path)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum LSGPart {
     SubGraph(LSGGraph),
-    Path(Path),
+    Path(LSGPath),
 }
 
 impl LSGPart {
@@ -50,15 +74,15 @@ impl LSGPart {
     pub fn contains_node(&self, node: NodeIndex) -> bool {
         match self {
             LSGPart::SubGraph(subgraph) => subgraph.graph.node_weights().contains(&node),
-            LSGPart::Path(path) => path.contains_node(node),
+            LSGPart::Path(path) => path.path.contains_node(node),
         }
     }
 
     // Checks if the part has the given node as start or end node.
-    pub fn has_node_extremal(&self, node: NodeIndex) -> bool {
+    pub fn has_node_as_extremal(&self, node: NodeIndex) -> bool {
         match self {
             LSGPart::SubGraph(subgraph) => subgraph.start == node || subgraph.end == node,
-            LSGPart::Path(path) => path.start() == node || path.end() == node,
+            LSGPart::Path(path) => path.path.start() == node || path.path.end() == node,
         }
     }
 
@@ -67,7 +91,7 @@ impl LSGPart {
     pub fn iter_nodes<'a>(&'a self) -> Box<dyn Iterator<Item = NodeIndex> + 'a> {
         match self {
             LSGPart::SubGraph(subgraph) => Box::new(subgraph.graph.node_weights().cloned()),
-            LSGPart::Path(path) => Box::new(path.iter_nodes()),
+            LSGPart::Path(path) => Box::new(path.path.iter_nodes()),
         }
     }
 
@@ -76,7 +100,7 @@ impl LSGPart {
     pub fn start(&self) -> NodeIndex {
         match self {
             LSGPart::SubGraph(subgraph) => subgraph.graph[subgraph.start],
-            LSGPart::Path(path) => path.start(),
+            LSGPart::Path(path) => path.path.start(),
         }
     }
 
@@ -85,7 +109,7 @@ impl LSGPart {
     pub fn end(&self) -> NodeIndex {
         match self {
             LSGPart::SubGraph(subgraph) => subgraph.graph[subgraph.end],
-            LSGPart::Path(path) => path.end(),
+            LSGPart::Path(path) => path.path.end(),
         }
     }
 
@@ -102,17 +126,19 @@ impl LSGPart {
 pub struct LinearSubGraph<'a, N: AutomatonNode> {
     pub parts: Vec<LSGPart>,
     pub cfg: &'a VASSCFG<N>,
+    pub dimension: usize,
 }
 
 impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
-    pub fn from_path(path: Path, cfg: &'a VASSCFG<N>) -> Self {
+    pub fn from_path(path: Path, cfg: &'a VASSCFG<N>, dimension: usize) -> Self {
         LinearSubGraph {
-            parts: vec![LSGPart::Path(path)],
+            parts: vec![LSGPart::Path(path.into())],
             cfg,
+            dimension,
         }
     }
 
-    pub fn add_node(&mut self, node: NodeIndex) {
+    pub fn add_node(&self, node: NodeIndex) -> Self {
         // first we need to find all parts that contain a neighbor of the node
         // then we build a new subgraph containing everything between the first and last
         // neighbor then we replace all those parts with the new subgraph.
@@ -124,25 +150,25 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         let neighbors = self.cfg.graph.neighbors_undirected(node).collect_vec();
 
         // first we split all paths at the given node
-        let new_parts = self
+        let mut new_parts = self
             .parts
-            .drain(..)
+            .iter()
             .flat_map(|part| match part {
                 LSGPart::Path(path) => path
+                    .path
+                    .clone()
                     .split_at_nodes(&neighbors)
                     .into_iter()
-                    .map(LSGPart::Path)
+                    .map(|p| LSGPart::Path(p.into()))
                     .collect_vec(),
-                LSGPart::SubGraph(_) => vec![part],
+                LSGPart::SubGraph(_) => vec![part.clone()],
             })
             .collect_vec();
-
-        self.parts = new_parts;
 
         // then we find all parts that contain a neighbor of the node
         let mut neighbor_parts_indices = vec![];
 
-        for (i, part) in self.parts.iter().enumerate() {
+        for (i, part) in new_parts.iter().enumerate() {
             for neighbor in &neighbors {
                 match part {
                     LSGPart::SubGraph(_) => {
@@ -180,21 +206,20 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         let first_part_index = first_part.0 + usize::from(first_part.1);
         let last_part_index = last_part.0 - usize::from(last_part.1);
 
-        let start_node = self.parts[first_part_index].start();
-        let end_node = self.parts[last_part_index].end();
+        let start_node = new_parts[first_part_index].start();
+        let end_node = new_parts[last_part_index].end();
 
-        let mut cut_sequence = self
-            .parts
+        let mut cut_sequence = new_parts
             .drain(first_part_index..=last_part_index)
             .collect_vec();
 
         if cut_sequence.is_empty() {
             assert_eq!(start_node, end_node);
 
-            cut_sequence.push(LSGPart::Path(Path::new(start_node)));
+            cut_sequence.push(LSGPart::Path(Path::new(start_node).into()));
         }
 
-        let mut new_subgraph = StableDiGraph::<NodeIndex, CFGCounterUpdate>::new();
+        let mut new_subgraph = DiGraph::<NodeIndex, CFGCounterUpdate>::new();
         let mut node_map = HashMap::new();
 
         // add all nodes from the cut sequence to the new subgraph
@@ -233,24 +258,47 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         // lastly we create the new LSGGraph and insert it into the parts
         let graph = LSGGraph::new(new_subgraph, new_start_node, new_end_node);
 
-        self.parts
-            .insert(first_part_index, LSGPart::SubGraph(graph));
+        new_parts.insert(first_part_index, LSGPart::SubGraph(graph));
+
+        LinearSubGraph {
+            parts: new_parts,
+            cfg: self.cfg,
+            dimension: self.dimension,
+        }
+    }
+
+    pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart> + 'b {
+        self.parts.iter()
+    }
+
+    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPath> + 'b {
+        self.parts.iter().filter_map(|part| match part {
+            LSGPart::Path(path) => Some(path),
+            LSGPart::SubGraph(_) => None,
+        })
+    }
+
+    pub fn iter_subgraph_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGGraph> + 'b {
+        self.parts.iter().filter_map(|part| match part {
+            LSGPart::SubGraph(subgraph) => Some(subgraph),
+            LSGPart::Path(_) => None,
+        })
     }
 }
 
 fn partial_accept_path<'a, N: AutomatonNode>(
-    path: &Path,
+    path: &LSGPath,
     cfg: &VASSCFG<N>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut index = 0;
 
-    if path.len() == 0 {
+    if path.path.len() == 0 {
         return true;
     }
 
     while let Some(symbol) = input.peek() {
-        let (edge_index, _) = path.get(index);
+        let (edge_index, _) = path.path.get(index);
         let edge = cfg
             .graph
             .edge_weight(edge_index)
@@ -263,12 +311,12 @@ fn partial_accept_path<'a, N: AutomatonNode>(
             return false;
         }
 
-        if index == path.len() {
+        if index == path.path.len() {
             return true;
         }
     }
 
-    index == path.len()
+    index == path.path.len()
 }
 
 fn partial_accept_subgraph<'a>(

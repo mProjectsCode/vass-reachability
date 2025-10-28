@@ -237,6 +237,20 @@ impl Path {
         parts
     }
 
+    pub fn iter_cfg_updates<'a, N: AutomatonNode>(
+        &'a self,
+        cfg: &'a VASSCFG<N>,
+    ) -> impl Iterator<Item = CFGCounterUpdate> + '_ {
+        self.transitions.iter().map(move |(edge, _)| {
+            let update = cfg
+                .graph
+                .edge_weight(*edge)
+                .expect("Edge should exist in CFG");
+
+            *update
+        })
+    }
+
     pub fn to_fancy_string(&self, get_edge_string: impl Fn(EdgeIndex) -> String) -> String {
         format!(
             "{:?} {}",

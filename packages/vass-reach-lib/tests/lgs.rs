@@ -26,7 +26,7 @@ fn lgs_1() {
 
     let path = Path::new_from_sequence(s0, &[e1, e4], &cfg);
 
-    let mut lsg = LinearSubGraph::from_path(path, &cfg);
+    let mut lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // we assume the lsg has one path part
     assert_eq!(lsg.parts.len(), 1);
@@ -92,7 +92,7 @@ fn lgs_2() {
     let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
 
     let path = Path::new_from_sequence(s0, &[e1, e2], &cfg);
-    let mut lsg = LinearSubGraph::from_path(path, &cfg);
+    let mut lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // Initial path should have one part
     assert_eq!(lsg.parts.len(), 1);

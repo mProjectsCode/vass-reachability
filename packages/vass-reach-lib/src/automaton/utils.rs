@@ -1,10 +1,7 @@
-
-use crate::
-    automaton::{
-        dfa::cfg::{CFGCounterUpdatable, CFGCounterUpdate},
-        vass::counter::{VASSCounterUpdate, VASSCounterValuation},
-    }
-;
+use crate::automaton::{
+    dfa::cfg::{CFGCounterUpdatable, CFGCounterUpdate},
+    vass::counter::{VASSCounterUpdate, VASSCounterValuation},
+};
 
 /// Converts a sequence of CFG counter updates to a pair of valuations.
 ///
@@ -12,7 +9,7 @@ use crate::
 /// It needs to be subtracted from the counters first.
 /// The second valuation is the valuation that needs to be added after
 /// subtracting the first valuation to reach the final valuation.
-pub fn cfg_updates_to_ltc_transition(
+pub fn cfg_updates_to_counter_updates(
     updates: impl Iterator<Item = CFGCounterUpdate>,
     dimension: usize,
 ) -> (VASSCounterUpdate, VASSCounterUpdate) {

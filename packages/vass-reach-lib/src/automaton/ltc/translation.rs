@@ -13,7 +13,7 @@ use crate::automaton::{
     ltc::{LTC, LTCElement},
     nfa::NFA,
     path::{Path, path_like::PathLike, transition_sequence::TransitionSequence},
-    utils::cfg_updates_to_ltc_transition,
+    utils::cfg_updates_to_counter_updates,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +32,7 @@ impl LTCTranslationElement {
             LTCTranslationElement::Path(edges) => {
                 let edge_weights = edges.iter().map(|&edge| get_edge_weight(edge.0));
                 let (min_counters, counters) =
-                    cfg_updates_to_ltc_transition(edge_weights, dimension);
+                    cfg_updates_to_counter_updates(edge_weights, dimension);
                 LTCElement::Transition((min_counters, counters))
             }
             LTCTranslationElement::Loops(loops) => {
@@ -41,7 +41,7 @@ impl LTCTranslationElement {
                     .map(|edges| {
                         let edge_weights = edges.iter().map(|&edge| get_edge_weight(edge.0));
                         let (min_counters, counters) =
-                            cfg_updates_to_ltc_transition(edge_weights, dimension);
+                            cfg_updates_to_counter_updates(edge_weights, dimension);
                         (min_counters, counters)
                     })
                     .collect_vec();

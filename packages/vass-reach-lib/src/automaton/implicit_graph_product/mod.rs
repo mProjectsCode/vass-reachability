@@ -4,8 +4,7 @@ use itertools::Itertools;
 use crate::automaton::{
     Automaton,
     dfa::cfg::{
-        CFGCounterUpdatable, VASSCFG, build_bounded_counting_cfg,
-        build_rev_bounded_counting_cfg,
+        CFGCounterUpdatable, VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg,
     },
     implicit_graph_product::{path::MultiGraphPath, state::MultiGraphState},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
