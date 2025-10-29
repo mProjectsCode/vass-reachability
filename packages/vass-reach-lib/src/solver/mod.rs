@@ -34,6 +34,27 @@ impl<T, F, U> SolverStatus<T, F, U> {
     pub fn is_unknown(&self) -> bool {
         matches!(self, SolverStatus::Unknown(_))
     }
+
+    pub fn unwrap_success(self) -> T {
+        match self {
+            SolverStatus::True(t) => t,
+            _ => panic!("Called unwrap_success on a non-successful SolverStatus"),
+        }
+    }
+
+    pub fn unwrap_failure(self) -> F {
+        match self {
+            SolverStatus::False(f) => f,
+            _ => panic!("Called unwrap_failure on a non-failure SolverStatus"),
+        }
+    }
+
+    pub fn unwrap_unknown(self) -> U {
+        match self {
+            SolverStatus::Unknown(u) => u,
+            _ => panic!("Called unwrap_unknown on a non-unknown SolverStatus"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +78,18 @@ impl<T, F, U, Statistics> SolverResult<T, F, U, Statistics> {
 
     pub fn is_unknown(&self) -> bool {
         self.status.is_unknown()
+    }
+
+    pub fn unwrap_success(self) -> T {
+        self.status.unwrap_success()
+    }
+
+    pub fn unwrap_failure(self) -> F {
+        self.status.unwrap_failure()
+    }
+
+    pub fn unwrap_unknown(self) -> U {
+        self.status.unwrap_unknown()
     }
 }
 

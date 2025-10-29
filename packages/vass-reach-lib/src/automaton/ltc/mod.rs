@@ -236,32 +236,6 @@ impl LTC {
 
                     loop_variables.extend(ls);
                 }
-                // LTCElement::Loop((subtract, add)) => {
-                //     let loop_variable = Int::new_const(&ctx, i as u32);
-                //     solver.assert(&loop_variable.ge(&zero));
-
-                //     // for each counter, we subtract the subtract value, then assert that we are
-                //     // positive and add the add value
-                //     for i in 0..self.dimension {
-                //         let sub_i = &Int::from_i64(&ctx, subtract[i] as i64);
-                //         let add_i = &Int::from_i64(&ctx, add[i] as i64);
-
-                //         // if we want to solve reach in N, we need to assert after every
-                // subtraction         // that the counters are positive
-                //         if n_reach && assert_n_loops {
-                //             let lm1 = &loop_variable - &Int::from_i64(&ctx, 1);
-
-                //             let c1 = &sums[i] - sub_i;
-                //             let c2 = &sums[i] - sub_i * &loop_variable + add_i * &lm1;
-                //             solver.assert(&loop_variable.ge(&zero).implies(&c1.ge(&zero)));
-                //             solver.assert(&loop_variable.ge(&zero).implies(&c2.ge(&zero)));
-                //         }
-
-                //         sums[i] = &sums[i] - sub_i * &loop_variable + add_i * &loop_variable;
-                //     }
-
-                //     loop_variables.push(loop_variable);
-                // }
                 LTCElement::Transition((subtract, add)) => {
                     // for each counter, we subtract the subtract value, then assert that we are
                     // positive and add the add value

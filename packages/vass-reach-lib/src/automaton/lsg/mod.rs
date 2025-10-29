@@ -277,6 +277,10 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         false
     }
 
+    pub fn to_cfg(&self) -> VASSCFG<N> {
+        todo!("Implement conversion from LSG to CFG")
+    }
+
     pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart> + 'b {
         self.parts.iter()
     }

@@ -1,6 +1,5 @@
 use std::{
-    sync::{Arc, atomic::AtomicBool},
-    thread,
+    sync::{Arc, atomic::AtomicBool}, thread
 };
 
 use hashbrown::HashMap;
@@ -200,10 +199,6 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
             .map(|x| Int::from_i64(ctx, *x as i64))
             .collect();
 
-        for (sum, target) in sums.iter().zip(self.final_valuation.iter()) {
-            solver.assert(&sum._eq(&Int::from_i64(ctx, *target as i64)));
-        }
-
         let edge_maps = self
             .lsg
             .parts
@@ -222,6 +217,10 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
             })
             .collect::<Vec<_>>();
 
+        for (sum, target) in sums.iter().zip(self.final_valuation.iter()) {
+            solver.assert(&sum._eq(&Int::from_i64(ctx, *target as i64)));
+        }
+
         self.step_count = 1;
 
         loop {
@@ -235,16 +234,33 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
                         .map(|(map, subgraph)| {
                             let image = parikh_image_from_edge_map(map, &model);
 
-                            let (_, components) = image
+                            let (main_component, components) = image
                                 .split_into_connected_components(&subgraph.graph, subgraph.start);
 
-                            (subgraph, map, components)
+                            (subgraph, map, main_component, components)
                         })
                         .collect::<Vec<_>>();
 
-                    if parikh_image_components.iter().all(|(_, _, c)| c.is_empty()) {
+                    if parikh_image_components.iter().all(|(_, _, _, c)| c.is_empty()) {
+                        let mut solution_parts = Vec::new();
+                        let mut image_drain = parikh_image_components.into_iter();
+
+                        for part in self.lsg.parts.iter() {
+                            match part {
+                                LSGPart::Path(_) => {
+                                    solution_parts.push(LSGSolutionPart::Path());
+                                }
+                                LSGPart::SubGraph(_) => {
+                                    let (_, _, main_component, _) = image_drain.next().unwrap();
+                                    solution_parts.push(LSGSolutionPart::SubGraph(
+                                        main_component,
+                                    ));
+                                }
+                            }
+                        }
+
                         return self.get_solver_result(LSGReachSolverStatus::True(LSGSolution {
-                            parts: vec![],
+                            parts: solution_parts,
                         }));
                     }
 
@@ -261,12 +277,12 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
                             "Restricting {} connected components",
                             parikh_image_components
                                 .iter()
-                                .map(|(_, _, c)| c.len())
+                                .map(|(_, _, _, c)| c.len())
                                 .sum::<usize>()
                         ));
                     }
 
-                    for (subgraph, edge_map, components) in parikh_image_components.into_iter() {
+                    for (subgraph, edge_map, _, components) in parikh_image_components.into_iter() {
                         for component in components {
                             forbid_parikh_image(&component, &subgraph.graph, edge_map, solver, ctx);
                         }
