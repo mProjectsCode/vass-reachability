@@ -4,15 +4,11 @@ use std::{
 };
 
 use hashbrown::HashMap;
-use itertools::Itertools;
-use petgraph::{
-    graph::{EdgeIndex, NodeIndex},
-    visit::EdgeRef,
-};
+use petgraph::{graph::NodeIndex, visit::EdgeRef};
 use serde::{Deserialize, Serialize};
 use z3::{
     Config, Context, Solver,
-    ast::{Ast, Bool, Int},
+    ast::{Ast, Int},
 };
 
 use super::{SolverResult, SolverStatus};
@@ -24,6 +20,7 @@ use crate::{
         vass::{counter::VASSCounterValuation, initialized::InitializedVASS},
     },
     logger::Logger,
+    solver::utils::{forbid_parikh_image, parikh_image_from_edge_map},
 };
 
 #[derive(Debug, Default)]
@@ -449,25 +446,12 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
             match solver.check() {
                 z3::SatResult::Sat => {
                     let model = solver.get_model();
-                    if model.is_none() {
+                    let Some(model) = model else {
                         status = SolverStatus::Unknown(VASSZReachSolverError::SolverUnknown);
                         break;
-                    }
+                    };
 
-                    let model = model.unwrap();
-
-                    let parikh_image: HashMap<EdgeIndex, _> = edge_map
-                        .iter()
-                        .map(|(id, var)| {
-                            (
-                                *id,
-                                model.get_const_interp(var).unwrap().as_u64().unwrap() as u32,
-                            )
-                        })
-                        .filter(|(_, count)| *count > 0)
-                        .collect();
-
-                    let parikh_image = ParikhImage::new(parikh_image);
+                    let parikh_image = parikh_image_from_edge_map(&edge_map, &model);
                     let (_, components) = parikh_image.clone().split_into_connected_components(
                         &self.cfg.graph,
                         self.cfg.get_start().unwrap(),
@@ -494,32 +478,7 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
                     }
 
                     for component in components {
-                        // bools that represent whether each individual edge in the component is
-                        // taken
-                        let edges = component
-                            .iter_edges()
-                            .map(|edge| edge_map.get(&edge).unwrap().ge(&Int::from_i64(ctx, 1)))
-                            .collect_vec();
-                        let edges_ref = edges.iter().collect_vec();
-
-                        // bool that represent whether each individual edge that is incoming from
-                        // the component is taken
-                        let incoming = component
-                            .get_incoming_edges(&self.cfg.graph)
-                            .iter()
-                            .map(|edge| edge_map.get(edge).unwrap().ge(&Int::from_i64(ctx, 1)))
-                            .collect_vec();
-                        let incoming_ref = incoming.iter().collect_vec();
-
-                        let edges_ast = Bool::and(ctx, &edges_ref);
-                        let incoming_ast = Bool::or(ctx, &incoming_ref);
-
-                        // CONSTRAINT: if all edges in the component are taken, then at least one
-                        // incoming edge must be taken as well this is because we
-                        // need to enter the component.
-                        // outgoing edges don't work because we my leave the component via a final
-                        // state
-                        solver.assert(&edges_ast.implies(&incoming_ast));
+                        forbid_parikh_image(&component, &self.cfg.graph, &edge_map, solver, ctx);
                     }
 
                     self.step_count += 1;

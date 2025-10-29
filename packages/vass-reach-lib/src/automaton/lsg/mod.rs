@@ -267,6 +267,16 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         }
     }
 
+    pub fn contains_node(&self, node: NodeIndex) -> bool {
+        for part in &self.parts {
+            if part.contains_node(node) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart> + 'b {
         self.parts.iter()
     }

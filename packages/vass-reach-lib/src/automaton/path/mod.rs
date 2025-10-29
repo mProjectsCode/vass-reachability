@@ -240,7 +240,7 @@ impl Path {
     pub fn iter_cfg_updates<'a, N: AutomatonNode>(
         &'a self,
         cfg: &'a VASSCFG<N>,
-    ) -> impl Iterator<Item = CFGCounterUpdate> + '_ {
+    ) -> impl Iterator<Item = CFGCounterUpdate> + 'a {
         self.transitions.iter().map(move |(edge, _)| {
             let update = cfg
                 .graph

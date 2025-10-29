@@ -1,14 +1,13 @@
 use hashbrown::{HashMap, HashSet};
 use petgraph::{
-    graph::{self, DiGraph, EdgeIndex, NodeIndex},
+    graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
 };
 
 use super::Path;
-use crate::{
-    automaton::{AutomatonEdge, AutomatonNode, dfa::DFA},
-    logger::{LogLevel, Logger},
-};
+use crate::
+    logger::{LogLevel, Logger}
+;
 
 #[derive(Debug, Clone)]
 pub struct ParikhImage {

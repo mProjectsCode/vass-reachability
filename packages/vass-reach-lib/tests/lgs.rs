@@ -26,7 +26,7 @@ fn lgs_1() {
 
     let path = Path::new_from_sequence(s0, &[e1, e4], &cfg);
 
-    let mut lsg = LinearSubGraph::from_path(path, &cfg, 1);
+    let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // we assume the lsg has one path part
     assert_eq!(lsg.parts.len(), 1);
@@ -38,18 +38,16 @@ fn lgs_1() {
     // now we add the node s2
     // we assume that the lgs now contains a subgraph part which allows it to accept
     // a wider range of inputs
-    lsg.add_node(s2);
+    let lsg2 = lsg.add_node(s2);
 
-    dbg!(&lsg);
-
-    assert_eq!(lsg.parts.len(), 3);
-    assert!(lsg.parts[0].is_path());
-    assert!(lsg.parts[1].is_subgraph());
-    assert!(lsg.parts[2].is_path());
+    assert_eq!(lsg2.parts.len(), 3);
+    assert!(lsg2.parts[0].is_path());
+    assert!(lsg2.parts[1].is_subgraph());
+    assert!(lsg2.parts[2].is_path());
 
     // we check that the lsg now accepts more inputs
-    assert!(lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
-    assert!(lsg.accepts(&[
+    assert!(lsg2.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
+    assert!(lsg2.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_dec!(0),
@@ -57,14 +55,14 @@ fn lgs_1() {
         cfg_dec!(0),
         cfg_dec!(0)
     ]));
-    assert!(!lsg.accepts(&[
+    assert!(!lsg2.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_dec!(0),
         cfg_inc!(0),
         cfg_dec!(0)
     ]));
-    assert!(!lsg.accepts(&[
+    assert!(!lsg2.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_dec!(0),
@@ -92,7 +90,7 @@ fn lgs_2() {
     let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
 
     let path = Path::new_from_sequence(s0, &[e1, e2], &cfg);
-    let mut lsg = LinearSubGraph::from_path(path, &cfg, 1);
+    let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // Initial path should have one part
     assert_eq!(lsg.parts.len(), 1);
@@ -103,28 +101,28 @@ fn lgs_2() {
 
     // we add node s2, this should successfully add the node and create a subgraph
     // part but not yet any looping behavior, as the loop requires s3 as well
-    lsg.add_node(s2);
+    let lsg2 = lsg.add_node(s2);
 
-    assert_eq!(lsg.parts.len(), 3);
-    assert!(lsg.parts[0].is_path());
-    assert!(lsg.parts[1].is_subgraph());
-    assert!(lsg.parts[2].is_path());
+    assert_eq!(lsg2.parts.len(), 3);
+    assert!(lsg2.parts[0].is_path());
+    assert!(lsg2.parts[1].is_subgraph());
+    assert!(lsg2.parts[2].is_path());
 
-    assert!(lsg.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
-    assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
+    assert!(lsg2.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!lsg2.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
 
     // we add s3 to complete the loop
-    lsg.add_node(s3);
+    let lsg3 = lsg2.add_node(s3);
 
-    assert_eq!(lsg.parts.len(), 3);
-    assert!(lsg.parts[0].is_path());
-    assert!(lsg.parts[1].is_subgraph());
-    assert!(lsg.parts[2].is_path());
+    assert_eq!(lsg3.parts.len(), 3);
+    assert!(lsg3.parts[0].is_path());
+    assert!(lsg3.parts[1].is_subgraph());
+    assert!(lsg3.parts[2].is_path());
 
-    assert!(lsg.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(lsg3.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
 
     // loop once: s0 -> s1 -> s2 -> s3 -> s1 -> s4
-    assert!(lsg.accepts(&[
+    assert!(lsg3.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_inc!(0),
@@ -133,7 +131,7 @@ fn lgs_2() {
     ]));
 
     // loop twice: so -> s1 -> s2 -> s3 -> s1 -> s2 -> s3 -> s1 -> s4
-    assert!(lsg.accepts(&[
+    assert!(lsg3.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_inc!(0),
@@ -145,6 +143,6 @@ fn lgs_2() {
     ]));
 
     // we still reject other sequences
-    assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0)]));
-    assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!lsg3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0)]));
+    assert!(!lsg3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
 }
