@@ -127,15 +127,7 @@ impl VASSZReachSolverResult {
             return false;
         };
 
-        let valuation = initial_valuation.clone();
-
-        rec_can_build_n_run(
-            parikh_image.clone(),
-            valuation,
-            final_valuation,
-            cfg,
-            cfg.get_start().expect("CFG has no start node"),
-        )
+        parikh_image.can_build_n_run(cfg, initial_valuation, final_valuation)
     }
 
     pub fn can_build_z_run<N: AutomatonNode>(
@@ -148,113 +140,8 @@ impl VASSZReachSolverResult {
             return false;
         };
 
-        let valuation = initial_valuation.clone();
-
-        rec_can_build_z_run(
-            parikh_image.clone(),
-            valuation,
-            final_valuation,
-            cfg,
-            cfg.get_start().expect("CFG has no start node"),
-        )
+        parikh_image.can_build_z_run(cfg, initial_valuation, final_valuation)
     }
-}
-
-fn rec_can_build_n_run<N: AutomatonNode>(
-    parikh_image: ParikhImage,
-    valuation: VASSCounterValuation,
-    final_valuation: &VASSCounterValuation,
-    cfg: &VASSCFG<N>,
-    node_index: NodeIndex,
-) -> bool {
-    let is_final = cfg.graph[node_index].accepting;
-    // if the parikh image is empty, we have reached the end of the path, which also
-    // means that the path exists if the node is final
-    if parikh_image.image.iter().all(|(_, v)| *v == 0) {
-        assert_eq!(&valuation, final_valuation);
-        return is_final;
-    }
-
-    let outgoing = cfg
-        .graph
-        .edges_directed(node_index, petgraph::Direction::Outgoing);
-
-    for edge in outgoing {
-        // first we check that the edge can still be taken
-        let edge_index = edge.id();
-        let Some(edge_parikh) = parikh_image.image.get(&edge_index) else {
-            continue;
-        };
-        if *edge_parikh == 0 {
-            continue;
-        }
-
-        // next we check that taking the edge does not make a counter in the valuation
-        // negative
-        let update = edge.weight();
-        if !valuation.can_apply_cfg_update(update) {
-            continue;
-        }
-
-        // we can take the edge, so we update the parikh image and the valuation
-        let mut valuation = valuation.clone();
-        valuation.apply_cfg_update(*update);
-
-        let mut parikh = parikh_image.clone();
-        parikh.image.insert(edge_index, edge_parikh - 1);
-
-        if rec_can_build_n_run(parikh, valuation, final_valuation, cfg, edge.target()) {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn rec_can_build_z_run<N: AutomatonNode>(
-    parikh_image: ParikhImage,
-    valuation: VASSCounterValuation,
-    final_valuation: &VASSCounterValuation,
-    cfg: &VASSCFG<N>,
-    node_index: NodeIndex,
-) -> bool {
-    let is_final = cfg.graph[node_index].accepting;
-    // if the parikh image is empty, we have reached the end of the path, which also
-    // means that the path exists if the node is final
-    if parikh_image.image.iter().all(|(_, v)| *v == 0) {
-        assert_eq!(&valuation, final_valuation);
-        return is_final;
-    }
-
-    let outgoing = cfg
-        .graph
-        .edges_directed(node_index, petgraph::Direction::Outgoing);
-
-    for edge in outgoing {
-        // first we check that the edge can still be taken
-        let edge_index = edge.id();
-        let Some(edge_parikh) = parikh_image.image.get(&edge_index) else {
-            continue;
-        };
-        if *edge_parikh == 0 {
-            continue;
-        }
-
-        let update = edge.weight();
-
-        // we can take the edge, so we update the parikh image and the valuation
-        let mut valuation = valuation.clone();
-        valuation.apply_cfg_update(*update);
-
-        let mut parikh = parikh_image.clone();
-        parikh.image.insert(edge_index, edge_parikh - 1);
-
-        if rec_can_build_n_run(parikh, valuation, final_valuation, cfg, edge.target()) {
-            return true;
-        }
-    }
-
-    false
 }
 
 /// Solves a VASS CFG for Z-Reachability.

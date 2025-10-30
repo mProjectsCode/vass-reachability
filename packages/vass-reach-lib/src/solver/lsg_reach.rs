@@ -11,11 +11,7 @@ use z3::{
 
 use crate::{
     automaton::{
-        AutomatonNode,
-        lsg::{LSGGraph, LSGPart, LSGPath, LinearSubGraph},
-        path::parikh_image::ParikhImage,
-        utils::cfg_updates_to_counter_updates,
-        vass::counter::VASSCounterValuation,
+        AutomatonNode, dfa::cfg::VASSCFG, lsg::{LSGGraph, LSGPart, LSGPath, LinearSubGraph}, path::{Path, parikh_image::ParikhImage}, utils::cfg_updates_to_counter_updates, vass::counter::VASSCounterValuation
     },
     logger::Logger,
     solver::{
@@ -82,6 +78,18 @@ pub enum LSGSolutionPart {
 #[derive(Debug, Clone)]
 pub struct LSGSolution {
     pub parts: Vec<LSGSolutionPart>,
+}
+
+impl LSGSolution {
+    pub fn build_z_run<N: AutomatonNode>(&self, cfg: &VASSCFG<N>, initial_valuation: &VASSCounterValuation, final_valuation: &VASSCounterValuation) -> Option<Path> {
+        // the parikh image already determines the initial and final valuations when entering and leaving subgraphs
+        // so we can simply build the runs for each part independently and concatenate them
+        todo!()
+    }
+
+    pub fn build_n_run<N: AutomatonNode>(&self, cfg: &VASSCFG<N>, initial_valuation: &VASSCounterValuation, final_valuation: &VASSCounterValuation) -> Option<Path> {
+        todo!()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

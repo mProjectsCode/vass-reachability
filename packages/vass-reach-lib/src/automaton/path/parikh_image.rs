@@ -5,12 +5,13 @@ use petgraph::{
 };
 
 use super::Path;
-use crate::
-    logger::{LogLevel, Logger}
+use crate::{automaton::{AutomatonNode, dfa::cfg::{CFGCounterUpdatable, VASSCFG}, vass::counter::VASSCounterValuation}, 
+    logger::{LogLevel, Logger}}
 ;
 
 #[derive(Debug, Clone)]
 pub struct ParikhImage {
+    // TODO: since edge indices are dense, we could use a Vec<u32> instead of a HashMap
     pub image: HashMap<EdgeIndex, u32>,
 }
 
@@ -195,6 +196,58 @@ impl ParikhImage {
         connected_nodes
     }
 
+        pub fn can_build_n_run<N: AutomatonNode>(
+        &self,
+        cfg: &VASSCFG<N>,
+        initial_valuation: &VASSCounterValuation,
+        final_valuation: &VASSCounterValuation,
+    ) -> bool {
+        let valuation = initial_valuation.clone();
+
+        rec_can_build_run(
+            self.clone(),
+            valuation,
+            final_valuation,
+            cfg,
+            cfg.get_start().expect("CFG has no start node"),
+            true,
+        )
+    }
+
+    pub fn can_build_z_run<N: AutomatonNode>(
+        &self,
+        cfg: &VASSCFG<N>,
+        initial_valuation: &VASSCounterValuation,
+        final_valuation: &VASSCounterValuation,
+    ) -> bool {
+        let valuation = initial_valuation.clone();
+
+        rec_can_build_run(
+            self.clone(),
+            valuation,
+            final_valuation,
+            cfg,
+            cfg.get_start().expect("CFG has no start node"),
+            false,
+        )
+    }
+
+    pub fn get_total_counter_effect<N: AutomatonNode>(
+        &self,
+        cfg: &VASSCFG<N>,
+        dimension: usize,
+    ) -> VASSCounterValuation {
+        let mut total_effect = VASSCounterValuation::zero(dimension);
+
+        for (edge_index, count) in &self.image {
+            let edge = cfg.graph.edge_weight(*edge_index).expect("Edge not found in CFG");
+        
+            total_effect[edge.counter()] += edge.op() * (*count as i32);
+        }
+
+        total_effect
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (EdgeIndex, u32)> + use<'_> {
         self.image
             .iter()
@@ -220,4 +273,56 @@ impl From<&Path> for ParikhImage {
 
         ParikhImage::new(map)
     }
+}
+
+fn rec_can_build_run<N: AutomatonNode>(
+    parikh_image: ParikhImage,
+    valuation: VASSCounterValuation,
+    final_valuation: &VASSCounterValuation,
+    cfg: &VASSCFG<N>,
+    node_index: NodeIndex,
+    n_run: bool,
+) -> bool {
+    let is_final = cfg.graph[node_index].accepting;
+    // if the parikh image is empty, we have reached the end of the path, which also
+    // means that the path exists if the node is final
+    if parikh_image.image.iter().all(|(_, v)| *v == 0) {
+        assert_eq!(&valuation, final_valuation);
+        return is_final;
+    }
+
+    let outgoing = cfg
+        .graph
+        .edges_directed(node_index, petgraph::Direction::Outgoing);
+
+    for edge in outgoing {
+        // first we check that the edge can still be taken
+        let edge_index = edge.id();
+        let Some(edge_count) = parikh_image.image.get(&edge_index) else {
+            continue;
+        };
+        if *edge_count == 0 {
+            continue;
+        }
+
+        // next we check that taking the edge does not make a counter in the valuation
+        // negative
+        let update = edge.weight();
+        if n_run && !valuation.can_apply_cfg_update(update) {
+            continue;
+        }
+
+        // we can take the edge, so we update the parikh image and the valuation
+        let mut valuation = valuation.clone();
+        valuation.apply_cfg_update(*update);
+
+        let mut parikh = parikh_image.clone();
+        parikh.image.insert(edge_index, edge_count - 1);
+
+        if rec_can_build_run(parikh, valuation, final_valuation, cfg, edge.target(), n_run) {
+            return true;
+        }
+    }
+
+    false
 }

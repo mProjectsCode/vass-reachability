@@ -50,6 +50,12 @@ impl VASSCounterValuation {
         VASSCounterValuation { values }
     }
 
+    pub fn zero(dimension: usize) -> Self {
+        VASSCounterValuation {
+            values: vec![0; dimension].into_boxed_slice(),
+        }
+    }
+
     pub fn dimension(&self) -> usize {
         self.values.len()
     }

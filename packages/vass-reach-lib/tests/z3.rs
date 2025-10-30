@@ -41,15 +41,15 @@ fn z3_works() {
                 assert_eq!(x_val, 2);
                 assert_eq!(y_val, 3);
 
-                println!("x: {}, y: {}", x_val, y_val);
+                // println!("x: {}, y: {}", x_val, y_val);
+            } else {
+                unreachable!();
             }
         }
         SatResult::Unsat => {
-            println!("unsat");
             unreachable!();
         }
         SatResult::Unknown => {
-            println!("unknown");
             unreachable!();
         }
     }
