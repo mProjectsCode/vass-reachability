@@ -1,7 +1,7 @@
 use std::{fmt::Debug, hash::Hash};
 
+pub mod cfg;
 pub mod dfa;
-// pub mod dyck;
 pub mod implicit_graph_product;
 pub mod lsg;
 pub mod ltc;

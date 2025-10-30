@@ -1,7 +1,10 @@
 use petgraph::visit::EdgeRef;
 
 use crate::automaton::{
-    dfa::cfg::{CFGCounterUpdatable, CFGCounterUpdate, VASSCFG},
+    cfg::{
+        update::{CFGCounterUpdatable, CFGCounterUpdate},
+        vasscfg::VASSCFG,
+    },
     implicit_graph_product::state::MultiGraphState,
     path::{Path, PathNReaching, path_like::PathLike},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},

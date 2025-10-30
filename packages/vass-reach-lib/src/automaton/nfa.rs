@@ -6,8 +6,7 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use super::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, dfa::DFA};
-use crate::automaton::{dfa::node::DfaNode, path::path_like::EdgeListLike};
+use crate::automaton::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, dfa::{DFA, node::DfaNode}, path::path_like::EdgeListLike};
 
 #[derive(Debug, Clone)]
 pub struct NFA<N: AutomatonNode, E: AutomatonEdge> {

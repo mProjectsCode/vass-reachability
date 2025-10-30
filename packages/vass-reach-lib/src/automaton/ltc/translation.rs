@@ -5,14 +5,16 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::automaton::{
     AutBuild, AutomatonNode,
-    dfa::{
-        cfg::{CFGCounterUpdate, VASSCFG},
-        node::DfaNode,
-    },
+    cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
+    dfa::node::DfaNode,
     implicit_graph_product::{ImplicitCFGProduct, path::MultiGraphPath},
     ltc::{LTC, LTCElement},
     nfa::NFA,
-    path::{Path, path_like::PathLike, transition_sequence::TransitionSequence},
+    path::{
+        Path,
+        path_like::{EdgeListLike, PathLike},
+        transition_sequence::TransitionSequence,
+    },
     utils::cfg_updates_to_counter_updates,
 };
 
@@ -23,14 +25,10 @@ pub enum LTCTranslationElement {
 }
 
 impl LTCTranslationElement {
-    pub fn to_ltc_element(
-        &self,
-        dimension: usize,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
-    ) -> LTCElement {
+    pub fn to_ltc_element(&self, cfg: &impl CFG, dimension: usize) -> LTCElement {
         match self {
-            LTCTranslationElement::Path(edges) => {
-                let edge_weights = edges.iter().map(|&edge| get_edge_weight(edge.0));
+            LTCTranslationElement::Path(path) => {
+                let edge_weights = path.iter_edges().map(|edge| cfg.edge_update(edge));
                 let (min_counters, counters) =
                     cfg_updates_to_counter_updates(edge_weights, dimension);
                 LTCElement::Transition((min_counters, counters))
@@ -38,8 +36,8 @@ impl LTCTranslationElement {
             LTCTranslationElement::Loops(loops) => {
                 let element = loops
                     .iter()
-                    .map(|edges| {
-                        let edge_weights = edges.iter().map(|&edge| get_edge_weight(edge.0));
+                    .map(|ts| {
+                        let edge_weights = ts.iter_edges().map(|edge| cfg.edge_update(edge));
                         let (min_counters, counters) =
                             cfg_updates_to_counter_updates(edge_weights, dimension);
                         (min_counters, counters)
@@ -129,12 +127,7 @@ impl LTCTranslation {
         }
     }
 
-    pub fn to_dfa(
-        &self,
-        relaxed: bool,
-        dimension: usize,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
-    ) -> VASSCFG<()> {
+    pub fn to_dfa(&self, cfg: &impl CFG, dimension: usize, relaxed: bool) -> VASSCFG<()> {
         let mut nfa = NFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
 
         let start = nfa.add_state(DfaNode::default());
@@ -146,12 +139,12 @@ impl LTCTranslation {
                 LTCTranslationElement::Path(edges) => {
                     for edge in edges {
                         let new = nfa.add_state(DfaNode::default());
-                        nfa.add_transition(current_end, new, Some(get_edge_weight(edge.0)));
+                        nfa.add_transition(current_end, new, Some(cfg.edge_update(edge.0)));
                         current_end = new;
                     }
                 }
                 LTCTranslationElement::Loops(loops) => {
-                    for edges in loops {
+                    for ts in loops {
                         let loop_start = if relaxed {
                             // don't add a transition to the loop start, so that the loops can be
                             // taken in any order
@@ -166,17 +159,17 @@ impl LTCTranslation {
                             loop_start
                         };
 
-                        for edge in edges.iter().take(edges.len() - 1) {
+                        for edge in ts.iter_edges().take(ts.len() - 1) {
                             let new = nfa.add_state(DfaNode::default());
-                            nfa.add_transition(current_end, new, Some(get_edge_weight(edge.0)));
+                            nfa.add_transition(current_end, new, Some(cfg.edge_update(edge)));
                             current_end = new;
                         }
 
-                        let last_edge = edges.last().unwrap();
+                        let last_ts_entry = ts.last().unwrap();
                         nfa.add_transition(
                             current_end,
                             loop_start,
-                            Some(get_edge_weight(last_edge.0)),
+                            Some(cfg.edge_update(last_ts_entry.0)),
                         );
 
                         current_end = loop_start;
@@ -196,15 +189,11 @@ impl LTCTranslation {
         dfa
     }
 
-    pub fn to_ltc(
-        &self,
-        dimension: usize,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
-    ) -> LTC {
+    pub fn to_ltc(&self, cfg: &impl CFG, dimension: usize) -> LTC {
         let mut ltc = LTC::new(dimension);
 
         for translation in &self.elements {
-            ltc.add(translation.to_ltc_element(dimension, &get_edge_weight));
+            ltc.add(translation.to_ltc_element(cfg, dimension));
         }
 
         ltc

@@ -3,11 +3,8 @@ use std::time::Duration;
 use vass_reach_lib::{
     automaton::{
         AutBuild,
-        dfa::{
-            cfg::{CFGCounterUpdate, VASSCFG},
-            minimization::Minimizable,
-            node::DfaNode,
-        },
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::{minimization::Minimizable, node::DfaNode},
         path::Path,
         vass::{VASS, counter::VASSCounterIndex},
     },
@@ -77,22 +74,20 @@ fn lim_cfg_test() {
     println!("Path: {:#?}", &path);
 
     let lim = path.to_bounded_counting_cfg(
-        1,
+        &cfg,
         &initial_valuation,
         &final_valuation,
         VASSCounterIndex::new(0),
-        |e| *cfg.edge_weight(e),
     );
 
     println!("Limit CFG: {:#?}", &lim);
     println!("{}", lim.to_graphviz(None as Option<Path>));
 
     let rev_lim = path.to_rev_bounded_counting_cfg(
-        1,
+        &cfg,
         &initial_valuation,
         &final_valuation,
         VASSCounterIndex::new(0),
-        |e| *cfg.edge_weight(e),
     );
 
     println!("Reverse Limit CFG: {:#?}", &rev_lim);

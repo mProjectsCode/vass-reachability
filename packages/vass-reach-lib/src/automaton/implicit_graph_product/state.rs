@@ -1,6 +1,6 @@
 use petgraph::graph::NodeIndex;
 
-use crate::automaton::dfa::cfg::{CFGCounterUpdate, VASSCFG};
+use crate::automaton::cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG};
 
 /// A state in the product of multiple graphs, storing the individual states in
 /// each graph.

@@ -40,11 +40,15 @@ fn test_vass_z_reach_1() {
         &initialized_vass.final_valuation,
     );
 
-    assert!(res.can_build_z_run(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-    ));
+    assert!(
+        res.build_run(
+            &cfg,
+            &initialized_vass.initial_valuation,
+            &initialized_vass.final_valuation,
+            false,
+        )
+        .is_some()
+    );
 }
 
 #[test]
@@ -102,11 +106,15 @@ fn test_vass_z_reach_3() {
         &initialized_vass.final_valuation,
     );
 
-    assert!(res.can_build_z_run(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-    ));
+    assert!(
+        res.build_run(
+            &cfg,
+            &initialized_vass.initial_valuation,
+            &initialized_vass.final_valuation,
+            false,
+        )
+        .is_some()
+    );
 }
 
 #[test]
@@ -140,11 +148,15 @@ fn test_vass_z_reach_4() {
         &initialized_vass.final_valuation,
     );
 
-    assert!(res.can_build_z_run(
-        &cfg,
-        &initialized_vass.initial_valuation,
-        &initialized_vass.final_valuation,
-    ));
+    assert!(
+        res.build_run(
+            &cfg,
+            &initialized_vass.initial_valuation,
+            &initialized_vass.final_valuation,
+            false,
+        )
+        .is_some()
+    );
 }
 
 #[test]

@@ -3,10 +3,8 @@ use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
 use crate::automaton::{
     AutBuild, Automaton, AutomatonEdge, AutomatonNode,
-    dfa::{
-        cfg::{CFGCounterUpdate, VASSCFG},
-        node::DfaNode,
-    },
+    cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+    dfa::node::DfaNode,
     nfa::NFA,
     utils::{self},
     vass::{VASS, counter::VASSCounterValuation},

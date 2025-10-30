@@ -3,24 +3,16 @@ use std::sync::{Arc, atomic::AtomicBool};
 use petgraph::graph::EdgeIndex;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    SolverResult, SolverStatus,
-    vass_z_reach::{VASSZReachSolverOptions, VASSZReachSolverResult},
-};
 use crate::{
     automaton::{
         AutomatonEdge, AutomatonNode,
-        dfa::{
-            cfg::{CFGCounterUpdate, VASSCFG},
-            minimization::Minimizable,
-        },
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::minimization::Minimizable,
         implicit_graph_product::ImplicitCFGProduct,
         ltc::translation::LTCTranslation,
         path::{Path, PathNReaching},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
-    },
-    logger::{LogLevel, Logger},
-    threading::thread_pool::ThreadPool,
+    }, logger::{LogLevel, Logger}, solver::{SolverResult, SolverStatus, vass_z_reach::{VASSZReachSolverOptions, VASSZReachSolverResult}}, threading::thread_pool::ThreadPool
 };
 
 #[derive(Clone, Debug)]
@@ -361,7 +353,7 @@ impl<'a> VASSReachSolver<'a> {
 
             let ltc_translation = LTCTranslation::from_multi_graph_path(&self.state, &path);
             // ltc_translation = ltc_translation.expand(&self.cfg);
-            let ltc = ltc_translation.to_ltc(self.state.dimension, |x| self.get_cfg_edge_weight(x));
+            let ltc = ltc_translation.to_ltc(&self.state.cfg, self.state.dimension);
 
             let result_relaxed =
                 ltc.reach_n_relaxed(&self.state.initial_valuation, &self.state.final_valuation);
@@ -385,8 +377,7 @@ impl<'a> VASSReachSolver<'a> {
                         l.debug("LTC is not N-reachable");
                     }
 
-                    let dfa = ltc_translation
-                        .to_dfa(false, self.state.dimension, |x| self.get_cfg_edge_weight(x));
+                    let dfa = ltc_translation.to_dfa(&self.state.cfg, self.state.dimension, false);
 
                     self.intersect_cfg(dfa);
                 }
@@ -395,8 +386,7 @@ impl<'a> VASSReachSolver<'a> {
                     l.debug("LTC is not relaxed reachable");
                 }
 
-                let dfa = ltc_translation
-                    .to_dfa(true, self.state.dimension, |x| self.get_cfg_edge_weight(x));
+                let dfa = ltc_translation.to_dfa(&self.state.cfg, self.state.dimension, true);
 
                 self.intersect_cfg(dfa);
             }

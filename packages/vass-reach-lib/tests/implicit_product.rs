@@ -1,13 +1,11 @@
 use vass_reach_lib::{
     automaton::{
         AutBuild,
-        dfa::{
-            cfg::{
-                CFGCounterUpdate, VASSCFG, build_bounded_counting_cfg,
-                build_rev_bounded_counting_cfg,
-            },
-            node::DfaNode,
+        cfg::{
+            update::CFGCounterUpdate,
+            vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
         },
+        dfa::node::DfaNode,
         implicit_graph_product::ImplicitCFGProduct,
         vass::counter::{VASSCounterIndex, VASSCounterValuation},
     },

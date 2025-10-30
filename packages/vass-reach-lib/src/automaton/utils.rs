@@ -1,5 +1,5 @@
 use crate::automaton::{
-    dfa::cfg::{CFGCounterUpdatable, CFGCounterUpdate},
+    cfg::update::{CFGCounterUpdatable, CFGCounterUpdate},
     vass::counter::{VASSCounterUpdate, VASSCounterValuation},
 };
 
@@ -33,6 +33,19 @@ pub fn cfg_updates_to_counter_updates(
     }
 
     (min_counters.to_update(), counters.to_update())
+}
+
+pub fn cfg_updates_to_counter_update(
+    updates: impl Iterator<Item = CFGCounterUpdate>,
+    dimension: usize,
+) -> VASSCounterUpdate {
+    let mut counters = VASSCounterUpdate::zero(dimension);
+
+    for update in updates {
+        counters[update.counter()] += update.op();
+    }
+
+    counters
 }
 
 pub fn vass_update_to_cfg_updates(update: &VASSCounterUpdate) -> Vec<CFGCounterUpdate> {

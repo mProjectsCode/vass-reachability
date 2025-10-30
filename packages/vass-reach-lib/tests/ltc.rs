@@ -79,15 +79,11 @@ fn ltc_language_1() {
 
     let translation: LTCTranslation = (&path).into();
     let non_expanded_dfa = translation
-        .to_dfa(false, initialized_vass.dimension(), |edge| {
-            *cfg.edge_weight(edge)
-        })
+        .to_dfa(&cfg, initialized_vass.dimension(), false)
         .invert();
     let expanded_translation = translation.expand(&cfg);
     let expanded_dfa = expanded_translation
-        .to_dfa(false, initialized_vass.dimension(), |edge| {
-            *cfg.edge_weight(edge)
-        })
+        .to_dfa(&cfg, initialized_vass.dimension(), false)
         .invert();
 
     assert_subset_language(&non_expanded_dfa, &cfg, 6);
@@ -111,15 +107,12 @@ fn ltc_language_2() {
 
     let translation: LTCTranslation = (&path).into();
     let non_expanded_dfa = translation
-        .to_dfa(false, initialized_vass.dimension(), |edge| {
-            *cfg.edge_weight(edge)
-        })
+        .to_dfa(&cfg, initialized_vass.dimension(), false)
         .invert();
+
     let expanded_translation = translation.expand(&cfg);
     let expanded_dfa = expanded_translation
-        .to_dfa(false, initialized_vass.dimension(), |edge| {
-            *cfg.edge_weight(edge)
-        })
+        .to_dfa(&cfg, initialized_vass.dimension(), false)
         .invert();
 
     assert_subset_language(&non_expanded_dfa, &cfg, 6);

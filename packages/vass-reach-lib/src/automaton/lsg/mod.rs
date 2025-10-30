@@ -3,13 +3,13 @@ use std::iter::Peekable;
 use hashbrown::HashMap;
 use itertools::Itertools;
 use petgraph::{
-    graph::{DiGraph, NodeIndex},
+    graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
 };
 
 use crate::automaton::{
     Automaton, AutomatonNode,
-    dfa::cfg::{CFGCounterUpdate, VASSCFG},
+    cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
     path::{Path, path_like::PathLike},
 };
 
@@ -42,6 +42,65 @@ impl LSGGraph {
         );
 
         LSGGraph { graph, start, end }
+    }
+
+    /// Maps a path in the LSG back to a path in the CFG.
+    pub fn map_path_to_cfg<N: AutomatonNode>(&self, path: &Path, cfg: &VASSCFG<N>) -> Path {
+        let mut mapped_path = Path::new(self.map_node_to_cfg(path.start()));
+
+        for (edge, node) in path.iter() {
+            let mapped_edge = self.map_edge_to_cfg(*edge, cfg);
+            let mapped_node = self.map_node_to_cfg(*node);
+            mapped_path.add(mapped_edge, mapped_node);
+        }
+
+        mapped_path
+    }
+
+    pub fn map_node_to_cfg(&self, node: NodeIndex) -> NodeIndex {
+        self.graph[node]
+    }
+
+    pub fn map_edge_to_cfg<N: AutomatonNode>(
+        &self,
+        edge: EdgeIndex,
+        cfg: &VASSCFG<N>,
+    ) -> EdgeIndex {
+        let (src, dst) = self
+            .graph
+            .edge_endpoints(edge)
+            .expect("subgraph does not contain edge");
+        let edge_weight = self
+            .graph
+            .edge_weight(edge)
+            .expect("subgraph does not contain edge");
+
+        let mapped_src = self.map_node_to_cfg(src);
+        let mapped_dst = self.map_node_to_cfg(dst);
+
+        cfg.get_edge(mapped_src, mapped_dst, edge_weight)
+            .expect("cfg does not contain edge")
+    }
+}
+
+impl CFG for LSGGraph {
+    type N = NodeIndex;
+    type E = CFGCounterUpdate;
+
+    fn get_graph(&self) -> &DiGraph<Self::N, Self::E> {
+        &self.graph
+    }
+
+    fn edge_update(&self, edge: EdgeIndex) -> CFGCounterUpdate {
+        *self.graph.edge_weight(edge).unwrap()
+    }
+
+    fn get_start(&self) -> NodeIndex {
+        self.start
+    }
+
+    fn is_accepting(&self, node: NodeIndex) -> bool {
+        node == self.end
     }
 }
 
@@ -119,6 +178,20 @@ impl LSGPart {
 
     pub fn is_subgraph(&self) -> bool {
         matches!(self, LSGPart::SubGraph(_))
+    }
+
+    pub fn unwrap_path(&self) -> &LSGPath {
+        match self {
+            LSGPart::Path(path) => path,
+            LSGPart::SubGraph(_) => panic!("Called unwrap_path on a SubGraph part"),
+        }
+    }
+
+    pub fn unwrap_subgraph(&self) -> &LSGGraph {
+        match self {
+            LSGPart::SubGraph(subgraph) => subgraph,
+            LSGPart::Path(_) => panic!("Called unwrap_subgraph on a Path part"),
+        }
     }
 }
 

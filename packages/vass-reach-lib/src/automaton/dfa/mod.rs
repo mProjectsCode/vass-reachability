@@ -9,16 +9,8 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use super::{
-    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
-    path::{
-        Path,
-        path_like::{EdgeListLike, PathLike},
-    },
-};
-use crate::automaton::nfa::NFA;
+use crate::automaton::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, nfa::NFA, path::{Path, path_like::{EdgeListLike, PathLike}}};
 
-pub mod cfg;
 pub mod minimization;
 pub mod node;
 
@@ -66,6 +58,16 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
 
     pub fn edge_weight(&self, edge: EdgeIndex<u32>) -> &E {
         self.graph.edge_weight(edge).unwrap()
+    }
+
+    pub fn get_edge(&self, from: NodeIndex, to: NodeIndex, weight: &E) -> Option<EdgeIndex> {
+        for edge in self.graph.edges_connecting(from, to) {
+            if edge.weight() == weight {
+                return Some(edge.id());
+            }
+        }
+
+        None
     }
 
     /// Adds a failure state if needed. This turns the DFA into a complete DFA,

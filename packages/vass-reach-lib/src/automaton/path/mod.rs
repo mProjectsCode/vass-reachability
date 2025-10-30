@@ -1,21 +1,18 @@
 use std::{fmt::Display, vec::IntoIter};
 
-use path_like::{EdgeListLike, PathLike};
 use petgraph::graph::{EdgeIndex, NodeIndex};
-use transition_sequence::TransitionSequence;
 
-use super::{
-    AutBuild, Automaton,
-    dfa::{
-        DFA,
-        cfg::{VASSCFG, build_bounded_counting_cfg},
-    },
-};
 use crate::automaton::{
-    AutomatonEdge, AutomatonNode,
-    dfa::{
-        cfg::{CFGCounterUpdatable, CFGCounterUpdate},
-        node::DfaNode,
+    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
+    cfg::{
+        CFG,
+        update::{CFGCounterUpdatable, CFGCounterUpdate},
+        vasscfg::{VASSCFG, build_bounded_counting_cfg},
+    },
+    dfa::{DFA, node::DfaNode},
+    path::{
+        path_like::{EdgeListLike, PathLike},
+        transition_sequence::TransitionSequence,
     },
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
@@ -38,7 +35,7 @@ impl Path {
         }
     }
 
-    pub fn new_from_sequence<'a, N: AutomatonNode, E: AutomatonEdge>(
+    pub fn new_from_iterator<'a, N: AutomatonNode, E: AutomatonEdge>(
         start_index: NodeIndex<u32>,
         edges: impl IntoIterator<Item = &'a EdgeIndex<u32>>,
         graph: &DFA<N, E>,
@@ -48,6 +45,13 @@ impl Path {
         path.take_edges(edges, graph);
 
         path
+    }
+
+    pub fn new_from_sequence(start_index: NodeIndex<u32>, transitions: TransitionSequence) -> Self {
+        Path {
+            transitions,
+            start: start_index,
+        }
     }
 
     /// Checks if a path has a loop by checking if an edge in taken twice
@@ -69,12 +73,7 @@ impl Path {
         self.transitions.contains_node(node)
     }
 
-    pub fn simple_to_dfa(
-        &self,
-        trap: bool,
-        dimension: usize,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
-    ) -> DFA<(), CFGCounterUpdate> {
+    pub fn to_cfg(&self, cfg: impl CFG, trap: bool, dimension: usize) -> VASSCFG<()> {
         let mut dfa = DFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
 
         let mut current = dfa.add_state(DfaNode::default());
@@ -82,7 +81,7 @@ impl Path {
 
         for (edge, _) in &self.transitions {
             let new = dfa.add_state(DfaNode::default());
-            dfa.add_transition(current, new, get_edge_weight(*edge));
+            dfa.add_transition(current, new, cfg.edge_update(*edge));
             current = new;
         }
 
@@ -103,16 +102,15 @@ impl Path {
     /// Creates a bounded counting automaton from a path.
     pub fn to_bounded_counting_cfg(
         &self,
-        dimension: usize,
+        cfg: &impl CFG,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
         negative_counter: VASSCounterIndex,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
     ) -> VASSCFG<()> {
         let counter_updates = self
             .transitions
             .iter()
-            .map(|(edge, _)| get_edge_weight(*edge))
+            .map(|(edge, _)| cfg.edge_update(*edge))
             .filter(|update| update.counter() == negative_counter);
 
         let mut counter = 0;
@@ -128,25 +126,25 @@ impl Path {
 
         // println!("start: {}, max: {}", start, start + max_counter);
 
-        build_bounded_counting_cfg(dimension, negative_counter, max, start, end)
+        build_bounded_counting_cfg(
+            initial_valuation.dimension(),
+            negative_counter,
+            max,
+            start,
+            end,
+        )
     }
 
     /// Creates a reverse bounded counting automaton from a path.
     pub fn to_rev_bounded_counting_cfg(
         &self,
-        dimension: usize,
+        cfg: &impl CFG,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
         negative_counter: VASSCounterIndex,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
     ) -> VASSCFG<()> {
-        let bccfg = self.to_bounded_counting_cfg(
-            dimension,
-            final_valuation,
-            initial_valuation,
-            negative_counter,
-            get_edge_weight,
-        );
+        let bccfg =
+            self.to_bounded_counting_cfg(cfg, final_valuation, initial_valuation, negative_counter);
 
         let mut reversed = bccfg.reverse();
         reversed.reverse_counter_updates();
@@ -156,15 +154,15 @@ impl Path {
 
     pub fn is_n_reaching(
         &self,
+        cfg: impl CFG,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-        get_edge_weight: impl Fn(EdgeIndex<u32>) -> CFGCounterUpdate,
     ) -> (PathNReaching, VASSCounterValuation) {
         let mut counters = initial_valuation.clone();
         let mut negative_index = None;
 
         for (i, edge) in self.iter().enumerate() {
-            counters.apply_cfg_update(get_edge_weight(edge.0));
+            counters.apply_cfg_update(cfg.edge_update(edge.0));
 
             let negative_counter = counters.find_negative_counter();
             if negative_index.is_none()
@@ -237,18 +235,13 @@ impl Path {
         parts
     }
 
-    pub fn iter_cfg_updates<'a, N: AutomatonNode>(
+    pub fn iter_cfg_updates<'a>(
         &'a self,
-        cfg: &'a VASSCFG<N>,
+        cfg: &'a impl CFG,
     ) -> impl Iterator<Item = CFGCounterUpdate> + 'a {
-        self.transitions.iter().map(move |(edge, _)| {
-            let update = cfg
-                .graph
-                .edge_weight(*edge)
-                .expect("Edge should exist in CFG");
-
-            *update
-        })
+        self.transitions
+            .iter()
+            .map(move |(edge, _)| cfg.edge_update(*edge))
     }
 
     pub fn to_fancy_string(&self, get_edge_string: impl Fn(EdgeIndex) -> String) -> String {
@@ -257,6 +250,15 @@ impl Path {
             self.start.index(),
             self.transitions.to_fancy_string(get_edge_string)
         )
+    }
+
+    pub fn concatenate(&mut self, other: Self) {
+        assert_eq!(
+            self.end(),
+            other.start,
+            "Paths can only be concatenated if the end of the first matches the start of the second"
+        );
+        self.transitions.append(other.transitions);
     }
 }
 

@@ -4,23 +4,22 @@ use std::{
 };
 
 use hashbrown::HashMap;
-use petgraph::{graph::NodeIndex, visit::EdgeRef};
+use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use z3::{
     Config, Context, Solver,
     ast::{Ast, Int},
 };
 
-use super::{SolverResult, SolverStatus};
 use crate::{
     automaton::{
         AutomatonEdge, AutomatonNode,
-        dfa::cfg::{CFGCounterUpdatable, VASSCFG},
-        path::parikh_image::ParikhImage,
+        cfg::{CFG, vasscfg::VASSCFG},
+        path::{Path, parikh_image::ParikhImage},
         vass::{counter::VASSCounterValuation, initialized::InitializedVASS},
     },
     logger::Logger,
-    solver::utils::{forbid_parikh_image, parikh_image_from_edge_map},
+    solver::{SolverResult, SolverStatus, utils::{forbid_parikh_image, parikh_image_from_edge_map}},
 };
 
 #[derive(Debug, Default)]
@@ -62,19 +61,19 @@ impl<'a> VASSZReachSolverOptions<'a> {
         self
     }
 
-    pub fn to_solver<N: AutomatonNode>(
+    pub fn to_solver<Cfg: CFG>(
         self,
-        cfg: VASSCFG<N>,
+        cfg: Cfg,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
-    ) -> VASSZReachSolver<'a, N> {
+    ) -> VASSZReachSolver<'a, Cfg> {
         VASSZReachSolver::new(cfg, initial_valuation, final_valuation, self)
     }
 
     pub fn to_vass_solver<N: AutomatonNode, E: AutomatonEdge>(
         self,
         ivass: InitializedVASS<N, E>,
-    ) -> VASSZReachSolver<'a, ()> {
+    ) -> VASSZReachSolver<'a, VASSCFG<()>> {
         let cfg = ivass.to_cfg();
 
         self.to_solver(
@@ -117,30 +116,18 @@ impl VASSZReachSolverResult {
         }
     }
 
-    pub fn can_build_n_run<N: AutomatonNode>(
+    pub fn build_run<N: AutomatonNode>(
         &self,
         cfg: &VASSCFG<N>,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-    ) -> bool {
+        n_run: bool,
+    ) -> Option<Path> {
         let Some(parikh_image) = self.get_parikh_image() else {
-            return false;
+            return None;
         };
 
-        parikh_image.can_build_n_run(cfg, initial_valuation, final_valuation)
-    }
-
-    pub fn can_build_z_run<N: AutomatonNode>(
-        &self,
-        cfg: &VASSCFG<N>,
-        initial_valuation: &VASSCounterValuation,
-        final_valuation: &VASSCounterValuation,
-    ) -> bool {
-        let Some(parikh_image) = self.get_parikh_image() else {
-            return false;
-        };
-
-        parikh_image.can_build_z_run(cfg, initial_valuation, final_valuation)
+        parikh_image.build_run(cfg, initial_valuation, final_valuation, n_run)
     }
 }
 
@@ -170,8 +157,8 @@ impl VASSZReachSolverResult {
 ///
 /// Since this constraint act's on sets of nodes and there are only a limited
 /// number of subsets of nodes, the solver terminates.
-pub struct VASSZReachSolver<'a, N: AutomatonNode> {
-    cfg: VASSCFG<N>,
+pub struct VASSZReachSolver<'a, Cfg: CFG> {
+    cfg: Cfg,
     initial_valuation: VASSCounterValuation,
     final_valuation: VASSCounterValuation,
     options: VASSZReachSolverOptions<'a>,
@@ -180,9 +167,9 @@ pub struct VASSZReachSolver<'a, N: AutomatonNode> {
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
+impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
     pub fn new(
-        cfg: VASSCFG<N>,
+        cfg: Cfg,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         options: VASSZReachSolverOptions<'a>,
@@ -258,11 +245,11 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
             .map(|x| Int::from_i64(ctx, *x as i64))
             .collect();
 
-        for edge in self.cfg.graph.edge_references() {
-            let edge_marking = edge.weight();
+        for edge in self.cfg.get_graph().edge_indices() {
+            let edge_marking = self.cfg.edge_update(edge);
 
             // we need one variable for each edge
-            let edge_var = Int::new_const(ctx, format!("edge_{}", edge.id().index()));
+            let edge_var = Int::new_const(ctx, format!("edge_{}", edge.index()));
             // CONSTRAINT: an edge can only be taken positive times
             solver.assert(&edge_var.ge(&Int::from_i64(ctx, 0)));
 
@@ -270,30 +257,30 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
             let i = edge_marking.counter();
             sums[i.to_usize()] = &sums[i.to_usize()] + &edge_var * edge_marking.op_i64();
 
-            edge_map.insert(edge.id(), edge_var);
+            edge_map.insert(edge, edge_var);
         }
 
         let mut final_var_sum = Int::from_i64(ctx, 0);
 
-        for node in self.cfg.graph.node_indices() {
+        for node in self.cfg.get_graph().node_indices() {
             let outgoing = self
                 .cfg
-                .graph
+                .get_graph()
                 .edges_directed(node, petgraph::Direction::Outgoing);
             let incoming = self
                 .cfg
-                .graph
+                .get_graph()
                 .edges_directed(node, petgraph::Direction::Incoming);
 
             let mut outgoing_sum = Int::from_i64(ctx, 0);
             // the start node has one additional incoming connection
-            let mut incoming_sum = if Some(node) == self.cfg.get_start() {
+            let mut incoming_sum = if node == self.cfg.get_start() {
                 Int::from_i64(ctx, 1)
             } else {
                 Int::from_i64(ctx, 0)
             };
 
-            if self.cfg.graph[node].accepting {
+            if self.cfg.is_accepting(node) {
                 // for each accepting node, we need some additional variable that denotes
                 // whether the node is used as the final node
                 let final_var = Int::new_const(ctx, format!("node_{}_final", node.index()));
@@ -339,10 +326,9 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
                     };
 
                     let parikh_image = parikh_image_from_edge_map(&edge_map, &model);
-                    let (_, components) = parikh_image.clone().split_into_connected_components(
-                        &self.cfg.graph,
-                        self.cfg.get_start().unwrap(),
-                    );
+                    let (_, components) = parikh_image
+                        .clone()
+                        .split_into_connected_components(&self.cfg);
 
                     if components.is_empty() {
                         status = SolverStatus::True(parikh_image);
@@ -365,7 +351,7 @@ impl<'a, N: AutomatonNode> VASSZReachSolver<'a, N> {
                     }
 
                     for component in components {
-                        forbid_parikh_image(&component, &self.cfg.graph, &edge_map, solver, ctx);
+                        forbid_parikh_image(&component, &self.cfg, &edge_map, solver, ctx);
                     }
 
                     self.step_count += 1;

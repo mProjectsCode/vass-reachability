@@ -1,13 +1,17 @@
 use hashbrown::{HashMap, HashSet};
 use petgraph::{
-    graph::{DiGraph, EdgeIndex, NodeIndex},
+    graph::{EdgeIndex, NodeIndex},
     visit::EdgeRef,
 };
 
-use super::Path;
-use crate::{automaton::{AutomatonNode, dfa::cfg::{CFGCounterUpdatable, VASSCFG}, vass::counter::VASSCounterValuation}, 
-    logger::{LogLevel, Logger}}
-;
+use crate::{
+    automaton::{
+        cfg::{CFG, update::CFGCounterUpdatable},
+        path::{Path, path_like::PathLike, transition_sequence::TransitionSequence},
+        vass::counter::{VASSCounterUpdate, VASSCounterValuation},
+    },
+    logger::{LogLevel, Logger},
+};
 
 #[derive(Debug, Clone)]
 pub struct ParikhImage {
@@ -73,22 +77,21 @@ impl ParikhImage {
     /// Split the Parikh Image into possibly multiple connected components.
     /// The main connected component is the one that contains the start node.
     /// The connected components are determined by a depth-first search.
-    pub fn split_into_connected_components<N, E>(
+    pub fn split_into_connected_components(
         mut self,
-        graph: &DiGraph<N, E>,
-        start: NodeIndex,
+        cfg: &impl CFG,
     ) -> (ParikhImage, Vec<ParikhImage>) {
         let mut components = vec![];
-        let mut visited = vec![false; graph.node_count()];
+        let mut visited = vec![false; cfg.state_count()];
 
-        let main_component = self.split_connected_component(&mut visited, graph, start);
+        let main_component = self.split_connected_component(cfg, cfg.get_start(), &mut visited);
 
-        for node in graph.node_indices() {
+        for node in cfg.get_graph().node_indices() {
             if visited[node.index()] {
                 continue;
             }
 
-            let component = self.split_connected_component(&mut visited, graph, node);
+            let component = self.split_connected_component(cfg, node, &mut visited);
             if !component.is_empty() {
                 components.push(component);
             }
@@ -103,11 +106,11 @@ impl ParikhImage {
     ///
     /// Edges that are part of the connected component are removed from the
     /// original Parikh Image.
-    fn split_connected_component<N, E>(
+    fn split_connected_component(
         &mut self,
-        visited: &mut [bool],
-        graph: &DiGraph<N, E>,
+        cfg: &impl CFG,
         start: NodeIndex,
+        visited: &mut [bool],
     ) -> ParikhImage {
         let mut stack = vec![start];
         let mut component = ParikhImage::empty();
@@ -119,7 +122,7 @@ impl ParikhImage {
 
             visited[node.index()] = true;
 
-            for e in graph.edges(node) {
+            for e in cfg.get_graph().edges(node) {
                 let edge = e.id();
 
                 if self.get(edge) == 0 {
@@ -145,15 +148,15 @@ impl ParikhImage {
     /// Get the edges that go from the connected components, formed by this
     /// parikh image, to the outside. So from a node that is connected to by
     /// one edge of the parikh image to a node that is not connected.
-    pub fn get_outgoing_edges<N, E>(&self, graph: &DiGraph<N, E>) -> HashSet<EdgeIndex> {
-        let connected_nodes = self.get_connected_nodes(graph);
+    pub fn get_outgoing_edges(&self, cfg: &impl CFG) -> HashSet<EdgeIndex> {
+        let connected_nodes = self.get_connected_nodes(cfg);
 
         let mut edges = HashSet::new();
 
         // next we get all edges that go from a connected node to a node outside the
         // connected component
         for node in &connected_nodes {
-            for edge in graph.edges(*node) {
+            for edge in cfg.get_graph().edges(*node) {
                 if !connected_nodes.contains(&edge.target()) {
                     edges.insert(edge.id());
                 }
@@ -163,15 +166,18 @@ impl ParikhImage {
         edges
     }
 
-    pub fn get_incoming_edges<N, E>(&self, graph: &DiGraph<N, E>) -> HashSet<EdgeIndex> {
-        let connected_nodes = self.get_connected_nodes(graph);
+    pub fn get_incoming_edges(&self, cfg: &impl CFG) -> HashSet<EdgeIndex> {
+        let connected_nodes = self.get_connected_nodes(cfg);
 
         let mut edges = HashSet::new();
 
         // next we get all edges that go from a node outside the connected component
         // to a connected node
         for node in &connected_nodes {
-            for edge in graph.edges_directed(*node, petgraph::Direction::Incoming) {
+            for edge in cfg
+                .get_graph()
+                .edges_directed(*node, petgraph::Direction::Incoming)
+            {
                 if !connected_nodes.contains(&edge.source()) {
                     edges.insert(edge.id());
                 }
@@ -181,10 +187,10 @@ impl ParikhImage {
         edges
     }
 
-    pub fn get_connected_nodes<N, E>(&self, graph: &DiGraph<N, E>) -> HashSet<NodeIndex> {
+    pub fn get_connected_nodes(&self, cfg: &impl CFG) -> HashSet<NodeIndex> {
         let mut connected_nodes = HashSet::new();
 
-        for edge in graph.edge_references() {
+        for edge in cfg.get_graph().edge_references() {
             if self.get(edge.id()) == 0 {
                 continue;
             }
@@ -196,52 +202,41 @@ impl ParikhImage {
         connected_nodes
     }
 
-        pub fn can_build_n_run<N: AutomatonNode>(
+    pub fn build_run(
         &self,
-        cfg: &VASSCFG<N>,
+        cfg: &impl CFG,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-    ) -> bool {
+        n_run: bool,
+    ) -> Option<Path> {
         let valuation = initial_valuation.clone();
 
-        rec_can_build_run(
+        let ts = rec_build_run(
             self.clone(),
+            cfg,
+            cfg.get_start(),
             valuation,
             final_valuation,
-            cfg,
-            cfg.get_start().expect("CFG has no start node"),
-            true,
-        )
+            n_run,
+        );
+
+        if let Some(mut transition_sequence) = ts {
+            transition_sequence.reverse();
+            Some(Path::new_from_sequence(
+                cfg.get_start(),
+                transition_sequence,
+            ))
+        } else {
+            None
+        }
     }
 
-    pub fn can_build_z_run<N: AutomatonNode>(
-        &self,
-        cfg: &VASSCFG<N>,
-        initial_valuation: &VASSCounterValuation,
-        final_valuation: &VASSCounterValuation,
-    ) -> bool {
-        let valuation = initial_valuation.clone();
-
-        rec_can_build_run(
-            self.clone(),
-            valuation,
-            final_valuation,
-            cfg,
-            cfg.get_start().expect("CFG has no start node"),
-            false,
-        )
-    }
-
-    pub fn get_total_counter_effect<N: AutomatonNode>(
-        &self,
-        cfg: &VASSCFG<N>,
-        dimension: usize,
-    ) -> VASSCounterValuation {
-        let mut total_effect = VASSCounterValuation::zero(dimension);
+    pub fn get_total_counter_effect(&self, cfg: &impl CFG, dimension: usize) -> VASSCounterUpdate {
+        let mut total_effect = VASSCounterUpdate::zero(dimension);
 
         for (edge_index, count) in &self.image {
-            let edge = cfg.graph.edge_weight(*edge_index).expect("Edge not found in CFG");
-        
+            let edge = cfg.edge_update(*edge_index);
+
             total_effect[edge.counter()] += edge.op() * (*count as i32);
         }
 
@@ -275,24 +270,27 @@ impl From<&Path> for ParikhImage {
     }
 }
 
-fn rec_can_build_run<N: AutomatonNode>(
+fn rec_build_run(
     parikh_image: ParikhImage,
+    cfg: &impl CFG,
+    node_index: NodeIndex,
     valuation: VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
-    cfg: &VASSCFG<N>,
-    node_index: NodeIndex,
     n_run: bool,
-) -> bool {
-    let is_final = cfg.graph[node_index].accepting;
+) -> Option<TransitionSequence> {
     // if the parikh image is empty, we have reached the end of the path, which also
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {
         assert_eq!(&valuation, final_valuation);
-        return is_final;
+        return if cfg.is_accepting(node_index) {
+            Some(TransitionSequence::new())
+        } else {
+            None
+        };
     }
 
     let outgoing = cfg
-        .graph
+        .get_graph()
         .edges_directed(node_index, petgraph::Direction::Outgoing);
 
     for edge in outgoing {
@@ -307,22 +305,37 @@ fn rec_can_build_run<N: AutomatonNode>(
 
         // next we check that taking the edge does not make a counter in the valuation
         // negative
-        let update = edge.weight();
-        if n_run && !valuation.can_apply_cfg_update(update) {
+        let update = cfg.edge_update(edge_index);
+        if n_run && !valuation.can_apply_cfg_update(&update) {
             continue;
         }
 
         // we can take the edge, so we update the parikh image and the valuation
         let mut valuation = valuation.clone();
-        valuation.apply_cfg_update(*update);
+        valuation.apply_cfg_update(update);
 
         let mut parikh = parikh_image.clone();
         parikh.image.insert(edge_index, edge_count - 1);
 
-        if rec_can_build_run(parikh, valuation, final_valuation, cfg, edge.target(), n_run) {
-            return true;
+        let res = rec_build_run(
+            parikh,
+            cfg,
+            edge.target(),
+            valuation,
+            final_valuation,
+            n_run,
+        );
+
+        match res {
+            Some(mut seq) => {
+                seq.add(edge_index, edge.target());
+                return Some(seq);
+            }
+            None => {
+                // try next edge
+            }
         }
     }
 
-    false
+    None
 }

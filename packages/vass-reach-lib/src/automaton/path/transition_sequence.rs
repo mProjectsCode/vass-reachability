@@ -3,10 +3,8 @@ use std::{fmt::Display, vec::IntoIter};
 use itertools::Itertools;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use super::{
-    Path,
-    path_like::{EdgeListLike, PathLike},
-};
+use crate::automaton::path::{Path, path_like::{EdgeListLike, PathLike}};
+
 
 /// A transition sequence is a list of transitions, where each transition is a
 /// tuple of an edge and a node. The edge is the edge taken and the node is the
@@ -49,6 +47,14 @@ impl TransitionSequence {
                 )
             })
             .join(" ")
+    }
+
+    pub fn reverse(&mut self) {
+        self.0.reverse();
+    }
+
+    pub fn append(&mut self, mut other: Self) {
+        self.0.append(&mut other.0);
     }
 }
 

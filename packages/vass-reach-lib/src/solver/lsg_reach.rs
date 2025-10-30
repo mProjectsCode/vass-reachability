@@ -1,5 +1,6 @@
 use std::{
-    sync::{Arc, atomic::AtomicBool}, thread
+    sync::{Arc, atomic::AtomicBool},
+    thread,
 };
 
 use hashbrown::HashMap;
@@ -11,7 +12,11 @@ use z3::{
 
 use crate::{
     automaton::{
-        AutomatonNode, dfa::cfg::VASSCFG, lsg::{LSGGraph, LSGPart, LSGPath, LinearSubGraph}, path::{Path, parikh_image::ParikhImage}, utils::cfg_updates_to_counter_updates, vass::counter::VASSCounterValuation
+        AutomatonNode,
+        lsg::{LSGGraph, LSGPart, LSGPath, LinearSubGraph},
+        path::{Path, parikh_image::ParikhImage, path_like::EdgeListLike},
+        utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
+        vass::counter::VASSCounterValuation,
     },
     logger::Logger,
     solver::{
@@ -78,17 +83,72 @@ pub enum LSGSolutionPart {
 #[derive(Debug, Clone)]
 pub struct LSGSolution {
     pub parts: Vec<LSGSolutionPart>,
+    pub initial_valuation: VASSCounterValuation,
+    pub final_valuation: VASSCounterValuation,
 }
 
 impl LSGSolution {
-    pub fn build_z_run<N: AutomatonNode>(&self, cfg: &VASSCFG<N>, initial_valuation: &VASSCounterValuation, final_valuation: &VASSCounterValuation) -> Option<Path> {
-        // the parikh image already determines the initial and final valuations when entering and leaving subgraphs
-        // so we can simply build the runs for each part independently and concatenate them
-        todo!()
-    }
+    pub fn build_run<'a, N: AutomatonNode>(
+        &self,
+        lsg: &LinearSubGraph<'a, N>,
+        n_run: bool,
+    ) -> Option<Path> {
+        // the parikh image already determines the initial and final valuations when
+        // entering and leaving subgraphs so we can simply build the runs for
+        // each part independently and concatenate them
 
-    pub fn build_n_run<N: AutomatonNode>(&self, cfg: &VASSCFG<N>, initial_valuation: &VASSCounterValuation, final_valuation: &VASSCounterValuation) -> Option<Path> {
-        todo!()
+        let dimension = self.initial_valuation.dimension();
+
+        let mut cfg_path = Path::new(lsg.cfg.get_start().expect("CFG should have a start node"));
+
+        let mut current_valuation = self.initial_valuation.clone();
+
+        for (part, lsg_part) in self.parts.iter().zip(lsg.iter_parts()) {
+            match part {
+                LSGSolutionPart::SubGraph(image) => {
+                    let subgraph = lsg_part.unwrap_subgraph();
+
+                    // first we need to calculate the start and end valuations for the subgraph
+                    let start_valuation = current_valuation.clone();
+                    current_valuation
+                        .apply_update(&image.get_total_counter_effect(subgraph, dimension));
+                    let end_valuation = current_valuation.clone();
+
+                    // then we can build the run for the subgraph
+                    let sub_path =
+                        image.build_run(subgraph, &start_valuation, &end_valuation, n_run)?;
+
+                    // now the node and edge indices in the path are for the subgraph, so we
+                    // need to map them back to the cfg
+                    let mapped_path = subgraph.map_path_to_cfg(&sub_path, lsg.cfg);
+
+                    cfg_path.concatenate(mapped_path);
+                }
+                LSGSolutionPart::Path() => {
+                    let path = lsg_part.unwrap_path();
+
+                    // we need to update the current valuation for possible following subgraphs
+                    let update = cfg_updates_to_counter_update(
+                        path.path
+                            .iter_edges()
+                            .map(|edge| *lsg.cfg.graph.edge_weight(edge).expect("edge not in cfg")),
+                        dimension,
+                    );
+
+                    current_valuation.apply_update(&update);
+
+                    // then we can simply add the edges to the path
+                    cfg_path.concatenate(path.path.clone());
+                }
+            }
+        }
+
+        assert_eq!(
+            &current_valuation, &self.final_valuation,
+            "Final valuation does not match the expected final valuation"
+        );
+
+        Some(cfg_path)
     }
 }
 
@@ -242,14 +302,17 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
                         .map(|(map, subgraph)| {
                             let image = parikh_image_from_edge_map(map, &model);
 
-                            let (main_component, components) = image
-                                .split_into_connected_components(&subgraph.graph, subgraph.start);
+                            let (main_component, components) =
+                                image.split_into_connected_components(subgraph);
 
                             (subgraph, map, main_component, components)
                         })
                         .collect::<Vec<_>>();
 
-                    if parikh_image_components.iter().all(|(_, _, _, c)| c.is_empty()) {
+                    if parikh_image_components
+                        .iter()
+                        .all(|(_, _, _, c)| c.is_empty())
+                    {
                         let mut solution_parts = Vec::new();
                         let mut image_drain = parikh_image_components.into_iter();
 
@@ -260,15 +323,15 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
                                 }
                                 LSGPart::SubGraph(_) => {
                                     let (_, _, main_component, _) = image_drain.next().unwrap();
-                                    solution_parts.push(LSGSolutionPart::SubGraph(
-                                        main_component,
-                                    ));
+                                    solution_parts.push(LSGSolutionPart::SubGraph(main_component));
                                 }
                             }
                         }
 
                         return self.get_solver_result(LSGReachSolverStatus::True(LSGSolution {
                             parts: solution_parts,
+                            initial_valuation: self.initial_valuation.clone(),
+                            final_valuation: self.final_valuation.clone(),
                         }));
                     }
 
@@ -292,7 +355,7 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
 
                     for (subgraph, edge_map, _, components) in parikh_image_components.into_iter() {
                         for component in components {
-                            forbid_parikh_image(&component, &subgraph.graph, edge_map, solver, ctx);
+                            forbid_parikh_image(&component, subgraph, edge_map, solver, ctx);
                         }
                     }
 

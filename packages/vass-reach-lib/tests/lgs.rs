@@ -1,13 +1,13 @@
 use vass_reach_lib::{
     automaton::{
         AutBuild, Automaton,
-        dfa::{
-            cfg::{CFGCounterUpdate, VASSCFG},
-            node::DfaNode,
-        },
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::node::DfaNode,
         lsg::LinearSubGraph,
         path::Path,
-    }, cfg_dec, cfg_inc, logger::Logger, solver::lsg_reach::LSGReachSolverOptions
+    },
+    cfg_dec, cfg_inc,
+    solver::lsg_reach::LSGReachSolverOptions,
 };
 
 #[test]
@@ -23,7 +23,7 @@ fn lgs_1() {
     let _e3 = cfg.add_transition(s2, s1, cfg_dec!(0));
     let e4 = cfg.add_transition(s1, s3, cfg_dec!(0));
 
-    let path = Path::new_from_sequence(s0, &[e1, e4], &cfg);
+    let path = Path::new_from_iterator(s0, &[e1, e4], &cfg);
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
@@ -88,7 +88,7 @@ fn lgs_2() {
     let _e4 = cfg.add_transition(s2, s3, cfg_inc!(0));
     let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
 
-    let path = Path::new_from_sequence(s0, &[e1, e2], &cfg);
+    let path = Path::new_from_iterator(s0, &[e1, e2], &cfg);
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // Initial path should have one part
@@ -154,44 +154,44 @@ fn lsg_reach() {
     let s2 = cfg.add_state(DfaNode::non_accepting(()));
     let s3 = cfg.add_state(DfaNode::accepting(()));
 
+    cfg.set_start(s0);
+
     let e1 = cfg.add_transition(s0, s1, cfg_inc!(0));
     let _e2 = cfg.add_transition(s1, s2, cfg_inc!(0));
     let _e3 = cfg.add_transition(s2, s1, cfg_dec!(0));
     let e4 = cfg.add_transition(s1, s3, cfg_dec!(0));
 
-    let path = Path::new_from_sequence(s0, &[e1, e4], &cfg);
+    let path = Path::new_from_iterator(s0, &[e1, e4], &cfg);
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg, &vec![0].into(), &vec![0].into())
-            .solve()
-            .is_success()
-    );
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg, &vec![0].into(), &vec![0].into())
+        .solve();
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg, &vec![1].into(), &vec![0].into())
-            .solve()
-            .is_failure()
-    );
+    assert!(res.is_success());
+    assert!(res.unwrap_success().build_run(&lsg, false).is_some());
+
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg, &vec![1].into(), &vec![0].into())
+        .solve();
+
+    assert!(res.is_failure());
 
     let lsg2 = lsg.add_node(s2);
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg2, &vec![0].into(), &vec![0].into())
-            .solve()
-            .is_success()
-    );
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg2, &vec![0].into(), &vec![0].into())
+        .solve();
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg2, &vec![1].into(), &vec![0].into())
-            .solve()
-            .is_failure()
-    );
+    assert!(res.is_success());
+    assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
+
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg2, &vec![1].into(), &vec![0].into())
+        .solve();
+
+    assert!(res.is_failure());
 }
 
 #[test]
@@ -203,6 +203,8 @@ fn lsg_reach2() {
     let s3 = cfg.add_state(DfaNode::non_accepting(()));
     let s4 = cfg.add_state(DfaNode::accepting(()));
 
+    cfg.set_start(s0);
+
     // direct path "s0 -> s1 -> s4" with a loop in s1 "s1 -> s2 -> s3 -> s1"
     let e1 = cfg.add_transition(s0, s1, cfg_inc!(0));
     let e2 = cfg.add_transition(s1, s4, cfg_dec!(0));
@@ -210,36 +212,35 @@ fn lsg_reach2() {
     let _e4 = cfg.add_transition(s2, s3, cfg_inc!(0));
     let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
 
-    let path = Path::new_from_sequence(s0, &[e1, e2], &cfg);
+    let path = Path::new_from_iterator(s0, &[e1, e2], &cfg);
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg, &vec![0].into(), &vec![0].into())
-            .solve()
-            .is_success()
-    );
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg, &vec![0].into(), &vec![0].into())
+        .solve();
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg, &vec![0].into(), &vec![1].into())
-            .solve()
-            .is_failure()
-    );
+    assert!(res.is_success());
+    assert!(res.unwrap_success().build_run(&lsg, false).is_some());
+
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg, &vec![0].into(), &vec![1].into())
+        .solve();
+
+    assert!(res.is_failure());
 
     let lsg2 = lsg.add_node(s2).add_node(s3);
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg2, &vec![0].into(), &vec![0].into())
-            .solve()
-            .is_success()
-    );
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg2, &vec![0].into(), &vec![0].into())
+        .solve();
 
-    assert!(
-        LSGReachSolverOptions::default()
-            .to_solver(&lsg2, &vec![0].into(), &vec![1].into())
-            .solve()
-            .is_success()
-    );
+    assert!(res.is_success());
+    assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
+
+    let res = LSGReachSolverOptions::default()
+        .to_solver(&lsg2, &vec![0].into(), &vec![1].into())
+        .solve();
+
+    assert!(res.is_success());
+    assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
 }

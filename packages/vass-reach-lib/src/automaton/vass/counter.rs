@@ -217,6 +217,12 @@ impl VASSCounterUpdate {
         VASSCounterUpdate { values }
     }
 
+    pub fn zero(dimension: usize) -> Self {
+        VASSCounterUpdate {
+            values: vec![0; dimension].into_boxed_slice(),
+        }
+    }
+
     pub fn dimension(&self) -> usize {
         self.values.len()
     }

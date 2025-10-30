@@ -5,7 +5,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use crate::{
     automaton::{
-        AutomatonNode, dfa::cfg::VASSCFG, lsg::LinearSubGraph, path::Path,
+        AutomatonNode, cfg::vasscfg::VASSCFG, lsg::LinearSubGraph, path::Path,
         vass::counter::VASSCounterValuation,
     },
     solver::{SolverStatus, lsg_reach::LSGReachSolverOptions},
@@ -90,7 +90,10 @@ impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> 
                 }
                 SolverStatus::False(_) => {
                     // we are still unreachable, so we can try to extend the LSG
-                    if let Some(node_index) = self.node_chooser.choose_node(&self.lsg, refinement_step, &self.blacklist) {
+                    if let Some(node_index) =
+                        self.node_chooser
+                            .choose_node(&self.lsg, refinement_step, &self.blacklist)
+                    {
                         self.last_added_node = Some(node_index);
                         let extended_lsg = self.lsg.add_node(node_index);
                         self.old_lsg = Some(std::mem::replace(&mut self.lsg, extended_lsg));
@@ -114,7 +117,12 @@ impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> 
 }
 
 pub trait NodeChooser<N: AutomatonNode> {
-    fn choose_node(&mut self, lsg: &LinearSubGraph<N>, step: usize, black_list: &[NodeIndex]) -> Option<NodeIndex>;
+    fn choose_node(
+        &mut self,
+        lsg: &LinearSubGraph<N>,
+        step: usize,
+        black_list: &[NodeIndex],
+    ) -> Option<NodeIndex>;
 }
 
 pub struct RandomNodeChooser {
@@ -134,7 +142,12 @@ impl RandomNodeChooser {
 }
 
 impl<N: AutomatonNode> NodeChooser<N> for RandomNodeChooser {
-    fn choose_node(&mut self, lsg: &LinearSubGraph<N>, _step: usize, black_list: &[NodeIndex]) -> Option<NodeIndex> {
+    fn choose_node(
+        &mut self,
+        lsg: &LinearSubGraph<N>,
+        _step: usize,
+        black_list: &[NodeIndex],
+    ) -> Option<NodeIndex> {
         // first pick a node in the lsg at random, then pick one of its neighbors at
         // random if the chosen neighbor is already in the lsg, retry a fixed
         // number of times
@@ -147,7 +160,9 @@ impl<N: AutomatonNode> NodeChooser<N> for RandomNodeChooser {
 
             let neighbors: Vec<_> = lsg.cfg.graph.neighbors(node_index).collect();
 
-            let node = neighbors.iter().find(|n| !lsg.contains_node(**n) && !black_list.contains(n));
+            let node = neighbors
+                .iter()
+                .find(|n| !lsg.contains_node(**n) && !black_list.contains(n));
 
             if let Some(node) = node {
                 return Some(*node);
