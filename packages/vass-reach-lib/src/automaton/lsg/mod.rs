@@ -8,9 +8,7 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Automaton, AutomatonNode,
-    cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
-    path::{Path, path_like::PathLike},
+    AutBuild, Automaton, AutomatonNode, cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG}, dfa::node::DfaNode, nfa::NFA, path::{Path, path_like::PathLike}
 };
 
 pub mod extender;
@@ -350,8 +348,73 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         false
     }
 
-    pub fn to_cfg(&self) -> VASSCFG<N> {
-        todo!("Implement conversion from LSG to CFG")
+    pub fn to_nfa(&self) -> NFA<(), CFGCounterUpdate> {
+        let mut nfa = NFA::new(CFGCounterUpdate::alphabet(self.dimension));
+        let start_state = nfa.add_state(DfaNode::non_accepting(()));
+        nfa.set_start(start_state);
+
+        let mut state_offset = 0;
+        let mut prev_state = start_state;
+
+        for part in &self.parts {
+            match part {
+                LSGPart::Path(path) => {
+                    for (edge_index, _) in path.path.iter() {
+                        let next_state = nfa.add_state(DfaNode::non_accepting(()));
+                        let edge_weight = self
+                            .cfg
+                            .edge_update(*edge_index);
+
+                        nfa.add_transition(prev_state, next_state, Some(edge_weight));
+                        prev_state = next_state;
+                    }
+
+                    state_offset += path.path.len();
+                }
+                LSGPart::SubGraph(subgraph) => {
+                    // first add all states
+                    for _ in subgraph.graph.node_indices() {
+                        nfa.add_state(DfaNode::non_accepting(()));
+                    }
+
+                    // then connect the previous part to the start of the subgraph
+                    for i in subgraph.graph.node_indices() {
+                        if i == subgraph.start {
+                            let end_index = (i.index() + state_offset) as u32;
+                            nfa.add_transition(prev_state, end_index.into(), None);
+                        }
+                    }
+
+                    // then set the prev_state to the end of the subgraph
+                    for i in subgraph.graph.node_indices() {
+                        if i == subgraph.end {
+                            let end_index = (i.index() + state_offset) as u32;
+                            prev_state = end_index.into();
+                        }
+                    }
+
+                    // add all edges
+                    for edge_ref in subgraph.graph.edge_references() {
+                        let src = (edge_ref.source().index() + state_offset) as u32;
+                        let dst = (edge_ref.target().index() + state_offset) as u32;
+                        let weight = *edge_ref.weight();
+
+                        nfa.add_transition(src.into(), dst.into(), Some(weight));
+                    }
+
+                    state_offset += subgraph.graph.node_count();
+                }
+            }
+        }
+
+        nfa.set_accepting(prev_state);
+
+        nfa
+    }
+
+    pub fn to_cfg(&self) -> VASSCFG<()> {
+        let nfa = self.to_nfa();
+        nfa.determinize()
     }
 
     pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart> + 'b {

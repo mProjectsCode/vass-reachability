@@ -10,6 +10,7 @@ pub mod path;
 pub mod petri_net;
 pub mod utils;
 pub mod vass;
+pub mod index_map;
 
 pub trait AutomatonNode: Debug + Clone + PartialEq + Eq + Hash {}
 pub trait AutomatonEdge: Debug + Clone + PartialEq + Eq + Hash + Ord {}

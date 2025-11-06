@@ -15,6 +15,34 @@ impl PetriNetTransition {
         Self { input, output }
     }
 
+    /// Converts from a Subtract and Add representation to a PetriNetTransition.
+    /// Note that the input update must all be negative or zero, and the output
+    /// update must all be positive or zero.
+    pub fn from_vass_updates(
+        input: VASSCounterUpdate,
+        output: VASSCounterUpdate,
+    ) -> Self {
+        let mut input_vec = vec![];
+        let mut output_vec = vec![];
+
+        for (i, &val) in input.iter().enumerate() {
+            if val < 0 {
+                input_vec.push(((-val) as usize, i + 1));
+            }
+        }
+
+        for (i, &val) in output.iter().enumerate() {
+            if val > 0 {
+                output_vec.push(((val) as usize, i + 1));
+            }
+        }
+
+        Self {
+            input: input_vec,
+            output: output_vec,
+        }
+    }
+
     pub fn input_to_vass_update(&self, place_count: usize) -> VASSCounterUpdate {
         let mut vec = vec![0; place_count].into_boxed_slice();
 
@@ -35,3 +63,4 @@ impl PetriNetTransition {
         vec.into()
     }
 }
+

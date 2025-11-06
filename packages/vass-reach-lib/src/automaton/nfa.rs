@@ -10,7 +10,7 @@ use crate::automaton::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, dfa::{
 
 #[derive(Debug, Clone)]
 pub struct NFA<N: AutomatonNode, E: AutomatonEdge> {
-    start: Option<NodeIndex<u32>>,
+    start: Option<NodeIndex>,
     pub graph: DiGraph<DfaNode<N>, Option<E>>,
     alphabet: Vec<E>,
 }
@@ -26,11 +26,11 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         }
     }
 
-    pub fn set_start(&mut self, start: NodeIndex<u32>) {
+    pub fn set_start(&mut self, start: NodeIndex) {
         self.start = Some(start);
     }
 
-    pub fn set_accepting(&mut self, state: NodeIndex<u32>) {
+    pub fn set_accepting(&mut self, state: NodeIndex) {
         self.graph[state].accepting = true;
     }
 
@@ -98,7 +98,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
 
     /// Calculates the epsilon closure of a set of states.
     /// This set is duplicate free.
-    pub fn extend_to_e_closure(&self, states: &mut Vec<NodeIndex<u32>>) {
+    pub fn extend_to_e_closure(&self, states: &mut Vec<NodeIndex>) {
         let mut stack = states.clone();
 
         while let Some(state) = stack.pop() {
@@ -115,17 +115,17 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         }
     }
 
-    pub fn is_accepting(&self, state: NodeIndex<u32>) -> bool {
+    pub fn is_accepting(&self, state: NodeIndex) -> bool {
         self.graph[state].accepting
     }
 
     /// Checks if a set of states contains an accepting state.
-    pub fn is_accepting_set(&self, states: &[NodeIndex<u32>]) -> bool {
+    pub fn is_accepting_set(&self, states: &[NodeIndex]) -> bool {
         states.iter().any(|&x| self.is_accepting(x))
     }
 
     /// Creates a state from a set of states.
-    pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNode<Vec<N>> {
+    pub fn state_from_set(&self, states: &[NodeIndex]) -> DfaNode<Vec<N>> {
         DfaNode::new(
             self.is_accepting_set(states),
             false,
@@ -134,16 +134,16 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
     }
 
     /// Creates a state from a set of states.
-    pub fn state_from_set_no_data(&self, states: &[NodeIndex<u32>]) -> DfaNode<()> {
+    pub fn state_from_set_no_data(&self, states: &[NodeIndex]) -> DfaNode<()> {
         DfaNode::new(self.is_accepting_set(states), false, ())
     }
 
-    pub fn node_data(&self, node: NodeIndex<u32>) -> &N {
+    pub fn node_data(&self, node: NodeIndex) -> &N {
         self.graph[node].data()
     }
 
     /// Maps a set of states to their data.
-    pub fn node_data_set(&self, nodes: &[NodeIndex<u32>]) -> Vec<N> {
+    pub fn node_data_set(&self, nodes: &[NodeIndex]) -> Vec<N> {
         nodes.iter().map(|&x| self.node_data(x).clone()).collect()
     }
 
@@ -203,16 +203,16 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
 impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNode<N>, Option<E>>
     for NFA<N, E>
 {
-    fn add_state(&mut self, data: DfaNode<N>) -> NodeIndex<u32> {
+    fn add_state(&mut self, data: DfaNode<N>) -> NodeIndex {
         self.graph.add_node(data)
     }
 
     fn add_transition(
         &mut self,
-        from: NodeIndex<u32>,
-        to: NodeIndex<u32>,
+        from: NodeIndex,
+        to: NodeIndex,
         label: Option<E>,
-    ) -> EdgeIndex<u32> {
+    ) -> EdgeIndex {
         self.graph.add_edge(from, to, label)
     }
 }

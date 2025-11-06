@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::automaton::{
     AutBuild,
-    petri_net::PetriNet,
+    petri_net::{PetriNet, spec::PetriNetSpec},
     vass::{VASS, counter::VASSCounterValuation, initialized::InitializedVASS},
 };
 
@@ -64,5 +64,22 @@ impl InitializedPetriNet {
 
     pub fn from_file(path: &str) -> Self {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+}
+
+impl TryFrom<PetriNetSpec<'_>> for InitializedPetriNet {
+    type Error = String;
+
+    fn try_from(spec: PetriNetSpec) -> Result<Self, Self::Error> {
+        let mut net = PetriNet::new(spec.variables.len());
+        for rule in spec.rules {
+            net.add_transition_struct(rule.to_transition(&spec.variables)?);
+        }
+
+        Ok(InitializedPetriNet::new(
+            net,
+            spec.initial.to_counter_valuation(&spec.variables)?,
+            spec.target.to_counter_valuation(&spec.variables)?,
+        ))
     }
 }
