@@ -20,4 +20,8 @@ pub trait CFG {
     fn state_count(&self) -> usize {
         self.get_graph().node_count()
     }
+
+    fn edge_count(&self) -> usize {
+        self.get_graph().edge_count()
+    }
 }

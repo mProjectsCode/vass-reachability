@@ -5,8 +5,8 @@ use transition::PetriNetTransition;
 use crate::automaton::vass::counter::VASSCounterValuation;
 
 pub mod initialized;
-pub mod transition;
 pub mod spec;
+pub mod transition;
 
 type PlaceId = usize;
 

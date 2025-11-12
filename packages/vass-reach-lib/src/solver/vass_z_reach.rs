@@ -3,7 +3,6 @@ use std::{
     thread,
 };
 
-use hashbrown::HashMap;
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use z3::{
@@ -15,11 +14,15 @@ use crate::{
     automaton::{
         AutomatonEdge, AutomatonNode,
         cfg::{CFG, vasscfg::VASSCFG},
+        index_map::OptionIndexMap,
         path::{Path, parikh_image::ParikhImage},
         vass::{counter::VASSCounterValuation, initialized::InitializedVASS},
     },
     logger::Logger,
-    solver::{SolverResult, SolverStatus, utils::{forbid_parikh_image, parikh_image_from_edge_map}},
+    solver::{
+        SolverResult, SolverStatus,
+        utils::{forbid_parikh_image, parikh_image_from_edge_map},
+    },
 };
 
 #[derive(Debug, Default)]
@@ -236,7 +239,7 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
 
     fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult {
         // a map that allows us to access the edge variables by their edge id
-        let mut edge_map = HashMap::new();
+        let mut edge_map = OptionIndexMap::new(self.cfg.edge_count());
 
         // all the counter sums along the path
         let mut sums: Box<[_]> = self
@@ -291,12 +294,12 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
             }
 
             for edge in outgoing {
-                let edge_var = edge_map.get(&edge.id()).unwrap();
+                let edge_var = &edge_map[edge.id()];
                 outgoing_sum += edge_var;
             }
 
             for edge in incoming {
-                let edge_var = edge_map.get(&edge.id()).unwrap();
+                let edge_var = &edge_map[edge.id()];
                 incoming_sum += edge_var;
             }
 

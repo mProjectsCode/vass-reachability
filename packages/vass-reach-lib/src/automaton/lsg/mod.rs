@@ -8,7 +8,11 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    AutBuild, Automaton, AutomatonNode, cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG}, dfa::node::DfaNode, nfa::NFA, path::{Path, path_like::PathLike}
+    AutBuild, Automaton, AutomatonNode,
+    cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
+    dfa::node::DfaNode,
+    nfa::NFA,
+    path::{Path, path_like::PathLike},
 };
 
 pub mod extender;
@@ -361,9 +365,7 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
                 LSGPart::Path(path) => {
                     for (edge_index, _) in path.path.iter() {
                         let next_state = nfa.add_state(DfaNode::non_accepting(()));
-                        let edge_weight = self
-                            .cfg
-                            .edge_update(*edge_index);
+                        let edge_weight = self.cfg.edge_update(*edge_index);
 
                         nfa.add_transition(prev_state, next_state, Some(edge_weight));
                         prev_state = next_state;

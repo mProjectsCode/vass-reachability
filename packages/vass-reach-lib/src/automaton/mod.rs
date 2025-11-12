@@ -3,6 +3,7 @@ use std::{fmt::Debug, hash::Hash};
 pub mod cfg;
 pub mod dfa;
 pub mod implicit_graph_product;
+pub mod index_map;
 pub mod lsg;
 pub mod ltc;
 pub mod nfa;
@@ -10,7 +11,6 @@ pub mod path;
 pub mod petri_net;
 pub mod utils;
 pub mod vass;
-pub mod index_map;
 
 pub trait AutomatonNode: Debug + Clone + PartialEq + Eq + Hash {}
 pub trait AutomatonEdge: Debug + Clone + PartialEq + Eq + Hash + Ord {}

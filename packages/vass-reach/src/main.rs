@@ -61,12 +61,10 @@ struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let input = std::fs::read_to_string(&args.file)
-        .unwrap_or_else(|_| panic!("Failed to read file: {}", &args.file));
-
     let timeout = args.timeout.map(std::time::Duration::from_secs);
 
-    let vass = InitializedPetriNet::from_json(&input).to_vass();
+    let petri_net = InitializedPetriNet::from_file(&args.file)?;
+    let vass = petri_net.to_vass();
 
     let log_file_path = if args.log_file {
         Some(format!(

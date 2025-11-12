@@ -6,7 +6,10 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use crate::automaton::{AutBuild, AutomatonEdge, AutomatonNode, vass::counter::{VASSCounterUpdate, VASSCounterValuation}};
+use crate::automaton::{
+    AutBuild, AutomatonEdge, AutomatonNode,
+    vass::counter::{VASSCounterUpdate, VASSCounterValuation},
+};
 
 pub mod counter;
 pub mod initialized;

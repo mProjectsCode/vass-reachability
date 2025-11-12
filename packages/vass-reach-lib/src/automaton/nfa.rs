@@ -6,7 +6,11 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use crate::automaton::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, dfa::{DFA, node::DfaNode}, path::path_like::EdgeListLike};
+use crate::automaton::{
+    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
+    dfa::{DFA, node::DfaNode},
+    path::path_like::EdgeListLike,
+};
 
 #[derive(Debug, Clone)]
 pub struct NFA<N: AutomatonNode, E: AutomatonEdge> {
@@ -207,12 +211,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNode<
         self.graph.add_node(data)
     }
 
-    fn add_transition(
-        &mut self,
-        from: NodeIndex,
-        to: NodeIndex,
-        label: Option<E>,
-    ) -> EdgeIndex {
+    fn add_transition(&mut self, from: NodeIndex, to: NodeIndex, label: Option<E>) -> EdgeIndex {
         self.graph.add_edge(from, to, label)
     }
 }

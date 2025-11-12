@@ -7,7 +7,8 @@ use vass_reach_lib::{
         path::Path,
     },
     cfg_dec, cfg_inc,
-    solver::lsg_reach::LSGReachSolverOptions, validation::same_language::assert_same_language,
+    solver::lsg_reach::LSGReachSolverOptions,
+    validation::same_language::assert_same_language,
 };
 
 #[test]

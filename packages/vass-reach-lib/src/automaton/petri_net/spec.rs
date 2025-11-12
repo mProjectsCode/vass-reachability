@@ -1,5 +1,5 @@
 /// In this file, we parse textual `spec` representations of Petri nets.
-/// 
+///
 /// The format is described [here](https://github.com/pierreganty/mist/wiki#input-format-of-mist).
 /// An example Petri net spec is as follows:
 /// /// ```
@@ -17,19 +17,20 @@
 /// /// target
 /// ///     p1=0, p2=0, p3=2
 /// /// ```
-/// 
+///
 /// We only support Petri nets where the updates only modify the counter
 /// itself (i.e., no transfer of tokens between places).
-/// 
+///
 /// We also don't support invariants on places (only guards on transitions).
-/// 
-/// For init and target, we only support equality constraints (only reachability, not coverability).
-/// Unnamed places are assumed to have value 0 in init and target.
-
+///
+/// For init and target, we only support equality constraints (only
+/// reachability, not coverability). Unnamed places are assumed to have value 0
+/// in init and target.
 use nom::{Parser, bytes::complete::tag, character::complete::space1, error::ParseError};
 
 use crate::automaton::{
-    petri_net::{initialized::InitializedPetriNet, transition::PetriNetTransition}, vass::counter::VASSCounterValuation,
+    petri_net::{initialized::InitializedPetriNet, transition::PetriNetTransition},
+    vass::counter::VASSCounterValuation,
 };
 
 fn integer<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str, i32, E> {
@@ -64,7 +65,9 @@ fn variable<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str,
 }
 
 // E.g., x1 x2 x3
-fn set_of_vars<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str, Vec<&'a str>, E> {
+fn set_of_vars<'a, E: ParseError<&'a str>>(
+    input: &'a str,
+) -> nom::IResult<&'a str, Vec<&'a str>, E> {
     nom::multi::separated_list1(space1, variable).parse(input)
 }
 
@@ -74,7 +77,9 @@ pub struct GuardAtom<'a> {
     pub value: i32,
 }
 
-fn guard_atom<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str, GuardAtom<'a>, E> {
+fn guard_atom<'a, E: ParseError<&'a str>>(
+    input: &'a str,
+) -> nom::IResult<&'a str, GuardAtom<'a>, E> {
     let (input, var) = variable(input)?;
     let (input, _) = opt_whitespace(input)?;
     let (input, _) = tag(">=")(input)?;
@@ -106,7 +111,10 @@ pub struct Guard<'a> {
 }
 
 impl<'a> Guard<'a> {
-    pub fn to_counter_valuation(&self, variables: &[&'a str]) -> Result<VASSCounterValuation, String> {
+    pub fn to_counter_valuation(
+        &self,
+        variables: &[&'a str],
+    ) -> Result<VASSCounterValuation, String> {
         let mut valuation = vec![0; variables.len()];
 
         for atom in &self.atoms {
@@ -257,7 +265,9 @@ impl<'a> TransitionSpec<'a> {
     }
 }
 
-fn transition<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str, TransitionSpec<'a>, E> {
+fn transition<'a, E: ParseError<&'a str>>(
+    input: &'a str,
+) -> nom::IResult<&'a str, TransitionSpec<'a>, E> {
     let (input, guard) = guard(input)?;
     let (input, _) = opt_whitespace(input)?;
     let (input, _) = tag("->")(input)?;
@@ -279,7 +289,9 @@ fn test_transition_1() {
     assert_eq!(transition.updates.len(), 2);
 }
 
-fn eq_guard_atom<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str, GuardAtom<'a>, E> {
+fn eq_guard_atom<'a, E: ParseError<&'a str>>(
+    input: &'a str,
+) -> nom::IResult<&'a str, GuardAtom<'a>, E> {
     let (input, var) = variable(input)?;
     let (input, _) = opt_whitespace(input)?;
     let (input, _) = tag("=")(input)?;
@@ -314,7 +326,9 @@ fn test_vars_1() {
     assert_eq!(vars, vec!["p1", "p2", "p3"]);
 }
 
-fn rules<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::IResult<&'a str, Vec<TransitionSpec<'a>>, E> {
+fn rules<'a, E: ParseError<&'a str>>(
+    input: &'a str,
+) -> nom::IResult<&'a str, Vec<TransitionSpec<'a>>, E> {
     let (input, _) = opt_whitespace(input)?;
     let (input, _) = tag("rules")(input)?;
     let (input, _) = whitespace(input)?;
@@ -463,6 +477,71 @@ pub trait ToSpecFormat {
 
 impl ToSpecFormat for InitializedPetriNet {
     fn to_spec_format(&self) -> String {
-        todo!()
+        let mut spec = String::new();
+
+        // vars
+        spec.push_str("vars\n    ");
+        let vars = (1..=self.net.place_count)
+            .map(|i| format!("p{}", i))
+            .collect::<Vec<String>>()
+            .join(" ");
+        spec.push_str(&vars);
+        spec.push_str("\n");
+
+        // rules
+        spec.push_str("rules\n");
+        for transition in &self.net.transitions {
+            spec.push_str("    ");
+
+            // guard
+            let mut guard_atoms = vec![];
+            for (weight, place) in &transition.input {
+                guard_atoms.push(format!("p{} >= {}", place, weight));
+            }
+            if guard_atoms.is_empty() {
+                guard_atoms.push("p1 >= 0".to_string());
+            }
+            spec.push_str(&guard_atoms.join(", "));
+            spec.push_str(" ->\n        ");
+
+            // updates
+            let mut updates = vec![];
+            for i in 1..=self.net.place_count {
+                let (input, output) = transition.get_update_for_place(i);
+
+                let change = output as i32 - input as i32;
+                if change != 0 {
+                    let sign = if change > 0 { "+" } else { "-" };
+                    updates.push(format!("p{}' = p{}{}{}", i, i, sign, change.abs()));
+                }
+            }
+            if updates.is_empty() {
+                updates.push("p1' = p1+0".to_string());
+            }
+            spec.push_str(&updates.join(",\n        "));
+            spec.push_str(";\n");
+        }
+
+        // init
+        spec.push_str("init\n    ");
+        let mut init_atoms = vec![];
+        let init_valuation = &self.initial_marking;
+        for i in 0..self.net.place_count {
+            init_atoms.push(format!("p{}={}", i + 1, init_valuation[i]));
+        }
+        spec.push_str(&init_atoms.join(", "));
+        spec.push_str("\n");
+
+        // target
+        spec.push_str("target\n    ");
+        let mut target_atoms = vec![];
+        let target_valuation = &self.final_marking;
+        for i in 0..self.net.place_count {
+            target_atoms.push(format!("p{}={}", i + 1, target_valuation[i]));
+        }
+        spec.push_str(&target_atoms.join(", "));
+        spec.push_str("\n");
+
+        spec
     }
 }
