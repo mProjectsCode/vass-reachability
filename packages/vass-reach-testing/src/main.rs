@@ -6,8 +6,8 @@ use vass_reach_lib::solver::{
 };
 
 use crate::random::{
-    RandomOptions, persist_multiple_to_file, petri_net::generate_random_petri_net,
-    vass::generate_radom_vass,
+    RandomOptions, persist_multiple_to_file, persist_nets_to_file,
+    petri_net::generate_random_petri_net, vass::generate_radom_vass,
 };
 
 pub mod random;
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let folder = canonicalize("./test_data")?;
     let folder = folder.join("petri_nets_3_3_3");
 
-    persist_multiple_to_file(&random_vass, folder.as_path(), "net")?;
+    persist_nets_to_file(&random_vass, folder.as_path(), "net")?;
 
     let results = run_vass_solver_on_folder(folder.as_path())?;
 
@@ -41,6 +41,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Timeout Kills: {}", timeouts);
     println!("Crashes: {}", crashes);
     println!();
+
+    for res in &results {
+        if let SolverRunResult::Crash(err) = &res {
+            println!("Crash Error: {}", err);
+        }
+    }
 
     let reachable_runs = results.iter().filter(|r| matches!(r, SolverRunResult::Success(res) if matches!(res.status, SerializableSolverStatus::True))).collect::<Vec<_>>();
     let unreachable_runs = results.iter().filter(|r| matches!(r, SolverRunResult::Success(res) if matches!(res.status, SerializableSolverStatus::False))).collect::<Vec<_>>();
@@ -113,7 +119,7 @@ fn run_vass_solver_on_folder(
     Ok(files
         .map(|file| {
             let file = file?;
-            if file.path().extension().and_then(|s| s.to_str()) == Some("json") {
+            if file.path().extension().and_then(|s| s.to_str()) == Some("spec") {
                 println!("Processing file: {}", file.path().display());
                 let output = Command::new("../vass-reach/target/release/vass-reach")
                     .args(&["-t=30", file.path().to_str().unwrap()])
@@ -130,7 +136,7 @@ fn run_vass_solver_on_folder(
                     Ok(SolverRunResult::Crash(stderr.to_string()))
                 }
             } else {
-                Ok(SolverRunResult::Crash("Not a JSON file".to_string()))
+                Ok(SolverRunResult::Crash("Not a .spec file".to_string()))
             }
         })
         .map(

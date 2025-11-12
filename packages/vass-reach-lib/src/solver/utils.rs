@@ -1,4 +1,3 @@
-use hashbrown::HashMap;
 use itertools::Itertools;
 use petgraph::graph::EdgeIndex;
 use z3::{
@@ -6,30 +5,21 @@ use z3::{
     ast::{Bool, Int},
 };
 
-use crate::automaton::{cfg::CFG, path::parikh_image::ParikhImage};
+use crate::automaton::{cfg::CFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage};
 
 pub fn parikh_image_from_edge_map<'a>(
-    edge_map: &HashMap<EdgeIndex, Int<'a>>,
+    edge_map: &OptionIndexMap<EdgeIndex, Int<'a>>,
     model: &Model<'a>,
 ) -> ParikhImage {
     ParikhImage::new(
-        edge_map
-            .iter()
-            .map(|(id, var)| {
-                (
-                    *id,
-                    model.get_const_interp(var).unwrap().as_u64().unwrap() as u32,
-                )
-            })
-            .filter(|(_, count)| *count > 0)
-            .collect(),
+        edge_map.map(|var| model.get_const_interp(var).unwrap().as_u64().unwrap() as u32),
     )
 }
 
 pub fn forbid_parikh_image<'a>(
     parikh_image: &ParikhImage,
     cfg: &impl CFG,
-    edge_map: &HashMap<EdgeIndex, Int<'a>>,
+    edge_map: &OptionIndexMap<EdgeIndex, Int<'a>>,
     solver: &z3::Solver<'a>,
     ctx: &'a z3::Context,
 ) {
@@ -37,7 +27,13 @@ pub fn forbid_parikh_image<'a>(
     // taken
     let edges = parikh_image
         .iter_edges()
-        .map(|edge| edge_map.get(&edge).unwrap().ge(&Int::from_i64(ctx, 1)))
+        .map(|edge| {
+            edge_map
+                .get(edge)
+                .as_ref()
+                .unwrap()
+                .ge(&Int::from_i64(ctx, 1))
+        })
         .collect_vec();
     let edges_ref = edges.iter().collect_vec();
 
@@ -46,7 +42,13 @@ pub fn forbid_parikh_image<'a>(
     let incoming = parikh_image
         .get_incoming_edges(cfg)
         .iter()
-        .map(|edge| edge_map.get(edge).unwrap().ge(&Int::from_i64(ctx, 1)))
+        .map(|edge| {
+            edge_map
+                .get(*edge)
+                .as_ref()
+                .unwrap()
+                .ge(&Int::from_i64(ctx, 1))
+        })
         .collect_vec();
     let incoming_ref = incoming.iter().collect_vec();
 

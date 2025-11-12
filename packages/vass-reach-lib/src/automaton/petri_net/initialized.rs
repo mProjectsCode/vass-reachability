@@ -2,15 +2,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::automaton::{
     AutBuild,
-    petri_net::PetriNet,
+    petri_net::{
+        PetriNet,
+        spec::{PetriNetSpec, ToSpecFormat},
+    },
     vass::{VASS, counter::VASSCounterValuation, initialized::InitializedVASS},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitializedPetriNet {
-    net: PetriNet,
-    initial_marking: VASSCounterValuation,
-    final_marking: VASSCounterValuation,
+    pub net: PetriNet,
+    pub initial_marking: VASSCounterValuation,
+    pub final_marking: VASSCounterValuation,
 }
 
 impl InitializedPetriNet {
@@ -50,19 +53,57 @@ impl InitializedPetriNet {
         )
     }
 
-    pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap()
+    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(serde_json::to_string_pretty(self)?)
     }
 
-    pub fn from_json(json: &str) -> Self {
-        serde_json::from_str(json).unwrap()
+    pub fn from_json(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(serde_json::from_str(json)?)
     }
 
-    pub fn to_file(&self, path: &str) {
-        std::fs::write(path, self.to_json()).unwrap();
+    pub fn to_json_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(std::fs::write(path, self.to_json()?)?)
     }
 
-    pub fn from_file(path: &str) -> Self {
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    pub fn to_spec_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(std::fs::write(path, self.to_spec_format())?)
+    }
+
+    pub fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let path = std::path::Path::new(path);
+        match path.extension() {
+            Some(ext) if ext == "json" => {
+                let json_str = std::fs::read_to_string(path)?;
+                Ok(Self::from_json(&json_str)?)
+            }
+            Some(ext) if ext == "spec" => {
+                let spec_str = std::fs::read_to_string(path)?;
+                let spec = PetriNetSpec::parse(&spec_str)?;
+                Ok(InitializedPetriNet::try_from(spec)?)
+            }
+            _ => Err(format!("Unsupported file extension: {:?}", path.extension()).into()),
+        }
+    }
+
+    pub fn parse_from_spec(spec_str: &str) -> Result<Self, String> {
+        let spec = PetriNetSpec::parse(spec_str)?;
+        InitializedPetriNet::try_from(spec)
+    }
+}
+
+impl TryFrom<PetriNetSpec<'_>> for InitializedPetriNet {
+    type Error = String;
+
+    fn try_from(spec: PetriNetSpec) -> Result<Self, Self::Error> {
+        let mut net = PetriNet::new(spec.variables.len());
+        for rule in spec.rules {
+            net.add_transition_struct(rule.to_transition(&spec.variables)?);
+        }
+
+        Ok(InitializedPetriNet::new(
+            net,
+            spec.initial.to_counter_valuation(&spec.variables)?,
+            spec.target.to_counter_valuation(&spec.variables)?,
+        ))
     }
 }

@@ -8,6 +8,7 @@ use vass_reach_lib::{
     },
     cfg_dec, cfg_inc,
     solver::lsg_reach::LSGReachSolverOptions,
+    validation::same_language::assert_same_language,
 };
 
 #[test]
@@ -33,6 +34,9 @@ fn lgs_1() {
     // we check that the path behaves as expected
     assert!(lsg.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
     assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
+
+    let cfg = lsg.to_cfg();
+    assert_same_language(&lsg, &cfg, 8);
 
     // now we add the node s2
     // we assume that the lgs now contains a subgraph part which allows it to accept
@@ -70,6 +74,9 @@ fn lgs_1() {
         cfg_dec!(0),
         cfg_inc!(0)
     ]));
+
+    let cfg2 = lsg2.to_cfg();
+    assert_same_language(&lsg2, &cfg2, 8);
 }
 
 #[test]
@@ -98,6 +105,9 @@ fn lgs_2() {
     assert!(lsg.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
     assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
 
+    let cfg = lsg.to_cfg();
+    assert_same_language(&lsg, &cfg, 8);
+
     // we add node s2, this should successfully add the node and create a subgraph
     // part but not yet any looping behavior, as the loop requires s3 as well
     let lsg2 = lsg.add_node(s2);
@@ -109,6 +119,9 @@ fn lgs_2() {
 
     assert!(lsg2.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
     assert!(!lsg2.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
+
+    let cfg2 = lsg2.to_cfg();
+    assert_same_language(&lsg2, &cfg2, 8);
 
     // we add s3 to complete the loop
     let lsg3 = lsg2.add_node(s3);
@@ -144,6 +157,9 @@ fn lgs_2() {
     // we still reject other sequences
     assert!(!lsg3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0)]));
     assert!(!lsg3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
+
+    let cfg3 = lsg3.to_cfg();
+    assert_same_language(&lsg3, &cfg3, 8);
 }
 
 #[test]

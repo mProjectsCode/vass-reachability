@@ -1,4 +1,4 @@
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     visit::EdgeRef,
@@ -7,6 +7,7 @@ use petgraph::{
 use crate::{
     automaton::{
         cfg::{CFG, update::CFGCounterUpdatable},
+        index_map::IndexMap,
         path::{Path, path_like::PathLike, transition_sequence::TransitionSequence},
         vass::counter::{VASSCounterUpdate, VASSCounterValuation},
     },
@@ -15,35 +16,28 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct ParikhImage {
-    // TODO: since edge indices are dense, we could use a Vec<u32> instead of a HashMap
-    pub image: HashMap<EdgeIndex, u32>,
-}
-
-impl Default for ParikhImage {
-    fn default() -> Self {
-        ParikhImage::empty()
-    }
+    pub image: IndexMap<EdgeIndex, u32>,
 }
 
 impl ParikhImage {
-    pub fn new(image: HashMap<EdgeIndex, u32>) -> Self {
+    pub fn new(image: IndexMap<EdgeIndex, u32>) -> Self {
         ParikhImage { image }
     }
 
-    pub fn empty() -> Self {
+    pub fn empty(edge_count: usize) -> Self {
         ParikhImage {
-            image: HashMap::new(),
+            image: IndexMap::new(edge_count),
         }
     }
 
     pub fn print(&self, logger: &Logger, level: LogLevel) {
-        for (edge, count) in &self.image {
+        for (edge, count) in self.image.iter() {
             logger.log(level.clone(), &format!("Edge: {}: {}", edge.index(), count));
         }
     }
 
     pub fn get(&self, edge: EdgeIndex) -> u32 {
-        *self.image.get(&edge).unwrap_or(&0)
+        *self.image.get(edge)
     }
 
     pub fn set(&mut self, edge: EdgeIndex, count: u32) {
@@ -51,12 +45,12 @@ impl ParikhImage {
     }
 
     pub fn add_to(&mut self, edge: EdgeIndex, count: u32) {
-        let entry = self.image.entry(edge).or_insert(0);
+        let entry = self.image.get_mut(edge);
         *entry += count;
     }
 
     pub fn sub_from(&mut self, edge: EdgeIndex, count: u32) {
-        let entry = self.image.entry(edge).or_insert(0);
+        let entry = self.image.get_mut(edge);
         if *entry < count {
             *entry = 0;
         } else {
@@ -66,12 +60,12 @@ impl ParikhImage {
 
     /// Set an edge to the maximum of the current count and the given count.
     pub fn set_max(&mut self, edge: EdgeIndex, count: u32) {
-        let entry = self.image.entry(edge).or_insert(0);
+        let entry = self.image.get_mut(edge);
         *entry = count.max(*entry);
     }
 
     pub fn is_empty(&self) -> bool {
-        self.image.is_empty() || self.image.values().all(|&x| x == 0)
+        self.image.iter().all(|(_, v)| *v == 0)
     }
 
     /// Split the Parikh Image into possibly multiple connected components.
@@ -113,7 +107,7 @@ impl ParikhImage {
         visited: &mut [bool],
     ) -> ParikhImage {
         let mut stack = vec![start];
-        let mut component = ParikhImage::empty();
+        let mut component = ParikhImage::empty(self.image.size());
 
         while let Some(node) = stack.pop() {
             if visited[node.index()] {
@@ -234,8 +228,8 @@ impl ParikhImage {
     pub fn get_total_counter_effect(&self, cfg: &impl CFG, dimension: usize) -> VASSCounterUpdate {
         let mut total_effect = VASSCounterUpdate::zero(dimension);
 
-        for (edge_index, count) in &self.image {
-            let edge = cfg.edge_update(*edge_index);
+        for (edge_index, count) in self.image.iter() {
+            let edge = cfg.edge_update(edge_index);
 
             total_effect[edge.counter()] += edge.op() * (*count as i32);
         }
@@ -247,23 +241,22 @@ impl ParikhImage {
         self.image
             .iter()
             .filter(|(_, count)| **count > 0)
-            .map(|(edge, count)| (*edge, *count))
+            .map(|(edge, count)| (edge, *count))
     }
 
     pub fn iter_edges(&self) -> impl Iterator<Item = EdgeIndex> + use<'_> {
         self.image
             .iter()
             .filter(|(_, count)| **count > 0)
-            .map(|(edge, _)| *edge)
+            .map(|(edge, _)| edge)
     }
-}
 
-impl From<&Path> for ParikhImage {
-    fn from(path: &Path) -> Self {
-        let mut map = HashMap::new();
+    pub fn from_path(path: &Path, edge_count: usize) -> Self {
+        let mut map = IndexMap::new(edge_count);
 
         for (edge, _) in &path.transitions {
-            *map.entry(*edge).or_insert(0) += 1;
+            let entry = map.get_mut(*edge);
+            *entry += 1;
         }
 
         ParikhImage::new(map)
@@ -296,9 +289,7 @@ fn rec_build_run(
     for edge in outgoing {
         // first we check that the edge can still be taken
         let edge_index = edge.id();
-        let Some(edge_count) = parikh_image.image.get(&edge_index) else {
-            continue;
-        };
+        let edge_count = parikh_image.image.get(edge_index);
         if *edge_count == 0 {
             continue;
         }

@@ -5,6 +5,7 @@ use crate::automaton::{
     AutBuild, Automaton, AutomatonEdge, AutomatonNode,
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
+    index_map::IndexMap,
     nfa::NFA,
     utils::{self},
     vass::{VASS, counter::VASSCounterValuation},
@@ -26,7 +27,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
         let cfg_start = cfg.add_state(self.state_to_cfg_state(self.initial_node));
         cfg.set_start(cfg_start);
 
-        let mut visited = HashMap::<NodeIndex, NodeIndex>::new();
+        let mut visited = IndexMap::new(self.vass.state_count());
         let mut stack = vec![(self.initial_node, cfg_start)];
 
         while let Some((vass_state, cfg_state)) = stack.pop() {
@@ -37,8 +38,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
                 .graph
                 .edges_directed(vass_state, Direction::Outgoing)
             {
-                let cfg_target = if let Some(&target) = visited.get(&vass_edge.target()) {
-                    target
+                let cfg_target = if let Some(target) = visited.get_option(vass_edge.target()) {
+                    *target
                 } else {
                     let target = cfg.add_state(self.state_to_cfg_state(vass_edge.target()));
                     stack.push((vass_edge.target(), target));

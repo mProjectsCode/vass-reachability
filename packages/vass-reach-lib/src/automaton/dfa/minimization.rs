@@ -1,9 +1,9 @@
-use hashbrown::{HashMap, HashSet};
 use petgraph::{Direction, graph::NodeIndex, visit::EdgeRef};
 
 use crate::automaton::{
     AutBuild, AutomatonEdge, AutomatonNode,
     dfa::{DFA, node::DfaNode},
+    index_map::{IndexMap, IndexSet},
     path::Path,
 };
 
@@ -104,7 +104,7 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
     pub fn to_dfa(&self) -> DFA<N, E> {
         let mut dfa = DFA::new(self.graph.alphabet.clone());
 
-        let mut state_map = HashMap::new();
+        let mut state_map = IndexMap::new(self.graph.state_count());
 
         for entry in self.iter_some() {
             let state = dfa.add_state(DfaNode::new(entry.is_final, false, entry.data.clone()));
@@ -118,12 +118,12 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
         // now we add the transitions
         // if a node has only self-loops, we mark it as a trap node
         for entry in self.iter_some() {
-            let from = state_map[&entry.state];
+            let from = state_map[entry.state];
             let mut trap = true;
 
             for (i, symbol) in self.graph.alphabet.iter().enumerate() {
                 let target = entry.transitions[i];
-                let to = state_map[&target];
+                let to = state_map[target];
                 dfa.add_transition(from, to, (*symbol).clone());
                 if from != to {
                     trap = false;
@@ -277,7 +277,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> Minimizable for DFA<N, E> {
         let mut table = DfaMinimizationTable::new(self);
 
         let start = self.start.unwrap();
-        let mut visited = HashSet::new();
+        let mut visited = IndexSet::new(self.state_count());
         let mut stack = vec![start];
         visited.insert(start);
 

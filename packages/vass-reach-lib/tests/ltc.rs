@@ -65,8 +65,9 @@ fn ltc_n_reach_5() {
 
 #[test]
 fn ltc_language_1() {
-    let initialized_vass =
-        InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json").to_vass();
+    let initialized_vass = InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json")
+        .unwrap()
+        .to_vass();
     let cfg = initialized_vass.to_cfg();
 
     let path = cfg.modulo_reach(
@@ -93,8 +94,9 @@ fn ltc_language_1() {
 
 #[test]
 fn ltc_language_2() {
-    let initialized_vass =
-        InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json").to_vass();
+    let initialized_vass = InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json")
+        .unwrap()
+        .to_vass();
     let cfg = initialized_vass.to_cfg();
 
     let path = cfg.modulo_reach(

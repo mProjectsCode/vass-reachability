@@ -161,8 +161,9 @@ fn test_vass_z_reach_4() {
 
 #[test]
 fn test_vass_z_reach_5() {
-    let initialized_vass =
-        InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json").to_vass();
+    let initialized_vass = InitializedPetriNet::from_file("test_data/petri_nets/3/unknown_2.json")
+        .unwrap()
+        .to_vass();
     let mut cfg = initialized_vass.to_cfg();
     cfg.add_failure_state(());
     cfg = cfg.minimize();

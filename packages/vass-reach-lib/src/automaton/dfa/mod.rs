@@ -9,7 +9,15 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use crate::automaton::{AutBuild, Automaton, AutomatonEdge, AutomatonNode, nfa::NFA, path::{Path, path_like::{EdgeListLike, PathLike}}};
+use crate::automaton::{
+    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
+    index_map::IndexMap,
+    nfa::NFA,
+    path::{
+        Path,
+        path_like::{EdgeListLike, PathLike},
+    },
+};
 
 pub mod minimization;
 pub mod node;
@@ -208,7 +216,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         let start = reversed.add_state(DfaNode::default());
         reversed.set_start(start);
 
-        let mut node_hash = HashMap::new();
+        let mut node_hash = IndexMap::new(self.state_count());
 
         for node in self.graph.node_indices() {
             let new_node = reversed.add_state(DfaNode::default());
@@ -224,8 +232,8 @@ impl<N: AutomatonNode, E: AutomatonEdge> DFA<N, E> {
         }
 
         for edge in self.graph.edge_references() {
-            let source = node_hash.get(&edge.target()).unwrap();
-            let target = node_hash.get(&edge.source()).unwrap();
+            let source = node_hash.get(edge.target());
+            let target = node_hash.get(edge.source());
 
             reversed.add_transition(*source, *target, Some(edge.weight().clone()));
         }

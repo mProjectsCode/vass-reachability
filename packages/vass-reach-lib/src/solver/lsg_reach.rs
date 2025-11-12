@@ -3,7 +3,6 @@ use std::{
     thread,
 };
 
-use hashbrown::HashMap;
 use petgraph::{graph::EdgeIndex, visit::EdgeRef};
 use z3::{
     Config, Context, Solver,
@@ -13,6 +12,8 @@ use z3::{
 use crate::{
     automaton::{
         AutomatonNode,
+        cfg::CFG,
+        index_map::OptionIndexMap,
         lsg::{LSGGraph, LSGPart, LSGPath, LinearSubGraph},
         path::{Path, parikh_image::ParikhImage, path_like::EdgeListLike},
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
@@ -412,8 +413,8 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,
-    ) -> HashMap<EdgeIndex, Int<'c>> {
-        let mut edge_map = HashMap::new();
+    ) -> OptionIndexMap<EdgeIndex, Int<'c>> {
+        let mut edge_map = OptionIndexMap::new(subgraph.edge_count());
 
         for edge in subgraph.graph.edge_references() {
             let edge_marking = edge.weight();
@@ -456,12 +457,12 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
             };
 
             for edge in outgoing {
-                let edge_var = edge_map.get(&edge.id()).unwrap();
+                let edge_var = &edge_map[edge.id()];
                 outgoing_sum += edge_var;
             }
 
             for edge in incoming {
-                let edge_var = edge_map.get(&edge.id()).unwrap();
+                let edge_var = &edge_map[edge.id()];
                 incoming_sum += edge_var;
             }
 

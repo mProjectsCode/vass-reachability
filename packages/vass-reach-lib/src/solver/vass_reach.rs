@@ -12,7 +12,13 @@ use crate::{
         ltc::translation::LTCTranslation,
         path::{Path, PathNReaching},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
-    }, logger::{LogLevel, Logger}, solver::{SolverResult, SolverStatus, vass_z_reach::{VASSZReachSolverOptions, VASSZReachSolverResult}}, threading::thread_pool::ThreadPool
+    },
+    logger::{LogLevel, Logger},
+    solver::{
+        SolverResult, SolverStatus,
+        vass_z_reach::{VASSZReachSolverOptions, VASSZReachSolverResult},
+    },
+    threading::thread_pool::ThreadPool,
 };
 
 #[derive(Clone, Debug)]

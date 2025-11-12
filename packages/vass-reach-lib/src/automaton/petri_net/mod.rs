@@ -5,6 +5,7 @@ use transition::PetriNetTransition;
 use crate::automaton::vass::counter::VASSCounterValuation;
 
 pub mod initialized;
+pub mod spec;
 pub mod transition;
 
 type PlaceId = usize;
@@ -28,6 +29,10 @@ impl PetriNet {
     pub fn add_transition(&mut self, input: Vec<(usize, PlaceId)>, output: Vec<(usize, PlaceId)>) {
         self.transitions
             .push(PetriNetTransition::new(input, output));
+    }
+
+    pub fn add_transition_struct(&mut self, transition: PetriNetTransition) {
+        self.transitions.push(transition);
     }
 
     pub fn init(
