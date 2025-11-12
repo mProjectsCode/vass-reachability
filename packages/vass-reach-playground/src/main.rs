@@ -2,11 +2,7 @@ use std::time::Duration;
 
 use vass_reach_lib::{
     automaton::{
-        AutBuild,
-        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
-        dfa::{minimization::Minimizable, node::DfaNode},
-        path::Path,
-        vass::{VASS, counter::VASSCounterIndex},
+        AutBuild, cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG}, dfa::{minimization::Minimizable, node::DfaNode}, nfa::NFA, path::Path, vass::{VASS, counter::VASSCounterIndex}
     },
     cfg_dec, cfg_inc,
     logger::Logger,
@@ -45,6 +41,8 @@ fn main() {
         .to_vass_solver(&initialized_vass)
         .solve();
 
+
+    det();
     // lim_cfg_test();
 }
 
@@ -109,4 +107,25 @@ fn lim_cfg_test() {
 
     // println!("Overlap CFG: {:#?}", &min_overlap);
     // println!("{}", min_overlap.to_graphviz(None as Option<Path>));
+}
+
+fn det() {
+    let mut nfa = NFA::<(), char>::new(vec!['a', 'b', 'c']);
+    let q0 = nfa.graph.add_node(DfaNode::non_accepting(()));
+    let q1 = nfa.graph.add_node(DfaNode::non_accepting(()));
+    let q2 = nfa.graph.add_node(DfaNode::non_accepting(()));
+    let q3 = nfa.graph.add_node(DfaNode::accepting(()));
+
+    nfa.set_start(q0);
+
+    nfa.add_transition(q0, q0, Some('a'));
+    nfa.add_transition(q0, q1, Some('a'));
+    nfa.add_transition(q1, q2, Some('b'));
+    nfa.add_transition(q1, q3, Some('b'));
+    nfa.add_transition(q2, q3, Some('c'));
+    nfa.add_transition(q3, q1, Some('a'));
+
+    let dfa = nfa.determinize();
+
+    println!("{}", dfa.to_graphviz(None as Option<Path>));
 }

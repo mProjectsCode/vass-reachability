@@ -46,13 +46,13 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         // First we need to create the start state.
         let mut start_state_set = vec![nfa_start];
         self.extend_to_e_closure(&mut start_state_set);
-        let dfa_start = dfa.add_state(self.state_from_set_no_data(&start_state_set));
+        let dfa_start = dfa.add_state(self.state_from_set(&start_state_set));
         dfa.set_start(dfa_start);
         state_map.insert(start_state_set.clone(), dfa_start);
 
         // Second we need an explicit trap state.
         let trap_state_set = vec![];
-        let trap_state = dfa.add_state(self.state_from_set_no_data(&trap_state_set));
+        let trap_state = dfa.add_state(self.state_from_set(&trap_state_set));
         dfa.graph[trap_state].trap = true;
         state_map.insert(trap_state_set.clone(), trap_state);
 
@@ -78,7 +78,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
                 let target_dfa_state = if let Some(&x) = state_map.get(&target_state) {
                     x
                 } else {
-                    let new_state = dfa.add_state(self.state_from_set_no_data(&target_state));
+                    let new_state = dfa.add_state(self.state_from_set(&target_state));
                     state_map.insert(target_state.clone(), new_state);
                     stack.push(target_state);
                     new_state
@@ -125,16 +125,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
     }
 
     /// Creates a state from a set of states.
-    pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNode<Vec<N>> {
-        DfaNode::new(
-            self.is_accepting_set(states),
-            false,
-            self.node_data_set(states),
-        )
-    }
-
-    /// Creates a state from a set of states.
-    pub fn state_from_set_no_data(&self, states: &[NodeIndex<u32>]) -> DfaNode<()> {
+    pub fn state_from_set(&self, states: &[NodeIndex<u32>]) -> DfaNode<()> {
         DfaNode::new(self.is_accepting_set(states), false, ())
     }
 
