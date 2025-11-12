@@ -5,6 +5,8 @@ use petgraph::{
     graph::{EdgeIndex, NodeIndex},
 };
 
+/// Trait for items that can be used as values in an IndexMap.
+/// The type must have an "empty" value that represents the absence of a value in the map.
 pub trait IndexMapData: Clone + PartialEq {
     fn empty() -> Self;
 }
@@ -45,6 +47,8 @@ impl<T: IndexType> IndexMapData for EdgeIndex<T> {
     }
 }
 
+/// Trait for keys that can be used in an IndexMap.
+/// The key must be able to be constructed from a usize index and provide its usize index.
 pub trait IndexMapKey {
     fn new(index: usize) -> Self;
     fn index(self) -> usize;
@@ -70,16 +74,19 @@ impl<T: IndexType> IndexMapKey for EdgeIndex<T> {
     }
 }
 
+/// A vector based map from keys of type K to values of type V.
+/// The maximum key index must be known at map creation time.
+/// Attempts to access keys out of range will in most cases panic.
 #[derive(Debug, Clone)]
 pub struct IndexMap<K: IndexMapKey, V: IndexMapData> {
-    data: Vec<V>,
+    data: Box<[V]>,
     _marker: std::marker::PhantomData<K>,
 }
 
 impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
     pub fn new(max_index: usize) -> Self {
         IndexMap {
-            data: vec![V::empty(); max_index],
+            data: vec![V::empty(); max_index].into_boxed_slice(),
             _marker: std::marker::PhantomData,
         }
     }
@@ -147,6 +154,7 @@ impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
         self.data.iter().enumerate().map(|(i, v)| (K::new(i), v))
     }
 
+    /// Create a new IndexMap by mapping the filled values of this map using the provided function.
     pub fn map<F, V2: IndexMapData>(&self, f: F) -> IndexMap<K, V2>
     where
         F: Fn(&V) -> V2,
@@ -165,17 +173,18 @@ impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
         }
     }
 
+    /// Create a new OptionIndexMap by mapping the filled values of this map using the provided function.
     pub fn map_option<F, V2>(&self, f: F) -> OptionIndexMap<K, V2>
     where
         V2: Debug + Clone + PartialEq,
-        F: Fn(&V) -> Option<V2>,
+        F: Fn(&V) -> V2,
     {
         let empty = V::empty();
 
         let data = self
             .data
             .iter()
-            .map(|v| if v != &empty { f(v) } else { None })
+            .map(|v| if v != &empty { Some(f(v)) } else { None })
             .collect();
 
         OptionIndexMap {
@@ -272,12 +281,12 @@ impl<K: IndexMapKey, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
     pub fn map_option<F, V2>(&self, f: F) -> OptionIndexMap<K, V2>
     where
         V2: Debug + Clone + PartialEq,
-        F: Fn(&V) -> Option<V2>,
+        F: Fn(&V) -> V2,
     {
         let data = self
             .data
             .iter()
-            .map(|v| v.as_ref().and_then(|v| f(v)))
+            .map(|v| v.as_ref().map(|v| f(v)))
             .collect();
 
         OptionIndexMap {
