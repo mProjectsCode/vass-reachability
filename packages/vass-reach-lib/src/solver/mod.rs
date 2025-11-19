@@ -156,6 +156,13 @@ impl<Statistics> SerializableSolverResult<Statistics> {
     pub fn is_unknown(&self) -> bool {
         self.status.is_unknown()
     }
+
+    pub fn to_empty_status(self) -> SerializableSolverResult<()> {
+        SerializableSolverResult {
+            status: self.status,
+            statistics: (),
+        }
+    }
 }
 
 impl<T, F, U, Statistics> From<SolverResult<T, F, U, Statistics>>

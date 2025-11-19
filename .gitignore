@@ -1,3 +1,5 @@
 /packages/*/target
 /packages/*/logs
 /target
+
+/packages/vass-reach-testing/tools.config.json

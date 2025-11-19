@@ -7,7 +7,7 @@ use crate::automaton::{
     AutBuild, AutomatonNode,
     cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
-    implicit_graph_product::{ImplicitCFGProduct, path::MultiGraphPath},
+    implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
     ltc::{LTC, LTCElement},
     nfa::NFA,
     path::{

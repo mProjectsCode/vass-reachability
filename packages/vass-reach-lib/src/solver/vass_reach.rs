@@ -8,7 +8,8 @@ use crate::{
         AutomatonEdge, AutomatonNode,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
-        implicit_graph_product::ImplicitCFGProduct,
+        implicit_cfg_product::ImplicitCFGProduct,
+        lsg::extender::{LSGExtender, RandomNodeChooser},
         ltc::translation::LTCTranslation,
         path::{Path, PathNReaching},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
@@ -338,6 +339,7 @@ impl<'a> VASSReachSolver<'a> {
             // ---
             // Bounded counting separator
             // ---
+            
             if let PathNReaching::Negative((index, counter)) = reaching {
                 if let Some(l) = self.logger {
                     l.debug(&format!("Path does not stay positive at index {:?}", index));
@@ -403,6 +405,26 @@ impl<'a> VASSReachSolver<'a> {
             //     }
             //     self.increment_mu();
             // }
+
+            // ---
+            // LSG
+            // ---
+
+            if let Some(l) = self.logger {
+                l.debug("Building and checking LSG");
+            }
+
+            let mut extender = LSGExtender::from_cfg_product(
+                &path,
+                &self.state,
+                RandomNodeChooser::new(5, self.step_count as u64),
+                5,
+            );
+            self.intersect_cfg(extender.run());
+
+            // ---
+            // mu
+            // ---
 
             for i in VASSCounterIndex::iter_counters(self.state.dimension) {
                 let max_value = path.max_counter_value(&self.state.initial_valuation, i);

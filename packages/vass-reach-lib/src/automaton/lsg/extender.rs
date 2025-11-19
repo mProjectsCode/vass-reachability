@@ -5,7 +5,11 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use crate::{
     automaton::{
-        AutomatonNode, cfg::vasscfg::VASSCFG, lsg::LinearSubGraph, path::Path,
+        AutomatonNode,
+        cfg::vasscfg::VASSCFG,
+        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
+        lsg::LinearSubGraph,
+        path::Path,
         vass::counter::VASSCounterValuation,
     },
     solver::{SolverStatus, lsg_reach::LSGReachSolverOptions},
@@ -68,7 +72,7 @@ impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> 
     /// Refines `self.lsg` by trying to extend it using the `node_chooser`
     /// until no more nodes can be added or the maximum number of refinements is
     /// reached.
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> VASSCFG<()> {
         let mut refinement_step = 0;
 
         loop {
@@ -113,6 +117,29 @@ impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> 
                 break;
             }
         }
+
+        self.lsg.to_cfg()
+    }
+}
+
+impl<'a, Chooser: NodeChooser<()>> LSGExtender<'a, (), Chooser> {
+    pub fn from_cfg_product(
+        path: &MultiGraphPath,
+        cfg_product: &'a ImplicitCFGProduct,
+        node_chooser: Chooser,
+        max_refinements: usize,
+    ) -> Self {
+        let path = path.to_path(&cfg_product.cfg).into();
+
+        Self::new(
+            path,
+            &cfg_product.cfg,
+            cfg_product.dimension,
+            node_chooser,
+            cfg_product.initial_valuation.clone(),
+            cfg_product.final_valuation.clone(),
+            max_refinements,
+        )
     }
 }
 

@@ -1,0 +1,4 @@
+server_port = 4000
+ui_port = 4001
+ui_path = "../vass-reach-testing-ui"
+test_folders_path = "./test_data"

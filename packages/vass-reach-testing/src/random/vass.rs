@@ -32,7 +32,7 @@ pub fn generate_radom_vass(
 
                 let mut input = vec![];
 
-                for p in 0..dimension {
+                for _ in 0..dimension {
                     input.push(r.gen_range(-max_tokens_per_transition..=max_tokens_per_transition));
                 }
 

@@ -1,4 +1,3 @@
-use hashbrown::HashMap;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
 use crate::automaton::{

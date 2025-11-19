@@ -1,0 +1,6 @@
+num_instances = 100
+seed = 2
+petri_net_counters = 3
+petri_net_transitions = 6
+petri_net_max_tokens_per_transition = 3
+petri_net_no_guards = true

@@ -1,0 +1,818 @@
+{
+  "tool_name": "kreach",
+  "results": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_16.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 369
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_34.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 47131
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_28.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 596
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_2.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 364
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_64.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_64.scope; invocation ID: b72efbb34d63402dab7e34c23c2f825f\n"
+      },
+      "ms_taken": 120249
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_20.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 722
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_59.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 1500
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_42.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 512
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_47.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 696
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_36.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_36.scope; invocation ID: 8b9bdc96d7964e5d9b205deffe6e54e9\n"
+      },
+      "ms_taken": 120096
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_19.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 397
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_44.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 608
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_56.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 364
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_61.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 406
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_77.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_77.scope; invocation ID: 0ce907a95d084846a7fdc9c49e4ce877\n"
+      },
+      "ms_taken": 120198
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_68.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_68.scope; invocation ID: 2d8b1587e98248a0b405e5fa106cad36\n"
+      },
+      "ms_taken": 120217
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_22.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_22.scope; invocation ID: 6400b55f0a8b4746a36831b660d6b15c\n"
+      },
+      "ms_taken": 120257
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_93.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 473
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_23.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 371
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_76.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 404
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_86.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_86.scope; invocation ID: 53edcf2f59c84726ba1c8e69843e9ee1\n"
+      },
+      "ms_taken": 120250
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_91.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 698
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_55.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 390
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_41.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_41.scope; invocation ID: 7f456f8bae8f40d4b8af2119d6fc63a5\n"
+      },
+      "ms_taken": 120244
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_27.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 3690
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_5.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 601
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_4.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 790
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_32.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_32.scope; invocation ID: 334911856fc3475f99437208787ae5bc\n"
+      },
+      "ms_taken": 120167
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_67.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_67.scope; invocation ID: b6be8276c50742558b28d559b612d706\n"
+      },
+      "ms_taken": 120058
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_52.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_52.scope; invocation ID: 497d1353d42a4d529d18cc4af837fca5\n"
+      },
+      "ms_taken": 120139
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_35.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_35.scope; invocation ID: 2b265752e4284afdbf67814610da1720\n"
+      },
+      "ms_taken": 120263
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_78.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 624
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_37.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_37.scope; invocation ID: e79a02d13f994c22882c6f520c8b782e\n"
+      },
+      "ms_taken": 120164
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_18.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 405
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_65.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 365
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_70.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 1182
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_17.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 649
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_25.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 419
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_51.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 650
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_46.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 582
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_31.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 598
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_9.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 344
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_29.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_29.scope; invocation ID: 4c964afde0574d419c7b547ab352b1cc\n"
+      },
+      "ms_taken": 120249
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_99.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 380
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_54.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 1467
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_21.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 523
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_95.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_95.scope; invocation ID: c7fbcf3ddb5f4826a16c7820e98510fc\n"
+      },
+      "ms_taken": 120244
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_53.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 596
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_97.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 452
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_90.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 1974
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_26.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_26.scope; invocation ID: 7af94f707aa7473ea9611c481f7410e5\n"
+      },
+      "ms_taken": 120117
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_98.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 4328
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_85.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 13900
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_80.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 3798
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_24.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_24.scope; invocation ID: d633b1ac5e7749d4a56795e0106ad65b\n"
+      },
+      "ms_taken": 120157
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_10.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 387
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_72.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_72.scope; invocation ID: 94890ee066bb47e78e526b3a522408da\n"
+      },
+      "ms_taken": 120054
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_11.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_11.scope; invocation ID: eaa07222d2ac4f17b5dc0045d32a44f9\n"
+      },
+      "ms_taken": 120151
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_45.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 748
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_92.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 486
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_58.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_58.scope; invocation ID: 474697adc0b04c3e860ea18f0b49d80e\n"
+      },
+      "ms_taken": 120249
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_48.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 927
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_39.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 577
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_6.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 416
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_79.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 799
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_38.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_38.scope; invocation ID: 4928f9354f9d42d3b4edf5634185c61a\n"
+      },
+      "ms_taken": 120249
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_74.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 375
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_30.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 457
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_94.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 351
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_62.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 387
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_12.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 392
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_60.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 331
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_0.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 16262
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_14.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 772
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_89.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_89.scope; invocation ID: 0b095f3197e748f381ef6d451406f61d\n"
+      },
+      "ms_taken": 120250
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_73.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 15001
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_71.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 636
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_84.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 4176
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_1.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_1.scope; invocation ID: c1c928c6dbcc445381e414a343495c44\n"
+      },
+      "ms_taken": 120100
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_50.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 1703
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_66.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 584
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_7.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_7.scope; invocation ID: 2c9ce84cec1045568b9294be3a6492c0\n"
+      },
+      "ms_taken": 120287
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_8.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 543
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_87.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 10652
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_75.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 777
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_15.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_15.scope; invocation ID: 32366bda58324d7db3c895127ddadb1f\n"
+      },
+      "ms_taken": 120250
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_13.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_13.scope; invocation ID: f4c80f8be1d34dfcabff2b85392d11a8\n"
+      },
+      "ms_taken": 120047
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_96.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 569
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_43.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_43.scope; invocation ID: 80c15da7694b4b779c06df99244f6eec\n"
+      },
+      "ms_taken": 120248
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_57.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_57.scope; invocation ID: bf00daa049c24f6eaf07894e66933fd6\n"
+      },
+      "ms_taken": 120173
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_69.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 555
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_40.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 786
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_88.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 567
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_81.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 91837
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_3.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 7364
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_63.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_63.scope; invocation ID: fe6f82a00ebd40348bd22e1162ed71ef\n"
+      },
+      "ms_taken": 120249
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_83.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: kreach_run_net_83.scope; invocation ID: 3a0203585a6f43da855f6afcfcbfadf3\n"
+      },
+      "ms_taken": 120250
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_82.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 79320
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_33.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 576
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_p3_t6/instances/net_49.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 1377
+    }
+  }
+}

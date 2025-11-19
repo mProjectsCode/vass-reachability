@@ -6,7 +6,7 @@ use vass_reach_lib::{
             vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
         },
         dfa::node::DfaNode,
-        implicit_graph_product::ImplicitCFGProduct,
+        implicit_cfg_product::ImplicitCFGProduct,
         vass::counter::{VASSCounterIndex, VASSCounterValuation},
     },
     cfg_dec, cfg_inc,

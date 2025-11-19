@@ -1,0 +1,37 @@
+:root {
+    --bg-color: #202028;
+    --text-color: #ffffff;
+    --text-muted: #aaaaaa;
+    --font: 'Courier New', Courier, monospace;
+}
+
+* {
+    box-sizing: border-box;
+    font-family: var(--font);
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.flex-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+button {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--text-muted);
+}
+
+button.is-selected {
+    border: 1px solid var(--text-color);
+}
+
+.container {
+    margin: 8px;
+}

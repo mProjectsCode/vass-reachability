@@ -1,0 +1,3 @@
+tools = ["vass-reach", "kreach"]
+timeout = 60
+memory_max_gb = 4

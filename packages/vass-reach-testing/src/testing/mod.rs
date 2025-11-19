@@ -1,0 +1,136 @@
+use std::{path, process::Command};
+
+use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
+use vass_reach_lib::{logger::Logger, solver::SerializableSolverResult};
+
+use crate::{Args, config::{CustomError, Test, load_tool_config}, tools::{Tool, ToolWrapper, kreach::KReachTool, vass_reach::VASSReachTool}};
+
+pub fn test(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(folder) = &args.folder else {
+        return CustomError::str("missing required folder argument").to_boxed()
+    };
+    let test = Test::canonicalize(folder)?;
+    let config = test.test_config()?;
+
+    logger.info("Loading tool configuration...");
+
+    let tool_config = load_tool_config()?;
+
+    let tools: Vec<ToolWrapper> = vec![
+        VASSReachTool::new(&tool_config, &config).into(),
+        KReachTool::new(&tool_config, &config).into(),
+    ];
+
+    logger.info("Resetting systemd scopes...");
+
+    Command::new("systemctl")
+        .args(&["--user", "reset-failed"])
+        .status()?;
+
+    for tool in tools {
+        if !config.tools.contains(&tool.name().to_string()) {
+            continue;
+        }
+
+        logger.info(&format!("Building tool: {}", tool.name()));
+
+        tool.build()?;
+
+        logger.info(&format!("Testing tool: {}", tool.name()));
+
+        tool.test()?;
+
+        logger.info(&format!("Running tool: {}", tool.name()));
+
+        let results = run_tool_on_folder(logger, &test.instances_folder(), &tool)?;
+
+        test.write_results(&tool, results)?;
+
+        logger.info(&format!(
+            "Persisted test results to folder: {}",
+            &test.results_folder().display()
+        ));
+    }
+
+    Ok(())
+}
+
+fn run_tool_on_folder<T: Tool>(
+    logger: &Logger,
+    folder: &path::Path,
+    tool: &T,
+) -> Result<HashMap<String, SolverResultStatistic>, Box<dyn std::error::Error>> {
+    let files = std::fs::read_dir(folder)?;
+    let files = files.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(files
+        .iter()
+        .enumerate()
+        .map(|(i, file)| {
+            let result = if file.path().extension().and_then(|s| s.to_str()) == Some("spec") {
+                println!(
+                    "Processing file {}/{}: {}",
+                    i,
+                    files.len(),
+                    file.path().display()
+                );
+
+                let start_time = std::time::Instant::now();
+
+                let result = tool.run_on_file(&file.path());
+
+                let duration = start_time.elapsed().as_millis();
+
+                match result {
+                    Ok(result) => SolverResultStatistic::new(result, duration),
+                    Err(e) => {
+                        logger.warn(&format!(
+                            "Tool {} crashed on file {}: {}",
+                            tool.name(),
+                            file.path().display(),
+                            e
+                        ));
+
+                        SolverResultStatistic::new(
+                            SolverRunResult::Crash(e.to_string()),
+                            duration,
+                        )
+                    }
+                }
+            } else {
+                SolverResultStatistic::new(
+                    SolverRunResult::Crash("Not a .spec file".to_string()),
+                    0,
+                )
+            };
+
+            let file_path = file.path().to_str().unwrap().to_string();
+
+            (file_path, result)
+        })
+        .collect())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SolverRunResult {
+    Success(SerializableSolverResult<()>),
+    Crash(String),
+    OOM,
+    Timeout,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolverResultStatistic {
+    pub result: SolverRunResult,
+    pub ms_taken: u128,
+}
+
+impl SolverResultStatistic {
+    pub fn new(result: SolverRunResult, ms_taken: u128) -> Self {
+        SolverResultStatistic {
+            result,
+            ms_taken,
+        }
+    }
+}
