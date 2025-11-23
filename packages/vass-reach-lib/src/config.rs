@@ -33,7 +33,7 @@ macro_rules! config {
                 }
 
                 pub fn from_file<P: AsRef<Path>>(file: P) -> anyhow::Result<Self> {
-
+                    
                 }
 
                 $(

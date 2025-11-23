@@ -21,6 +21,8 @@ hashbrown = { version = "0.16.0", features = ["serde"] }
 nom = "8.0.0"
 paste = "1.0.15"
 unstringify = "0.1.4"
+anyhow = "1.0.100"
+
 
 [profile.release]
 lto = true

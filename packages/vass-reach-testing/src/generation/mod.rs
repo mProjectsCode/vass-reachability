@@ -1,10 +1,14 @@
 use vass_reach_lib::logger::Logger;
 
-use crate::{Args, config::{CustomError, Test}, random::{RandomOptions, petri_net::generate_random_petri_net}};
+use crate::{
+    Args,
+    config::{Test},
+    random::{RandomOptions, petri_net::generate_random_petri_net},
+};
 
-pub fn generate(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generate(logger: &Logger, args: &Args) -> anyhow::Result<()> {
     let Some(folder) = &args.folder else {
-        return CustomError::str("missing required folder argument").to_boxed()
+        anyhow::bail!("missing required folder argument");
     };
     let test = Test::canonicalize(&folder)?;
     let config = test.instance_config()?;
@@ -16,7 +20,7 @@ pub fn generate(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::
         config.petri_net_counters,
         config.petri_net_transitions,
         config.petri_net_max_tokens_per_transition,
-        config.petri_net_no_guards
+        config.petri_net_no_guards,
     );
 
     logger.info(&format!(

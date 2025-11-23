@@ -4,7 +4,9 @@ use regex::Regex;
 use vass_reach_lib::solver::{SerializableSolverResult, SerializableSolverStatus};
 
 use crate::{
-    config::{TestConfig, ToolConfig}, testing::SolverRunResult, tools::Tool
+    config::{TestConfig, ToolConfig},
+    testing::SolverRunResult,
+    tools::Tool,
 };
 
 #[derive(Debug, Clone)]
@@ -35,7 +37,7 @@ impl<'a> Tool for KReachTool<'a> {
         self.test_config
     }
 
-    fn test(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn test(&self) -> anyhow::Result<()> {
         Command::new("stack")
             .args(&["exec", "kosaraju"])
             .current_dir(self.get_tool_path()?)
@@ -44,7 +46,7 @@ impl<'a> Tool for KReachTool<'a> {
         Ok(())
     }
 
-    fn build(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn build(&self) -> anyhow::Result<()> {
         Command::new("stack")
             .args(&["build", "kosaraju"])
             .current_dir(self.get_tool_path()?)
@@ -56,21 +58,24 @@ impl<'a> Tool for KReachTool<'a> {
     fn run_on_file(
         &self,
         file_path: &std::path::Path,
-    ) -> Result<SolverRunResult, Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<SolverRunResult> {
         // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p RuntimeMaxSec={self.test_config.timeout} stack exec kosaraju -- -r {file_path}`
         let mut command = Command::new("systemd-run");
         command.args(&[
             "--user",
             "--scope",
-            &format!("--unit=kreach_run_{}", file_path.file_stem().unwrap().to_str().unwrap()),
+            &format!(
+                "--unit=kreach_run_{}",
+                file_path.file_stem().unwrap().to_str().unwrap()
+            ),
             &format!("-pMemoryMax={}G", 4),
             &format!("-pRuntimeMaxSec={}", self.test_config.timeout),
             "stack",
-            "exec", 
-            "kosaraju", 
-            "--", 
-            "-r", 
-            file_path.to_str().unwrap()
+            "exec",
+            "kosaraju",
+            "--",
+            "-r",
+            file_path.to_str().unwrap(),
         ]);
         command.current_dir(self.get_tool_path()?);
         command.env("KOSARAJU_SOLVER", "cvc4");

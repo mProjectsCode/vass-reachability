@@ -1,23 +1,30 @@
 use enum_dispatch::enum_dispatch;
 
-use crate::{config::{TestConfig, ToolConfig}, testing::SolverRunResult, tools::{kreach::KReachTool, vass_reach::VASSReachTool}};
+use crate::{
+    config::{TestConfig, ToolConfig},
+    testing::SolverRunResult,
+    tools::{kreach::KReachTool, vass_reach::VASSReachTool},
+};
 
-pub mod vass_reach;
 pub mod kreach;
+pub mod vass_reach;
 
 #[enum_dispatch(ToolWrapper)]
 pub trait Tool {
     fn name(&self) -> &str;
     fn tool_config(&self) -> &ToolConfig;
     fn test_config(&self) -> &TestConfig;
-    fn test(&self) -> Result<(), Box<dyn std::error::Error>>;
-    fn build(&self) -> Result<(), Box<dyn std::error::Error>>;
-    fn run_on_file(&self, file_path: &std::path::Path) -> Result<SolverRunResult, Box<dyn std::error::Error>>;
+    fn test(&self) -> anyhow::Result<()>;
+    fn build(&self) -> anyhow::Result<()>;
+    fn run_on_file(
+        &self,
+        file_path: &std::path::Path,
+    ) -> anyhow::Result<SolverRunResult>;
 
-    fn get_tool_path(&self) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    fn get_tool_path(&self) -> anyhow::Result<std::path::PathBuf> {
         match self.tool_config().get(self.name()) {
             Some(path) => Ok(path.clone()),
-            None => Err(format!("Tool {} not found in tool configuration", self.name()).into()),
+            None => Err(anyhow::anyhow!("Tool {} not found in tool configuration", self.name())),
         }
     }
 }

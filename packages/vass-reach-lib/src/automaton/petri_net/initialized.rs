@@ -53,23 +53,23 @@ impl InitializedPetriNet {
         )
     }
 
-    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn to_json(&self) -> anyhow::Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }
 
-    pub fn from_json(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_json(json: &str) -> anyhow::Result<Self> {
         Ok(serde_json::from_str(json)?)
     }
 
-    pub fn to_json_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn to_json_file(&self, path: &str) -> anyhow::Result<()> {
         Ok(std::fs::write(path, self.to_json()?)?)
     }
 
-    pub fn to_spec_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn to_spec_file(&self, path: &str) -> anyhow::Result<()> {
         Ok(std::fs::write(path, self.to_spec_format())?)
     }
 
-    pub fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_file(path: &str) -> anyhow::Result<Self> {
         let path = std::path::Path::new(path);
         match path.extension() {
             Some(ext) if ext == "json" => {
@@ -81,18 +81,18 @@ impl InitializedPetriNet {
                 let spec = PetriNetSpec::parse(&spec_str)?;
                 Ok(InitializedPetriNet::try_from(spec)?)
             }
-            _ => Err(format!("Unsupported file extension: {:?}", path.extension()).into()),
+            _ => Err(anyhow::anyhow!("Unsupported file extension: {:?}", path.extension())),
         }
     }
 
-    pub fn parse_from_spec(spec_str: &str) -> Result<Self, String> {
+    pub fn parse_from_spec(spec_str: &str) -> anyhow::Result<Self> {
         let spec = PetriNetSpec::parse(spec_str)?;
         InitializedPetriNet::try_from(spec)
     }
 }
 
 impl TryFrom<PetriNetSpec<'_>> for InitializedPetriNet {
-    type Error = String;
+    type Error = anyhow::Error;
 
     fn try_from(spec: PetriNetSpec) -> Result<Self, Self::Error> {
         let mut net = PetriNet::new(spec.variables.len());

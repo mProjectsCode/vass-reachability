@@ -6,7 +6,8 @@ use petgraph::{
 };
 
 /// Trait for items that can be used as values in an IndexMap.
-/// The type must have an "empty" value that represents the absence of a value in the map.
+/// The type must have an "empty" value that represents the absence of a value
+/// in the map.
 pub trait IndexMapData: Clone + PartialEq {
     fn empty() -> Self;
 }
@@ -48,7 +49,8 @@ impl<T: IndexType> IndexMapData for EdgeIndex<T> {
 }
 
 /// Trait for keys that can be used in an IndexMap.
-/// The key must be able to be constructed from a usize index and provide its usize index.
+/// The key must be able to be constructed from a usize index and provide its
+/// usize index.
 pub trait IndexMapKey {
     fn new(index: usize) -> Self;
     fn index(self) -> usize;
@@ -154,7 +156,8 @@ impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
         self.data.iter().enumerate().map(|(i, v)| (K::new(i), v))
     }
 
-    /// Create a new IndexMap by mapping the filled values of this map using the provided function.
+    /// Create a new IndexMap by mapping the filled values of this map using the
+    /// provided function.
     pub fn map<F, V2: IndexMapData>(&self, f: F) -> IndexMap<K, V2>
     where
         F: Fn(&V) -> V2,
@@ -173,7 +176,8 @@ impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
         }
     }
 
-    /// Create a new OptionIndexMap by mapping the filled values of this map using the provided function.
+    /// Create a new OptionIndexMap by mapping the filled values of this map
+    /// using the provided function.
     pub fn map_option<F, V2>(&self, f: F) -> OptionIndexMap<K, V2>
     where
         V2: Debug + Clone + PartialEq,
@@ -283,11 +287,7 @@ impl<K: IndexMapKey, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
         V2: Debug + Clone + PartialEq,
         F: Fn(&V) -> V2,
     {
-        let data = self
-            .data
-            .iter()
-            .map(|v| v.as_ref().map(|v| f(v)))
-            .collect();
+        let data = self.data.iter().map(|v| v.as_ref().map(|v| f(v))).collect();
 
         OptionIndexMap {
             data,

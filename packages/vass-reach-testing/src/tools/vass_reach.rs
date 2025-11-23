@@ -2,7 +2,11 @@ use std::process::{Command, Stdio};
 
 use vass_reach_lib::solver::{SerializableSolverResult, vass_reach::VASSReachSolverStatistics};
 
-use crate::{config::{TestConfig, ToolConfig}, testing::SolverRunResult, tools::Tool};
+use crate::{
+    config::{TestConfig, ToolConfig},
+    testing::SolverRunResult,
+    tools::Tool,
+};
 
 #[derive(Debug, Clone)]
 pub struct VASSReachTool<'a> {
@@ -11,10 +15,7 @@ pub struct VASSReachTool<'a> {
 }
 
 impl<'a> VASSReachTool<'a> {
-    pub fn new(
-        tool_config: &'a ToolConfig,
-        test_config: &'a TestConfig,
-    ) -> Self {
+    pub fn new(tool_config: &'a ToolConfig, test_config: &'a TestConfig) -> Self {
         Self {
             tool_config,
             test_config,
@@ -35,40 +36,41 @@ impl<'a> Tool for VASSReachTool<'a> {
         self.test_config
     }
 
-    fn test(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn test(&self) -> anyhow::Result<()> {
         Command::new("./target/release/vass-reach")
-            .args(&[
-                "--help",
-            ])
+            .args(&["--help"])
             .current_dir(self.get_tool_path()?)
             .status()?;
 
         Ok(())
     }
 
-    fn build(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn build(&self) -> anyhow::Result<()> {
         Command::new("cargo")
-            .args(&[
-                "build",
-                "--release",
-            ])
+            .args(&["build", "--release"])
             .current_dir(self.get_tool_path()?)
             .status()?;
 
         Ok(())
     }
 
-    fn run_on_file(&self, file_path: &std::path::Path) -> Result<SolverRunResult, Box<dyn std::error::Error>> {
+    fn run_on_file(
+        &self,
+        file_path: &std::path::Path,
+    ) -> anyhow::Result<SolverRunResult> {
         // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p RuntimeMaxSec={self.test_config.timeout} ./target/release/vass-reach {file_path}`
         let mut command = Command::new("systemd-run");
         command.args(&[
             "--user",
             "--scope",
-            &format!("--unit=vass-reach_run_{}", file_path.file_stem().unwrap().to_str().unwrap()),
+            &format!(
+                "--unit=vass-reach_run_{}",
+                file_path.file_stem().unwrap().to_str().unwrap()
+            ),
             &format!("-pMemoryMax={}G", 4),
             &format!("-pRuntimeMaxSec={}", self.test_config.timeout),
             "./target/release/vass-reach",
-            file_path.to_str().unwrap()
+            file_path.to_str().unwrap(),
         ]);
         command.current_dir(self.get_tool_path()?);
         command.stdout(Stdio::piped());
@@ -78,7 +80,7 @@ impl<'a> Tool for VASSReachTool<'a> {
 
         // let mut command = Command::new("./target/release/vass-reach");
         // command.args(&[
-        //     &format!("-t={}", self.test_config.timeout), 
+        //     &format!("-t={}", self.test_config.timeout),
         //     file_path.to_str().unwrap()
         // ]);
         // command.current_dir(self.get_tool_path()?);

@@ -5,6 +5,7 @@ use std::{
     path::{self, Path, PathBuf},
 };
 
+use anyhow::{Context, bail};
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use vass_reach_lib::automaton::petri_net::initialized::InitializedPetriNet;
@@ -17,25 +18,25 @@ pub struct Test {
 }
 
 impl Test {
-    pub fn new(path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(path: PathBuf) -> anyhow::Result<Self> {
         if !path.is_absolute() {
-            return CustomError::str("Test path is not absolute").to_boxed();
+            bail!("Test path is not absolute");
         }
 
         Ok(Self { path })
     }
 
-    pub fn from_string(path: String) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_string(path: String) -> anyhow::Result<Self> {
         let path: PathBuf = path.into();
 
         if !path.is_absolute() {
-            return CustomError::str("Test path is not absolute").to_boxed();
+            bail!("Test path is not absolute");
         }
 
         Ok(Self { path: path })
     }
 
-    pub fn canonicalize<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn canonicalize<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         Ok(Self {
             path: fs::canonicalize(path)?,
         })
@@ -44,16 +45,16 @@ impl Test {
     pub fn is_inside_folder<P: AsRef<Path>>(
         &self,
         folder: P,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<bool> {
         let canonical_folder = fs::canonicalize(folder)?;
         Ok(self.path.starts_with(canonical_folder))
     }
 
-    pub fn test_config(&self) -> Result<TestConfig, Box<dyn std::error::Error>> {
+    pub fn test_config(&self) -> anyhow::Result<TestConfig> {
         TestConfig::load_from_path(self.path.join("test.toml"))
     }
 
-    pub fn instance_config(&self) -> Result<InstanceConfig, Box<dyn std::error::Error>> {
+    pub fn instance_config(&self) -> anyhow::Result<InstanceConfig> {
         InstanceConfig::load_from_path(self.path.join("instances.toml"))
     }
 
@@ -69,7 +70,7 @@ impl Test {
         &self,
         tool: &impl Tool,
         results: HashMap<String, SolverResultStatistic>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<()> {
         let results_folder = self.results_folder();
         if !results_folder.exists() {
             fs::create_dir_all(&results_folder)?
@@ -87,7 +88,7 @@ impl Test {
     pub fn write_nets(
         &self,
         nets: &Vec<InitializedPetriNet>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<()> {
         let instances_folder = self.instances_folder();
         if !instances_folder.exists() {
             fs::create_dir_all(&instances_folder)?
@@ -101,7 +102,7 @@ impl Test {
         Ok(())
     }
 
-    pub fn read_results(&self) -> Result<Vec<ToolResult>, Box<dyn std::error::Error>> {
+    pub fn read_results(&self) -> anyhow::Result<Vec<ToolResult>> {
         let results_folder = self.results_folder();
         let mut res = vec![];
 
@@ -131,7 +132,7 @@ pub struct TestData {
 }
 
 impl TryFrom<Test> for TestData {
-    type Error = Box<dyn std::error::Error>;
+    type Error = anyhow::Error;
 
     fn try_from(value: Test) -> Result<Self, Self::Error> {
         Ok(TestData {
@@ -151,7 +152,7 @@ pub struct TestConfig {
 }
 
 impl TestConfig {
-    pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let content = fs::read_to_string(path)?;
         Ok(toml::from_str(&content)?)
     }
@@ -168,7 +169,7 @@ pub struct InstanceConfig {
 }
 
 impl InstanceConfig {
-    pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let content = fs::read_to_string(path)?;
         Ok(toml::from_str(&content)?)
     }
@@ -176,11 +177,11 @@ impl InstanceConfig {
 
 pub type ToolConfig = HashMap<String, path::PathBuf>;
 
-pub fn load_tool_config() -> Result<ToolConfig, Box<dyn std::error::Error>> {
+pub fn load_tool_config() -> anyhow::Result<ToolConfig> {
     let config_path = path::Path::new("./tools.config.toml");
-    let canonic_path = fs::canonicalize(config_path)?;
-    let content = fs::read_to_string(canonic_path)?;
-    let config: HashMap<String, String> = toml::from_str(&content)?;
+    let canonic_path = fs::canonicalize(config_path).with_context(|| format!("failed to canonicalize: {}", config_path.display()))?;
+    let content = fs::read_to_string(&canonic_path).with_context(|| format!("failed to read: {}", canonic_path.display()))?;
+    let config: HashMap<String, String> = toml::from_str(&content).with_context(|| format!("failed to parse: {}", canonic_path.display()))?;
     Ok(config
         .into_iter()
         .map(|(k, v)| (k, path::PathBuf::from(v)))
@@ -195,7 +196,7 @@ pub struct UIConfig {
     pub test_folders_path: String,
 }
 
-pub fn load_ui_config() -> Result<UIConfig, Box<dyn std::error::Error>> {
+pub fn load_ui_config() -> anyhow::Result<UIConfig> {
     let config_path = path::Path::new("./ui.config.toml");
     let canonic_path = fs::canonicalize(config_path)?;
     let content = fs::read_to_string(canonic_path)?;
@@ -213,44 +214,3 @@ impl ToolResult {
         Self { tool_name, results }
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct CustomError {
-    message: String,
-}
-
-impl CustomError {
-    pub fn new(message: String) -> Self {
-        Self { message }
-    }
-
-    pub fn str(message: &str) -> Self {
-        Self {
-            message: message.to_string(),
-        }
-    }
-
-    pub fn to_boxed<T>(self) -> Result<T, Box<dyn std::error::Error>> {
-        Err(Box::new(self))
-    }
-}
-
-impl From<String> for CustomError {
-    fn from(value: String) -> Self {
-        CustomError::new(value)
-    }
-}
-
-impl From<&str> for CustomError {
-    fn from(value: &str) -> Self {
-        CustomError::str(value)
-    }
-}
-
-impl Display for CustomError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl Error for CustomError {}

@@ -1,4 +1,8 @@
-use std::{process::{Child, Command}, sync::{Arc, Mutex}, thread::scope};
+use std::{
+    process::{Child, Command},
+    sync::{Arc, Mutex},
+    thread::scope,
+};
 use sysinfo::{MemoryRefreshKind, Pid, RefreshKind, System};
 
 pub struct ProcessWatcher {
@@ -11,7 +15,7 @@ impl ProcessWatcher {
         Self { child, timeout }
     }
 
-    pub fn watch(&mut self)  {
+    pub fn watch(&mut self) {
         let mut refresh_kind = RefreshKind::nothing();
         refresh_kind = refresh_kind.with_memory(MemoryRefreshKind::everything());
 
@@ -66,7 +70,10 @@ impl ProcessWatcher {
     }
 }
 
-pub fn run_with_watcher(command: &mut Command, timeout: u64) -> Result<std::process::Output, Box<dyn std::error::Error>> {
+pub fn run_with_watcher(
+    command: &mut Command,
+    timeout: u64,
+) -> Result<std::process::Output, Box<dyn std::error::Error>> {
     let child = command.spawn()?;
     let child_arc = Arc::new(Mutex::new(child));
     let mut watcher = ProcessWatcher::new(Arc::clone(&child_arc), timeout);
