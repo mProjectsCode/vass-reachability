@@ -1,12 +1,10 @@
 <script lang="ts">
-    import { Dot, Plot } from "svelteplot";
     import { API_list_test_folders, API_test_data } from "./fetch";
+    import Plot from "./Plot.svelte";
     import { type PlotDatum, PlotDatumState, map_datum_state } from "./types";
 
     let selected: string | undefined = $state();
     let selected_data = $derived(selected ? await API_test_data(selected) : undefined);
-    let compare_tool_x: string | undefined = $state();
-    let compare_tool_y: string | undefined = $state();
 
     let plot_data = $derived.by(() => {
         if (!selected_data) {
@@ -31,6 +29,8 @@
         return [...map.values()];
     });
 
+
+
     let conflict_data = $derived(plot_data.filter(x => x.state === PlotDatumState.Conflict));
     
     let test_folders = await API_list_test_folders();
@@ -45,37 +45,10 @@
         {/each}
     </div>
     {#if selected_data}
-
-        <div class="container flex-row">
-            <span>Tool on X axis:</span>
-            {#each selected_data.test_config.tools as tool}
-                <button type="button" class:is-selected={compare_tool_x === tool} onclick={() => { compare_tool_x = tool }}>
-                    {tool}
-                </button>
-            {/each}
-        </div>
-        <div class="container flex-row">
-            <span>Tool on Y axis:</span>
-            {#each selected_data.test_config.tools as tool}
-                <button type="button" class:is-selected={compare_tool_y === tool} onclick={() => { compare_tool_y = tool }}>
-                    {tool}
-                </button>
-            {/each}
-        </div>
-        <div class="container">
-            {#if plot_data && compare_tool_x && compare_tool_y}
-                <Plot axes grid x={{ type: "log" }} y={{ type: "log" }} color={{ legend: true }}>
-                    <Dot data={plot_data} x={(d) => d.times[compare_tool_x!]} y={(d) => d.times[compare_tool_y!]} stroke={(d) => d.state} />
-                </Plot>
-            {:else}
-                <span>
-                    Please select tools to display above.
-                </span>
-            {/if}
-        </div>
+        <Plot plot_data={plot_data} selected={selected_data}></Plot>
 
         <div class="container">
-            {#if conflict_data}
+            {#if conflict_data.length > 0}
                 Conflicts:
                 <ul>
                     {#each conflict_data as datum}

@@ -49,19 +49,11 @@ struct Args {
     mode: Mode,
 
     #[arg(short, long)]
-    timeout: Option<u64>,
-
-    #[arg(short, long, default_value_t = LogLevel::Info)]
-    log: LogLevel,
-
-    #[arg(long, default_value_t = false)]
-    log_file: bool,
+    config: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-
-    let timeout = args.timeout.map(std::time::Duration::from_secs);
 
     let petri_net = InitializedPetriNet::from_file(&args.file)?;
     let vass = petri_net.to_vass();

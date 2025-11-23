@@ -7,8 +7,9 @@ use std::{
 };
 
 use colored::{ColoredString, Colorize};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogLevel {
     Debug,
     Info,

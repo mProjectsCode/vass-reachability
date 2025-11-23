@@ -1,12 +1,9 @@
-use std::sync::{Arc, atomic::AtomicBool};
-
-use petgraph::graph::EdgeIndex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     automaton::{
         AutomatonEdge, AutomatonNode,
-        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        cfg::vasscfg::VASSCFG,
         dfa::minimization::Minimizable,
         implicit_cfg_product::ImplicitCFGProduct,
         lsg::extender::{LSGExtender, RandomNodeChooser},
@@ -15,11 +12,7 @@ use crate::{
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
     logger::{LogLevel, Logger},
-    solver::{
-        SolverResult, SolverStatus,
-        vass_z_reach::{VASSZReachSolverOptions, VASSZReachSolverResult},
-    },
-    threading::thread_pool::ThreadPool,
+    solver::{SolverResult, SolverStatus},
 };
 
 #[derive(Clone, Debug)]
@@ -153,11 +146,8 @@ pub struct VASSReachSolver<'a> {
     options: VASSReachSolverOptions<'a>,
     logger: Option<&'a Logger>,
     state: ImplicitCFGProduct,
-    thread_pool: ThreadPool<VASSZReachSolverResult>,
-    z_reach_stop_signal: Arc<AtomicBool>,
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
-    stop_signal: Arc<AtomicBool>,
 }
 
 impl<'a> VASSReachSolver<'a> {
@@ -166,8 +156,6 @@ impl<'a> VASSReachSolver<'a> {
         ivass: &InitializedVASS<N, E>,
     ) -> Self {
         let logger = options.logger;
-
-        let thread_pool = ThreadPool::<VASSZReachSolverResult>::new(options.thread_pool_size);
 
         let mut cfg = ivass.to_cfg();
         cfg.add_failure_state(());
@@ -184,18 +172,12 @@ impl<'a> VASSReachSolver<'a> {
             cfg,
         );
 
-        let stop_signal = Arc::new(AtomicBool::new(false));
-        let z_reach_stop_signal = Arc::new(AtomicBool::new(false));
-
         VASSReachSolver {
             options,
             logger,
             state,
-            thread_pool,
-            z_reach_stop_signal,
             step_count: 0,
             solver_start_time: None,
-            stop_signal,
         }
     }
 
@@ -210,8 +192,6 @@ impl<'a> VASSReachSolver<'a> {
 
         // IDEA: if negative, cut away with automaton that counts until highest value
         // reached on that counter
-
-        self.start_watchdog();
 
         self.solver_start_time = Some(std::time::Instant::now());
 
@@ -242,63 +222,16 @@ impl<'a> VASSReachSolver<'a> {
             }
 
             if self.max_iterations_reached() {
-                self.thread_pool.join(false);
                 return self.max_iterations_reached_result();
             }
 
             if self.max_mu_reached() {
-                self.thread_pool.join(false);
                 return self.max_mu_reached_result();
             }
 
             if self.max_time_reached() {
-                self.thread_pool.join(false);
                 return self.max_time_reached_result();
             }
-
-            // if self.handle_thread_pool() {
-            //     result = true;
-            //     break;
-            // }
-
-            // // every 100 iterations we cancel the current Z-Reach solver and wait for it
-            // to // finish
-            // if self.step_count.rem(100) == 0 && !self.thread_pool.is_idle() {
-            //     self.z_reach_stop_signal
-            //         .store(true, std::sync::atomic::Ordering::SeqCst);
-            //     if let Some(l) = self.logger {
-            //         l.info("Waiting on thread pool to finish Z-Reach checks");
-            //     }
-            //     self.thread_pool.block_until_no_active_jobs();
-            // }
-
-            // // every iteration we check if the Z-Reach solver is done
-            // let finished_jobs = self.thread_pool.get_finished_jobs();
-            // if finished_jobs.iter().any(|x| x.is_failure()) {
-            //     if let Some(l) = self.logger {
-            //         l.debug("A thread was not Z-Reachable");
-            //     }
-            //     result = false;
-            //     break;
-            // }
-
-            // // every iteration we check if the Z-Reach solver is done
-            // // and start a new one if it is
-            // if self.thread_pool.is_idle() {
-            //     let z_reach_stop_signal = self.z_reach_stop_signal.clone();
-            //     z_reach_stop_signal.store(false, std::sync::atomic::Ordering::SeqCst);
-
-            //     let cfg = self.cfg.clone();
-            //     let initial_valuation = self.ivass.initial_valuation.clone();
-            //     let final_valuation = self.ivass.final_valuation.clone();
-            //     self.thread_pool.schedule(|| {
-            //         VASSZReachSolverOptions::default()
-            //             .with_time_limit(std::time::Duration::from_secs(10 * 60))
-            //             .with_stop_signal(z_reach_stop_signal)
-            //             .to_solver(cfg, initial_valuation, final_valuation)
-            //             .solve()
-            //     });
-            // }
 
             let reach_path = self.state.reach();
 
@@ -339,7 +272,7 @@ impl<'a> VASSReachSolver<'a> {
             // ---
             // Bounded counting separator
             // ---
-            
+
             if let PathNReaching::Negative((index, counter)) = reaching {
                 if let Some(l) = self.logger {
                     l.debug(&format!("Path does not stay positive at index {:?}", index));
@@ -420,13 +353,16 @@ impl<'a> VASSReachSolver<'a> {
                 RandomNodeChooser::new(5, self.step_count as u64),
                 5,
             );
-            self.intersect_cfg(extender.run());
+            let mut cfg = extender.run();
+            cfg.invert_mut();
+            self.intersect_cfg(cfg);
 
             // ---
             // mu
             // ---
 
             for i in VASSCounterIndex::iter_counters(self.state.dimension) {
+                // TODO: kleinses gemeinsames vielfaches
                 let max_value = path.max_counter_value(&self.state.initial_valuation, i);
                 let mu = self.state.get_mu(i) as u32;
 
@@ -452,8 +388,6 @@ impl<'a> VASSReachSolver<'a> {
             l.empty(LogLevel::Info);
         }
 
-        self.thread_pool.join(false);
-
         if let Some(l) = self.logger {
             l.empty(LogLevel::Info);
         }
@@ -463,16 +397,6 @@ impl<'a> VASSReachSolver<'a> {
         self.print_end_banner(&statistics);
 
         statistics
-    }
-
-    fn start_watchdog(&self) {
-        if let Some(max_time) = self.options.max_time {
-            let stop_signal = self.stop_signal.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(max_time);
-                stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
-            });
-        }
     }
 
     fn max_mu_reached(&self) -> bool {
@@ -490,7 +414,10 @@ impl<'a> VASSReachSolver<'a> {
     }
 
     fn max_time_reached(&self) -> bool {
-        self.stop_signal.load(std::sync::atomic::Ordering::SeqCst)
+        match (self.get_solver_time(), &self.options.max_time) {
+            (Some(t), Some(max_time)) => &t > max_time,
+            _ => false,
+        }
     }
 
     fn max_mu_reached_result(&self) -> VASSReachSolverResult {
@@ -529,58 +456,6 @@ impl<'a> VASSReachSolver<'a> {
 
     fn get_solver_time(&self) -> Option<std::time::Duration> {
         self.solver_start_time.map(|x| x.elapsed())
-    }
-
-    // fn handle_thread_pool(&self) -> bool {
-    //     if self.thread_pool.get_active_jobs() >= self.options.thread_pool_size *
-    // 4 {         self.logger.info(&format!(
-    //             "Waiting on thread pool to empty. Active jobs: {:?}, Target:
-    // {:?}",             self.thread_pool.get_active_jobs(),
-    //             self.options.thread_pool_size
-    //         ));
-    //         self.thread_pool
-    //             .block_until_x_active_jobs(self.options.thread_pool_size);
-    //     }
-    //     self.thread_pool.block_until_x_active_jobs_if_above_y(4, 10);
-
-    //     let finished_jobs = self.thread_pool.get_finished_jobs();
-
-    //     if finished_jobs.iter().any(|x| x.result) {
-    //         self.logger.debug("A thread found a solution");
-    //         return true;
-    //     }
-
-    //     false
-    // }
-
-    fn check_z_reach(&self) -> VASSZReachSolverResult {
-        let result = VASSZReachSolverOptions::default()
-            .with_time_limit(std::time::Duration::from_secs(10 * 60))
-            .to_solver(
-                self.state.cfg.clone(),
-                self.state.initial_valuation.clone(),
-                self.state.final_valuation.clone(),
-            )
-            .solve();
-
-        if let Some(l) = self.logger {
-            l.debug(&format!(
-                "Checked Z-Reachability in {:?} and {:?} steps",
-                result.statistics.time, result.statistics.step_count
-            ));
-            if result.is_failure() {
-                l.debug("CFG is not Z-Reachable");
-            }
-            if result.is_unknown() {
-                l.debug("CFG Z-Reachability Unknown");
-            }
-        }
-
-        result
-    }
-
-    fn get_cfg_edge_weight(&self, edge: EdgeIndex<u32>) -> CFGCounterUpdate {
-        *self.state.cfg.edge_weight(edge)
     }
 
     fn intersect_cfg(&mut self, other: VASSCFG<()>) {

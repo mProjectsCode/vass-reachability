@@ -29,6 +29,18 @@ export function map_datum_state(existing: PlotDatumState | undefined, state: Sol
     return existing;
 }
 
+const STATE_COLOR_MAP: Record<PlotDatumState, string> = {
+    [PlotDatumState.True]: "#6EEB8D",
+    [PlotDatumState.False]: "#EB6E77",
+    [PlotDatumState.Unknown]: "#EBCE6E",
+    [PlotDatumState.Conflict]: "#EB66E1",
+    [PlotDatumState.Crash]: "#6E7EEB",
+}
+
+export function map_state_to_color(state: PlotDatumState): string {
+    return STATE_COLOR_MAP[state];
+}
+
 export type PlotDatum = {
     state: PlotDatumState;
     times: Record<string, number>;

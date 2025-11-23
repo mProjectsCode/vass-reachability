@@ -3,6 +3,7 @@
     --text-color: #ffffff;
     --text-muted: #aaaaaa;
     --font: 'Courier New', Courier, monospace;
+    --plot-size: 800px;
 }
 
 * {
@@ -34,4 +35,21 @@ button.is-selected {
 
 .container {
     margin: 8px;
+}
+
+.plot-container {
+    position: relative;
+    width: var(--plot-size);
+    height: var(--plot-size);
+}
+
+.svelteplot {
+    position: absolute;
+    inset: 0;
+}
+
+.color-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
 }
