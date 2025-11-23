@@ -339,7 +339,7 @@ impl<'a> VASSReachSolver<'a> {
             // ---
             // Bounded counting separator
             // ---
-            
+
             if let PathNReaching::Negative((index, counter)) = reaching {
                 if let Some(l) = self.logger {
                     l.debug(&format!("Path does not stay positive at index {:?}", index));

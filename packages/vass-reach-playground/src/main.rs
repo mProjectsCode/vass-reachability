@@ -2,7 +2,12 @@ use std::time::Duration;
 
 use vass_reach_lib::{
     automaton::{
-        AutBuild, cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG}, dfa::{minimization::Minimizable, node::DfaNode}, nfa::NFA, path::Path, vass::{VASS, counter::VASSCounterIndex}
+        AutBuild,
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::{minimization::Minimizable, node::DfaNode},
+        nfa::NFA,
+        path::Path,
+        vass::{VASS, counter::VASSCounterIndex},
     },
     cfg_dec, cfg_inc,
     logger::Logger,
@@ -40,7 +45,6 @@ fn main() {
         .with_logger(&logger)
         .to_vass_solver(&initialized_vass)
         .solve();
-
 
     det();
     // lim_cfg_test();

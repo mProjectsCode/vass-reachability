@@ -68,6 +68,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1081,6 +1087,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 name = "vass-reach-lib"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "colored",
  "hashbrown",
  "itertools",
@@ -1096,6 +1103,7 @@ dependencies = [
 name = "vass-reach-testing"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "clap",
  "enum_dispatch",

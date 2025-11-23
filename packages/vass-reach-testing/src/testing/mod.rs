@@ -1,21 +1,29 @@
 use std::{path, process::Command};
 
+use anyhow::Context;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use vass_reach_lib::{logger::Logger, solver::SerializableSolverResult};
 
-use crate::{Args, config::{CustomError, Test, load_tool_config}, tools::{Tool, ToolWrapper, kreach::KReachTool, vass_reach::VASSReachTool}};
+use crate::{
+    Args,
+    config::{Test, load_tool_config},
+    tools::{Tool, ToolWrapper, kreach::KReachTool, vass_reach::VASSReachTool},
+};
 
-pub fn test(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
     let Some(folder) = &args.folder else {
-        return CustomError::str("missing required folder argument").to_boxed()
+        anyhow::bail!("missing required folder argument");
     };
-    let test = Test::canonicalize(folder)?;
-    let config = test.test_config()?;
+    let test = Test::canonicalize(folder)
+        .with_context(|| format!("failed to canonicalize: {}", folder))?;
+    let config = test
+        .test_config()
+        .with_context(|| format!("failed to read context file at: {}", test.path.display()))?;
 
     logger.info("Loading tool configuration...");
 
-    let tool_config = load_tool_config()?;
+    let tool_config = load_tool_config().context("failed to load tool config")?;
 
     let tools: Vec<ToolWrapper> = vec![
         VASSReachTool::new(&tool_config, &config).into(),
@@ -26,7 +34,8 @@ pub fn test(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::Erro
 
     Command::new("systemctl")
         .args(&["--user", "reset-failed"])
-        .status()?;
+        .status()
+        .context("failed to reset systemd runs via systemctl")?;
 
     for tool in tools {
         if !config.tools.contains(&tool.name().to_string()) {
@@ -35,17 +44,24 @@ pub fn test(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::Erro
 
         logger.info(&format!("Building tool: {}", tool.name()));
 
-        tool.build()?;
+        tool.build()
+            .with_context(|| format!("failed to build tool: {}", tool.name()))?;
 
         logger.info(&format!("Testing tool: {}", tool.name()));
 
-        tool.test()?;
+        tool.test()
+            .with_context(|| format!("failed to run test for tool: {}", tool.name()))?;
 
         logger.info(&format!("Running tool: {}", tool.name()));
 
         let results = run_tool_on_folder(logger, &test.instances_folder(), &tool)?;
 
-        test.write_results(&tool, results)?;
+        test.write_results(&tool, results).with_context(|| {
+            format!(
+                "failed to run instances in folder for tool: {}",
+                tool.name()
+            )
+        })?;
 
         logger.info(&format!(
             "Persisted test results to folder: {}",
@@ -60,9 +76,12 @@ fn run_tool_on_folder<T: Tool>(
     logger: &Logger,
     folder: &path::Path,
     tool: &T,
-) -> Result<HashMap<String, SolverResultStatistic>, Box<dyn std::error::Error>> {
-    let files = std::fs::read_dir(folder)?;
-    let files = files.collect::<Result<Vec<_>, _>>()?;
+) -> anyhow::Result<HashMap<String, SolverResultStatistic>> {
+    let files = std::fs::read_dir(folder)
+        .with_context(|| format!("failed to read dir: {}", folder.display()))?;
+    let files = files
+        .collect::<Result<Vec<_>, _>>()
+        .with_context(|| format!("failed to read dir: {}", folder.display()))?;
 
     Ok(files
         .iter()
@@ -92,10 +111,7 @@ fn run_tool_on_folder<T: Tool>(
                             e
                         ));
 
-                        SolverResultStatistic::new(
-                            SolverRunResult::Crash(e.to_string()),
-                            duration,
-                        )
+                        SolverResultStatistic::new(SolverRunResult::Crash(e.to_string()), duration)
                     }
                 }
             } else {
@@ -128,9 +144,6 @@ pub struct SolverResultStatistic {
 
 impl SolverResultStatistic {
     pub fn new(result: SolverRunResult, ms_taken: u128) -> Self {
-        SolverResultStatistic {
-            result,
-            ms_taken,
-        }
+        SolverResultStatistic { result, ms_taken }
     }
 }

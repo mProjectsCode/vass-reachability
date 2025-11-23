@@ -1,5 +1,6 @@
 use std::{fmt::Display, fs, str::FromStr};
 
+use anyhow::Context;
 use clap::Parser;
 use vass_reach_lib::logger::{LogLevel, Logger};
 
@@ -32,14 +33,14 @@ pub enum Mode {
 }
 
 impl FromStr for Mode {
-    type Err = String;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "test" => Ok(Mode::Test),
             "generate" | "gen" => Ok(Mode::Generate),
             "visualize" | "vis" => Ok(Mode::Visualize),
-            _ => Err(format!("Invalid mode: {}", s)),
+            _ => Err(anyhow::anyhow!("Invalid mode: {}", s)),
         }
     }
 }
@@ -63,21 +64,19 @@ fn main() {
     }
 }
 
-fn run(logger: &Logger) -> Result<(), Box<dyn std::error::Error>> {
+fn run(logger: &Logger) -> anyhow::Result<()> {
     logger.info(&format!(
         "Running from: {}",
-        fs::canonicalize(".")?.display()
+        fs::canonicalize(".").context("failed to canonicalize cwd")?.display()
     ));
 
     let args = Args::parse();
 
     match &args.mode {
-        Mode::Generate => generate(logger, &args)?,
-        Mode::Test => test(logger, &args)?,
-        Mode::Visualize => visualize(logger, &args)?,
-    }
-
-    Ok(())
+        Mode::Generate => generate(logger, &args),
+        Mode::Test => test(logger, &args),
+        Mode::Visualize => visualize(logger, &args),
+    }.with_context(|| format!("failed in mode: {}", &args.mode))
 }
 
 // #[derive(Debug)]

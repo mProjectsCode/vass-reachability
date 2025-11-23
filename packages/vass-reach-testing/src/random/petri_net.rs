@@ -11,7 +11,7 @@ pub fn generate_random_petri_net(
     place_count: usize,
     transition_count: usize,
     max_tokens_per_transition: usize,
-    no_guards: bool
+    no_guards: bool,
 ) -> Vec<InitializedPetriNet> {
     let mut r = StdRng::seed_from_u64(options.seed);
 
@@ -21,9 +21,19 @@ pub fn generate_random_petri_net(
 
             for _ in 0..transition_count {
                 if no_guards {
-                    generate_guard_free_transition(&mut r, &mut petri_net, place_count, max_tokens_per_transition);
+                    generate_guard_free_transition(
+                        &mut r,
+                        &mut petri_net,
+                        place_count,
+                        max_tokens_per_transition,
+                    );
                 } else {
-                    generate_transition(&mut r, &mut petri_net, place_count, max_tokens_per_transition);
+                    generate_transition(
+                        &mut r,
+                        &mut petri_net,
+                        place_count,
+                        max_tokens_per_transition,
+                    );
                 }
             }
 
@@ -41,7 +51,12 @@ pub fn generate_random_petri_net(
         .collect()
 }
 
-fn generate_transition(r: &mut StdRng, net: &mut PetriNet, place_count: usize, max_tokens_per_transition: usize) {
+fn generate_transition(
+    r: &mut StdRng,
+    net: &mut PetriNet,
+    place_count: usize,
+    max_tokens_per_transition: usize,
+) {
     let mut input = vec![];
     let mut output = vec![];
 
@@ -53,7 +68,12 @@ fn generate_transition(r: &mut StdRng, net: &mut PetriNet, place_count: usize, m
     net.add_transition(input, output);
 }
 
-fn generate_guard_free_transition(r: &mut StdRng, net: &mut PetriNet, place_count: usize, max_tokens_per_transition: usize) {
+fn generate_guard_free_transition(
+    r: &mut StdRng,
+    net: &mut PetriNet,
+    place_count: usize,
+    max_tokens_per_transition: usize,
+) {
     let mut input = vec![];
     let mut output = vec![];
 

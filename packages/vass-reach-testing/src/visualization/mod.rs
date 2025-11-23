@@ -1,7 +1,10 @@
 use std::{fs, process::Command, sync::Arc};
 
+use anyhow::Context;
 use axum::{
-    Json, Router, extract::State, http::{HeaderValue, Method, StatusCode},
+    Json, Router,
+    extract::State,
+    http::{HeaderValue, Method, StatusCode},
     routing::{get, post},
 };
 use tower_http::cors::{Any, CorsLayer};
@@ -9,30 +12,35 @@ use vass_reach_lib::logger::Logger;
 
 use crate::{
     Args,
-    config::{CustomError, Test, TestData, UIConfig, load_ui_config},
+    config::{Test, TestData, UIConfig, load_ui_config},
 };
 
-pub fn visualize(logger: &Logger, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+pub fn visualize(logger: &Logger, args: &Args) -> anyhow::Result<()> {
     let ui_config = load_ui_config()?;
 
-    start_ui(&ui_config)?;
+    start_ui(&ui_config).context("failed to start ui")?;
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(start_server(logger, args, ui_config))
+        .context("failed to run server")
 }
 
 async fn start_server(
     logger: &Logger,
     args: &Args,
     ui_config: UIConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let config = Arc::new(ui_config);
 
     let cors_layer = CorsLayer::new()
-        .allow_origin(format!("http://localhost:{}", &config.ui_port).parse::<HeaderValue>().unwrap())
+        .allow_origin(
+            format!("http://localhost:{}", &config.ui_port)
+                .parse::<HeaderValue>()
+                .unwrap(),
+        )
         .allow_methods([Method::GET, Method::POST])
         .allow_headers(Any);
 
@@ -43,16 +51,14 @@ async fn start_server(
         .layer(cors_layer);
 
     let addr = format!("0.0.0.0:{}", config.server_port);
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    axum::serve(listener, app).await.unwrap();
-
-    logger.info("after server await");
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
 
-fn start_ui(ui_config: &UIConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn start_ui(ui_config: &UIConfig) -> anyhow::Result<()> {
     let mut command = Command::new("bun");
     command.args(&[
         "run",
@@ -69,7 +75,7 @@ fn start_ui(ui_config: &UIConfig) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_error(err: Box<dyn std::error::Error>) -> (StatusCode, String) {
+fn handle_error(err: anyhow::Error) -> (StatusCode, String) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         format!("Something went wrong: {err}"),
@@ -87,7 +93,7 @@ async fn list_test_folders_handler(
 
 async fn list_test_folders_inner(
     config: Arc<UIConfig>,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> anyhow::Result<Vec<String>> {
     let folder = fs::canonicalize(&config.test_folders_path)?;
     Ok(folder
         .read_dir()?
@@ -111,11 +117,11 @@ async fn test_data_handler(
 async fn test_data_inner(
     folder: String,
     config: Arc<UIConfig>,
-) -> Result<TestData, Box<dyn std::error::Error>> {
+) -> anyhow::Result<TestData> {
     let test = Test::from_string(folder)?;
 
     if !test.is_inside_folder(&config.test_folders_path)? {
-        return CustomError::str("Test folder is not in configured test folder").to_boxed();
+        anyhow::bail!("Test folder is not in configured test folder");
     }
 
     test.try_into()

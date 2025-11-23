@@ -114,14 +114,14 @@ impl<'a> Guard<'a> {
     pub fn to_counter_valuation(
         &self,
         variables: &[&'a str],
-    ) -> Result<VASSCounterValuation, String> {
+    ) -> anyhow::Result<VASSCounterValuation> {
         let mut valuation = vec![0; variables.len()];
 
         for atom in &self.atoms {
             if let Some(pos) = variables.iter().position(|&v| v == atom.var) {
                 valuation[pos] = atom.value;
             } else {
-                return Err(format!(
+                return Err(anyhow::anyhow!(
                     "Variable '{}' in guard not found in variable list.",
                     atom.var
                 ));
@@ -207,34 +207,34 @@ pub struct TransitionSpec<'a> {
 }
 
 impl<'a> TransitionSpec<'a> {
-    pub fn to_transition(&self, variables: &[&'a str]) -> Result<PetriNetTransition, String> {
+    pub fn to_transition(&self, variables: &[&'a str]) -> anyhow::Result<PetriNetTransition> {
         let mut input = vec![0; variables.len()];
         let mut output = vec![0; variables.len()];
 
         for atom in &self.guard.atoms {
             if atom.value < 0 {
-                return Err(format!(
+                anyhow::bail!(
                     "Guard atom for variable '{}' has negative value {}. Only non-negative values are supported.",
                     atom.var, atom.value
-                ));
+                );
             }
 
             if let Some(pos) = variables.iter().position(|&v| v == atom.var) {
                 input[pos] = -atom.value;
             } else {
-                return Err(format!(
+                anyhow::bail!(
                     "Variable '{}' in guard not found in variable list.",
                     atom.var
-                ));
+                );
             }
         }
 
         for update in &self.updates {
             if update.source != update.target {
-                return Err(format!(
+                anyhow::bail!(
                     "Unsupported update from '{}' to '{}'. Only changes to the counter itself are supported.",
                     update.source, update.target
-                ));
+                );
             }
 
             let pos = variables.iter().position(|&v| v == update.source);
@@ -243,18 +243,18 @@ impl<'a> TransitionSpec<'a> {
                 if update.change < 0 {
                     // Consuming tokens
                     if update.change < guard_value {
-                        return Err(format!(
+                        anyhow::bail!(
                             "Cannot consume {} tokens from variable '{}' which has only {} tokens in the guard.",
                             -update.change, update.source, -guard_value
-                        ));
+                        );
                     }
                 }
                 output[pos] = -guard_value + update.change;
             } else {
-                return Err(format!(
+                anyhow::bail!(
                     "Variable '{}' in update not found in variable list.",
                     update.source
-                ));
+                );
             }
         }
 
@@ -440,10 +440,10 @@ impl<'a> PetriNetSpec<'a> {
         ))
     }
 
-    pub fn parse(input: &'a str) -> Result<PetriNetSpec<'a>, String> {
+    pub fn parse(input: &'a str) -> anyhow::Result<PetriNetSpec<'a>> {
         match Self::p(input) {
             Ok(spec) => Ok(spec.1),
-            Err(e) => Err(format!("Failed to parse Petri net spec: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Failed to parse Petri net spec: {}", e)),
         }
     }
 }
