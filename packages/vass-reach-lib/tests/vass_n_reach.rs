@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use vass_reach_lib::{
     automaton::{AutBuild, petri_net::PetriNet, vass::VASS},
-    solver::vass_reach::VASSReachSolverOptions,
+    config::VASSReachConfig,
+    solver::vass_reach::VASSReachSolver,
 };
 
 #[test]
@@ -17,11 +18,13 @@ fn test_vass_n_reach_1() {
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_success());
 }
@@ -38,11 +41,13 @@ fn test_vass_n_reach_2() {
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(!res.is_success());
 }
@@ -58,11 +63,13 @@ fn test_vass_n_reach_3() {
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(!res.is_success());
 }
@@ -99,11 +106,13 @@ fn test_vass_n_reach_4() {
         q2,
     );
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(!res.is_success());
 }
@@ -124,11 +133,13 @@ fn test_vass_n_reach_5() {
 
     let initialized_vass = initialized_petri_net.to_vass();
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(!res.is_success());
 }
@@ -147,11 +158,13 @@ fn test_vass_n_reach_6() {
 
     // dbg!(&initialized_vass);
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_success());
 }
@@ -168,11 +181,13 @@ fn test_vass_n_reach_7() {
 
     let initialized_vass = initialized_petri_net.to_vass();
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&initialized_vass)
-        .solve();
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(!res.is_success());
 }

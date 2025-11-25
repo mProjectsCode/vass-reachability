@@ -6,7 +6,8 @@ use vass_reach_lib::{
         initialized::InitializedPetriNet,
         spec::{PetriNetSpec, ToSpecFormat},
     },
-    solver::vass_reach::VASSReachSolverOptions,
+    config::VASSReachConfig,
+    solver::vass_reach::VASSReachSolver,
 };
 
 #[test]
@@ -29,11 +30,13 @@ fn parse_from_spec_1() {
     let spec = PetriNetSpec::parse(spec_str).unwrap();
     let net = InitializedPetriNet::try_from(spec).unwrap();
 
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .to_vass_solver(&net.to_vass())
-        .solve();
+    let res = VASSReachSolver::new(
+        &net.to_vass(),
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_success());
 }

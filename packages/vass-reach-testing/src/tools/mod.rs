@@ -16,15 +16,15 @@ pub trait Tool {
     fn test_config(&self) -> &TestConfig;
     fn test(&self) -> anyhow::Result<()>;
     fn build(&self) -> anyhow::Result<()>;
-    fn run_on_file(
-        &self,
-        file_path: &std::path::Path,
-    ) -> anyhow::Result<SolverRunResult>;
+    fn run_on_file(&self, file_path: &std::path::Path) -> anyhow::Result<SolverRunResult>;
 
     fn get_tool_path(&self) -> anyhow::Result<std::path::PathBuf> {
         match self.tool_config().get(self.name()) {
             Some(path) => Ok(path.clone()),
-            None => Err(anyhow::anyhow!("Tool {} not found in tool configuration", self.name())),
+            None => Err(anyhow::anyhow!(
+                "Tool {} not found in tool configuration",
+                self.name()
+            )),
         }
     }
 }

@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::{fs, path::Path};
+
+use serde::{Deserialize, Serialize};
 
 use crate::logger::LogLevel;
 
@@ -8,14 +10,14 @@ use crate::logger::LogLevel;
 macro_rules! config {
     ($struct_name:ident, $( ($field:ident, $field_type:ty, $partial_field_type:ty, $default:expr) ),*) => {
         paste::paste! {
-            #[derive(Clone, serde::Serialize)]
+            #[derive(Debug, Clone, serde::Serialize)]
             pub struct $struct_name {
                 $(
                     $field: $field_type,
                 )*
             }
 
-            #[derive(Clone, serde::Deserialize)]
+            #[derive(Debug, Clone, serde::Deserialize)]
             pub struct [<Partial$struct_name>] {
                 $(
                     $field: $partial_field_type,
@@ -32,8 +34,18 @@ macro_rules! config {
                     }
                 }
 
-                pub fn from_file<P: AsRef<Path>>(file: P) -> anyhow::Result<Self> {
-                    
+                pub fn from_file<P: AsRef<Path>>(file_path: P) -> anyhow::Result<Self> {
+                    let canonic_path = fs::canonicalize(file_path)?;
+                    let content = fs::read_to_string(canonic_path)?;
+                    Ok(Self::from_partial(toml::from_str(&content)?))
+                }
+
+
+                pub fn from_optional_file<P: AsRef<Path>>(file_path: Option<P>) -> anyhow::Result<Self> {
+                    match file_path {
+                        Some(p) => Self::from_file(p),
+                        None => Ok(Self::default())
+                    }
                 }
 
                 $(
@@ -67,7 +79,7 @@ macro_rules! config {
                     match self {
                         Some(t) => $struct_name::from_partial(t),
                         None => or
-                    } 
+                    }
                 }
             }
         }
@@ -82,7 +94,7 @@ impl<T> IntoOr<Option<T>> for Option<T> {
     fn into_or(self, or: Option<T>) -> Option<T> {
         match self {
             Some(t) => Some(t),
-            None => or
+            None => or,
         }
     }
 }
@@ -97,16 +109,47 @@ pub trait GeneralConfig {
     fn logger(&self) -> &LoggerConfig;
 }
 
-config!(LoggerConfig, 
+config!(LoggerConfig,
     (enabled, bool, Option<bool>, false),
-    (log_file, Option<String>, Option<String>, None),
+    (log_file, bool, Option<bool>, false),
     (log_level, LogLevel, Option<LogLevel>, LogLevel::Warn)
 );
 
-config!(VASSReachConfig,
-    (timeout, Option<std::time::Duration>, Option<std::time::Duration>, None),
+config!(
+    VASSReachConfig,
+    (
+        timeout,
+        Option<std::time::Duration>,
+        Option<std::time::Duration>,
+        None
+    ),
     (max_iterations, Option<u64>, Option<u64>, None),
-    (logger, LoggerConfig, Option<PartialLoggerConfig>, LoggerConfig::default())
+    (
+        modulo,
+        ModuloConfig,
+        Option<PartialModuloConfig>,
+        ModuloConfig::default()
+    ),
+    // (bounded_counting, BoundedCountingConfig, Option<PartialBoundedCountingConfig>,
+    // BoundedCountingConfig::default()),
+    (
+        lts,
+        LTSConfig,
+        Option<PartialLTSConfig>,
+        LTSConfig::default()
+    ),
+    (
+        lsg,
+        LSGConfig,
+        Option<PartialLSGConfig>,
+        LSGConfig::default()
+    ),
+    (
+        logger,
+        LoggerConfig,
+        Option<PartialLoggerConfig>,
+        LoggerConfig::default()
+    )
 );
 
 impl GeneralConfig for VASSReachConfig {
@@ -115,3 +158,61 @@ impl GeneralConfig for VASSReachConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum ModuloMode {
+    Increment,
+    LeastCommonMultiple,
+}
+
+config!(
+    ModuloConfig,
+    (
+        mode,
+        ModuloMode,
+        Option<ModuloMode>,
+        ModuloMode::LeastCommonMultiple
+    )
+);
+
+// config!(BoundedCountingConfig,
+//
+// );
+
+config!(LTSConfig,
+    (enabled, bool, Option<bool>, true),
+    (relaxed_enabled, bool, Option<bool>, true)
+);
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum NodeChooser {
+    Random,
+}
+
+config!(LSGConfig,
+    (enabled, bool, Option<bool>, true),
+    (max_refinement_steps, u64, Option<u64>, 10),
+    (node_chooser, NodeChooser, Option<NodeChooser>, NodeChooser::Random)
+);
+
+config!(
+    VASSZReachConfig,
+    (
+        timeout,
+        Option<std::time::Duration>,
+        Option<std::time::Duration>,
+        None
+    ),
+    (max_iterations, Option<u64>, Option<u64>, None),
+    (
+        logger,
+        LoggerConfig,
+        Option<PartialLoggerConfig>,
+        LoggerConfig::default()
+    )
+);
+
+impl GeneralConfig for VASSZReachConfig {
+    fn logger(&self) -> &LoggerConfig {
+        &self.logger
+    }
+}

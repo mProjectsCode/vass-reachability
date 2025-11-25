@@ -81,7 +81,10 @@ impl InitializedPetriNet {
                 let spec = PetriNetSpec::parse(&spec_str)?;
                 Ok(InitializedPetriNet::try_from(spec)?)
             }
-            _ => Err(anyhow::anyhow!("Unsupported file extension: {:?}", path.extension())),
+            _ => Err(anyhow::anyhow!(
+                "Unsupported file extension: {:?}",
+                path.extension()
+            )),
         }
     }
 

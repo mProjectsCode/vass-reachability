@@ -67,7 +67,9 @@ fn main() {
 fn run(logger: &Logger) -> anyhow::Result<()> {
     logger.info(&format!(
         "Running from: {}",
-        fs::canonicalize(".").context("failed to canonicalize cwd")?.display()
+        fs::canonicalize(".")
+            .context("failed to canonicalize cwd")?
+            .display()
     ));
 
     let args = Args::parse();
@@ -76,7 +78,8 @@ fn run(logger: &Logger) -> anyhow::Result<()> {
         Mode::Generate => generate(logger, &args),
         Mode::Test => test(logger, &args),
         Mode::Visualize => visualize(logger, &args),
-    }.with_context(|| format!("failed in mode: {}", &args.mode))
+    }
+    .with_context(|| format!("failed in mode: {}", &args.mode))
 }
 
 // #[derive(Debug)]

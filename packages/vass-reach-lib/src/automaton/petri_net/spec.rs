@@ -215,7 +215,8 @@ impl<'a> TransitionSpec<'a> {
             if atom.value < 0 {
                 anyhow::bail!(
                     "Guard atom for variable '{}' has negative value {}. Only non-negative values are supported.",
-                    atom.var, atom.value
+                    atom.var,
+                    atom.value
                 );
             }
 
@@ -233,7 +234,8 @@ impl<'a> TransitionSpec<'a> {
             if update.source != update.target {
                 anyhow::bail!(
                     "Unsupported update from '{}' to '{}'. Only changes to the counter itself are supported.",
-                    update.source, update.target
+                    update.source,
+                    update.target
                 );
             }
 
@@ -245,7 +247,9 @@ impl<'a> TransitionSpec<'a> {
                     if update.change < guard_value {
                         anyhow::bail!(
                             "Cannot consume {} tokens from variable '{}' which has only {} tokens in the guard.",
-                            -update.change, update.source, -guard_value
+                            -update.change,
+                            update.source,
+                            -guard_value
                         );
                     }
                 }

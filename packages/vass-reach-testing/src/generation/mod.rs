@@ -2,7 +2,7 @@ use vass_reach_lib::logger::Logger;
 
 use crate::{
     Args,
-    config::{Test},
+    config::Test,
     random::{RandomOptions, petri_net::generate_random_petri_net},
 };
 

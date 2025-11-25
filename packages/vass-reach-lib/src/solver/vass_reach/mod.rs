@@ -1,109 +1,20 @@
+use num::Integer;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     automaton::{
         AutomatonEdge, AutomatonNode,
-        cfg::vasscfg::VASSCFG,
         dfa::minimization::Minimizable,
-        implicit_cfg_product::ImplicitCFGProduct,
+        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
         lsg::extender::{LSGExtender, RandomNodeChooser},
-        ltc::translation::LTCTranslation,
+        ltc::{LTC, translation::LTCTranslation},
         path::{Path, PathNReaching},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
+    config::{ModuloMode, VASSReachConfig},
     logger::{LogLevel, Logger},
     solver::{SolverResult, SolverStatus},
 };
-
-#[derive(Clone, Debug)]
-pub struct VASSReachSolverOptions<'a> {
-    logger: Option<&'a Logger>,
-    thread_pool_size: usize,
-    max_iterations: Option<u32>,
-    max_mu: Option<u32>,
-    max_time: Option<std::time::Duration>,
-}
-
-impl<'a> VASSReachSolverOptions<'a> {
-    pub fn new(
-        logger: Option<&'a Logger>,
-        thread_pool_size: usize,
-        max_iterations: Option<u32>,
-        max_mu: Option<u32>,
-        max_time: Option<std::time::Duration>,
-    ) -> Self {
-        VASSReachSolverOptions {
-            logger,
-            thread_pool_size,
-            max_iterations,
-            max_mu,
-            max_time,
-        }
-    }
-
-    pub fn default_mu_limited() -> Self {
-        VASSReachSolverOptions::default().with_mu_limit(100)
-    }
-
-    pub fn with_logger(mut self, logger: &'a Logger) -> Self {
-        self.logger = Some(logger);
-        self
-    }
-
-    pub fn with_mu_limit(mut self, mu: u32) -> Self {
-        self.max_mu = Some(mu);
-        self
-    }
-
-    pub fn with_optional_mu_limit(mut self, mu: Option<u32>) -> Self {
-        self.max_mu = mu;
-        self
-    }
-
-    pub fn with_iteration_limit(mut self, iterations: u32) -> Self {
-        self.max_iterations = Some(iterations);
-        self
-    }
-
-    pub fn with_optional_iteration_limit(mut self, iterations: Option<u32>) -> Self {
-        self.max_iterations = iterations;
-        self
-    }
-
-    pub fn with_time_limit(mut self, time: std::time::Duration) -> Self {
-        self.max_time = Some(time);
-        self
-    }
-
-    pub fn with_optional_time_limit(mut self, time: Option<std::time::Duration>) -> Self {
-        self.max_time = time;
-        self
-    }
-
-    pub fn with_thread_pool_size(mut self, size: usize) -> Self {
-        self.thread_pool_size = size;
-        self
-    }
-
-    pub fn to_vass_solver<N: AutomatonNode, E: AutomatonEdge>(
-        self,
-        ivass: &InitializedVASS<N, E>,
-    ) -> VASSReachSolver<'a> {
-        VASSReachSolver::new(self, ivass)
-    }
-}
-
-impl Default for VASSReachSolverOptions<'_> {
-    fn default() -> Self {
-        VASSReachSolverOptions {
-            logger: None,
-            thread_pool_size: 4,
-            max_iterations: None,
-            max_mu: None,
-            max_time: None,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VASSReachSolverError {
@@ -114,7 +25,7 @@ pub enum VASSReachSolverError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VASSReachSolverStatistics {
-    pub step_count: u32,
+    pub step_count: u64,
     pub mu: Box<[i32]>,
     pub limit: Box<[u32]>,
     pub time: std::time::Duration,
@@ -122,7 +33,7 @@ pub struct VASSReachSolverStatistics {
 
 impl VASSReachSolverStatistics {
     pub fn new(
-        step_count: u32,
+        step_count: u64,
         mu: Box<[i32]>,
         limit: Box<[u32]>,
         time: std::time::Duration,
@@ -142,21 +53,20 @@ pub type VASSReachSolverResult =
     SolverResult<(), (), VASSReachSolverError, VASSReachSolverStatistics>;
 
 #[derive(Debug)]
-pub struct VASSReachSolver<'a> {
-    options: VASSReachSolverOptions<'a>,
-    logger: Option<&'a Logger>,
+pub struct VASSReachSolver<'l> {
+    options: VASSReachConfig,
+    logger: Option<&'l Logger>,
     state: ImplicitCFGProduct,
-    step_count: u32,
+    step_count: u64,
     solver_start_time: Option<std::time::Instant>,
 }
 
-impl<'a> VASSReachSolver<'a> {
+impl<'l> VASSReachSolver<'l> {
     pub fn new<N: AutomatonNode, E: AutomatonEdge>(
-        options: VASSReachSolverOptions<'a>,
         ivass: &InitializedVASS<N, E>,
+        config: VASSReachConfig,
+        logger: Option<&'l Logger>,
     ) -> Self {
-        let logger = options.logger;
-
         let mut cfg = ivass.to_cfg();
         cfg.add_failure_state(());
         cfg = cfg.minimize();
@@ -173,7 +83,7 @@ impl<'a> VASSReachSolver<'a> {
         );
 
         VASSReachSolver {
-            options,
+            options: config,
             logger,
             state,
             step_count: 0,
@@ -223,10 +133,6 @@ impl<'a> VASSReachSolver<'a> {
 
             if self.max_iterations_reached() {
                 return self.max_iterations_reached_result();
-            }
-
-            if self.max_mu_reached() {
-                return self.max_mu_reached_result();
             }
 
             if self.max_time_reached() {
@@ -288,92 +194,59 @@ impl<'a> VASSReachSolver<'a> {
             // LTC
             // ---
 
-            if let Some(l) = self.logger {
-                l.debug("Building and checking LTC");
-            }
-
-            let ltc_translation = LTCTranslation::from_multi_graph_path(&self.state, &path);
-            // ltc_translation = ltc_translation.expand(&self.cfg);
-            let ltc = ltc_translation.to_ltc(&self.state.cfg, self.state.dimension);
-
-            let result_relaxed =
-                ltc.reach_n_relaxed(&self.state.initial_valuation, &self.state.final_valuation);
-
-            if result_relaxed.is_success() {
+            if *self.options.get_lts().get_enabled() {
                 if let Some(l) = self.logger {
-                    l.debug("LTC is relaxed reachable");
+                    l.debug("Building and checking LTC");
                 }
 
-                let result_strict =
-                    ltc.reach_n(&self.state.initial_valuation, &self.state.final_valuation);
-
-                if result_strict.is_success() {
-                    if let Some(l) = self.logger {
-                        l.debug("LTC is N-reachable");
-                    }
-                    result = true;
+                if let Some(r) = self.ltc(&path) {
+                    result = r;
                     break;
-                } else {
-                    if let Some(l) = self.logger {
-                        l.debug("LTC is not N-reachable");
-                    }
-
-                    let dfa = ltc_translation.to_dfa(&self.state.cfg, self.state.dimension, false);
-
-                    self.intersect_cfg(dfa);
                 }
-            } else {
-                if let Some(l) = self.logger {
-                    l.debug("LTC is not relaxed reachable");
-                }
-
-                let dfa = ltc_translation.to_dfa(&self.state.cfg, self.state.dimension, true);
-
-                self.intersect_cfg(dfa);
             }
-
-            // if path.len() > (self.mu as usize) * dimension {
-            //     if let Some(l) = self.logger {
-            //         l.debug("Path too long, increasing mu");
-            //     }
-            //     self.increment_mu();
-            // }
 
             // ---
             // LSG
             // ---
 
-            if let Some(l) = self.logger {
-                l.debug("Building and checking LSG");
-            }
+            if *self.options.get_lsg().get_enabled() {
+                if let Some(l) = self.logger {
+                    l.debug("Building and checking LSG");
+                }
 
-            let mut extender = LSGExtender::from_cfg_product(
-                &path,
-                &self.state,
-                RandomNodeChooser::new(5, self.step_count as u64),
-                5,
-            );
-            let mut cfg = extender.run();
-            cfg.invert_mut();
-            self.intersect_cfg(cfg);
+                let mut extender = LSGExtender::from_cfg_product(
+                    &path,
+                    &self.state,
+                    RandomNodeChooser::new(5, self.step_count as u64),
+                    *self.options.get_lsg().get_max_refinement_steps(),
+                );
+                let mut cfg = extender.run();
+                cfg.invert_mut();
+                self.state.add_cfg(cfg);
+            }
 
             // ---
             // mu
             // ---
 
             for i in VASSCounterIndex::iter_counters(self.state.dimension) {
-                // TODO: kleinses gemeinsames vielfaches
                 let max_value = path.max_counter_value(&self.state.initial_valuation, i);
                 let mu = self.state.get_mu(i) as u32;
 
                 if max_value > 2 * mu {
+                    let new_mu = match self.options.get_modulo().get_mode() {
+                        ModuloMode::Increment => mu + 1,
+                        ModuloMode::LeastCommonMultiple => mu.lcm(&max_value),
+                    };
+
                     if let Some(l) = self.logger {
                         l.debug(&format!(
-                            "Counter {:?} max value {:?} is more than double mu {:?}, increasing mu",
-                            i, max_value, mu
+                            "Counter {:?} max value {:?} is more than double mu {:?}, increasing mu to {:?}",
+                            i, max_value, mu, new_mu
                         ));
                     }
-                    self.increment_mu(i);
+
+                    self.state.set_mu(i, new_mu as i32);
                 }
             }
 
@@ -399,32 +272,72 @@ impl<'a> VASSReachSolver<'a> {
         statistics
     }
 
-    fn max_mu_reached(&self) -> bool {
-        self.options
-            .max_mu
-            .map(|x| self.state.mu.iter().any(|mu| *mu > x as i32))
-            .unwrap_or(false)
+    fn ltc(&mut self, path: &MultiGraphPath) -> Option<bool> {
+        let translation = LTCTranslation::from_multi_graph_path(&self.state, &path);
+        let ltc = translation.to_ltc(&self.state.cfg, self.state.dimension);
+
+        if *self.options.get_lts().get_relaxed_enabled() {
+            self.ltc_relaxed(ltc, translation)
+        } else {
+            self.ltc_strict(ltc, translation)
+        }
+    }
+
+    fn ltc_relaxed(&mut self, ltc: LTC, translation: LTCTranslation) -> Option<bool> {
+        let result_relaxed =
+            ltc.reach_n_relaxed(&self.state.initial_valuation, &self.state.final_valuation);
+
+        if result_relaxed.is_success() {
+            if let Some(l) = self.logger {
+                l.debug("LTC is relaxed reachable");
+            }
+
+            self.ltc_strict(ltc, translation)
+        } else {
+            if let Some(l) = self.logger {
+                l.debug("LTC is not relaxed reachable");
+            }
+
+            self.state
+                .add_cfg(translation.to_dfa(&self.state.cfg, self.state.dimension, true));
+
+            None
+        }
+    }
+
+    fn ltc_strict(&mut self, ltc: LTC, translation: LTCTranslation) -> Option<bool> {
+        let result_strict = ltc.reach_n(&self.state.initial_valuation, &self.state.final_valuation);
+
+        if result_strict.is_success() {
+            if let Some(l) = self.logger {
+                l.debug("LTC is N-reachable");
+            }
+
+            Some(true)
+        } else {
+            if let Some(l) = self.logger {
+                l.debug("LTC is not N-reachable");
+            }
+
+            self.state
+                .add_cfg(translation.to_dfa(&self.state.cfg, self.state.dimension, false));
+
+            None
+        }
     }
 
     fn max_iterations_reached(&self) -> bool {
         self.options
-            .max_iterations
+            .get_max_iterations()
             .map(|x| x <= self.step_count)
             .unwrap_or(false)
     }
 
     fn max_time_reached(&self) -> bool {
-        match (self.get_solver_time(), &self.options.max_time) {
+        match (self.get_solver_time(), self.options.get_timeout()) {
             (Some(t), Some(max_time)) => &t > max_time,
             _ => false,
         }
-    }
-
-    fn max_mu_reached_result(&self) -> VASSReachSolverResult {
-        VASSReachSolverResult::new(
-            SolverStatus::Unknown(VASSReachSolverError::MaxMuReached),
-            self.get_solver_statistics(),
-        )
     }
 
     fn max_iterations_reached_result(&self) -> VASSReachSolverResult {
@@ -456,14 +369,6 @@ impl<'a> VASSReachSolver<'a> {
 
     fn get_solver_time(&self) -> Option<std::time::Duration> {
         self.solver_start_time.map(|x| x.elapsed())
-    }
-
-    fn intersect_cfg(&mut self, other: VASSCFG<()>) {
-        self.state.add_cfg(other);
-    }
-
-    fn increment_mu(&mut self, counter_index: VASSCounterIndex) {
-        self.state.increment_mu(counter_index);
     }
 
     fn print_start_banner(&self) {

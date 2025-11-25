@@ -9,3 +9,4 @@ clap = { version = "4.5.47", features = ["derive"] }
 vass-reach-lib = { path = "../vass-reach-lib" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.133"
+anyhow = "1.0.100"

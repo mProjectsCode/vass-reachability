@@ -20,8 +20,10 @@ serde_json = "1.0.133"
 hashbrown = { version = "0.16.0", features = ["serde"] }
 nom = "8.0.0"
 paste = "1.0.15"
-unstringify = "0.1.4"
 anyhow = "1.0.100"
+toml = "0.9.8"
+chrono = "0.4.42"
+num = "0.4.3"
 
 
 [profile.release]

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use vass_reach_lib::{
     automaton::{
         AutBuild,
@@ -5,7 +7,8 @@ use vass_reach_lib::{
         petri_net::{PetriNet, initialized::InitializedPetriNet},
         vass::VASS,
     },
-    solver::vass_z_reach::VASSZReachSolverOptions,
+    config::VASSZReachConfig,
+    solver::vass_z_reach::VASSZReachSolver,
     validation::test_parikh_image,
 };
 
@@ -22,14 +25,14 @@ fn test_vass_z_reach_1() {
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
     let cfg = initialized_vass.to_cfg();
 
-    let res = VASSZReachSolverOptions::default()
-        .with_time_limit(std::time::Duration::from_secs(5))
-        .to_solver(
-            cfg.clone(),
-            initialized_vass.initial_valuation.clone(),
-            initialized_vass.final_valuation.clone(),
-        )
-        .solve();
+    let res = VASSZReachSolver::new(
+        &cfg,
+        initialized_vass.initial_valuation.clone(),
+        initialized_vass.final_valuation.clone(),
+        VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_success());
 
@@ -64,14 +67,14 @@ fn test_vass_z_reach_2() {
     let initialized_vass = vass.init(vec![0, 0].into(), vec![1, 0].into(), q0, q1);
     let cfg = initialized_vass.to_cfg();
 
-    let res = VASSZReachSolverOptions::default()
-        .with_time_limit(std::time::Duration::from_secs(5))
-        .to_solver(
-            cfg.clone(),
-            initialized_vass.initial_valuation.clone(),
-            initialized_vass.final_valuation.clone(),
-        )
-        .solve();
+    let res = VASSZReachSolver::new(
+        &cfg,
+        initialized_vass.initial_valuation.clone(),
+        initialized_vass.final_valuation.clone(),
+        VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_failure());
 }
@@ -88,14 +91,14 @@ fn test_vass_z_reach_3() {
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
     let cfg = initialized_vass.to_cfg();
 
-    let res = VASSZReachSolverOptions::default()
-        .with_time_limit(std::time::Duration::from_secs(5))
-        .to_solver(
-            cfg.clone(),
-            initialized_vass.initial_valuation.clone(),
-            initialized_vass.final_valuation.clone(),
-        )
-        .solve();
+    let res = VASSZReachSolver::new(
+        &cfg,
+        initialized_vass.initial_valuation.clone(),
+        initialized_vass.final_valuation.clone(),
+        VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_success());
 
@@ -130,14 +133,14 @@ fn test_vass_z_reach_4() {
     let initialized_vass = initialized_petri_net.to_vass();
     let cfg = initialized_vass.to_cfg();
 
-    let res = VASSZReachSolverOptions::default()
-        .with_time_limit(std::time::Duration::from_secs(5))
-        .to_solver(
-            cfg.clone(),
-            initialized_vass.initial_valuation.clone(),
-            initialized_vass.final_valuation.clone(),
-        )
-        .solve();
+    let res = VASSZReachSolver::new(
+        &cfg,
+        initialized_vass.initial_valuation.clone(),
+        initialized_vass.final_valuation.clone(),
+        VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_success());
 
@@ -168,14 +171,14 @@ fn test_vass_z_reach_5() {
     cfg.add_failure_state(());
     cfg = cfg.minimize();
 
-    let res = VASSZReachSolverOptions::default()
-        .with_time_limit(std::time::Duration::from_secs(5))
-        .to_solver(
-            cfg.clone(),
-            initialized_vass.initial_valuation.clone(),
-            initialized_vass.final_valuation.clone(),
-        )
-        .solve();
+    let res = VASSZReachSolver::new(
+        &cfg,
+        initialized_vass.initial_valuation.clone(),
+        initialized_vass.final_valuation.clone(),
+        VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        None,
+    )
+    .solve();
 
     assert!(res.is_failure());
 }

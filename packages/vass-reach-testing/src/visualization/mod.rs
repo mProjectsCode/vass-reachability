@@ -28,11 +28,7 @@ pub fn visualize(logger: &Logger, args: &Args) -> anyhow::Result<()> {
         .context("failed to run server")
 }
 
-async fn start_server(
-    logger: &Logger,
-    args: &Args,
-    ui_config: UIConfig,
-) -> anyhow::Result<()> {
+async fn start_server(logger: &Logger, args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
     let config = Arc::new(ui_config);
 
     let cors_layer = CorsLayer::new()
@@ -91,9 +87,7 @@ async fn list_test_folders_handler(
     }
 }
 
-async fn list_test_folders_inner(
-    config: Arc<UIConfig>,
-) -> anyhow::Result<Vec<String>> {
+async fn list_test_folders_inner(config: Arc<UIConfig>) -> anyhow::Result<Vec<String>> {
     let folder = fs::canonicalize(&config.test_folders_path)?;
     Ok(folder
         .read_dir()?
@@ -114,10 +108,7 @@ async fn test_data_handler(
     }
 }
 
-async fn test_data_inner(
-    folder: String,
-    config: Arc<UIConfig>,
-) -> anyhow::Result<TestData> {
+async fn test_data_inner(folder: String, config: Arc<UIConfig>) -> anyhow::Result<TestData> {
     let test = Test::from_string(folder)?;
 
     if !test.is_inside_folder(&config.test_folders_path)? {

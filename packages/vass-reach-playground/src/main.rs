@@ -10,8 +10,9 @@ use vass_reach_lib::{
         vass::{VASS, counter::VASSCounterIndex},
     },
     cfg_dec, cfg_inc,
+    config::VASSReachConfig,
     logger::Logger,
-    solver::vass_reach::VASSReachSolverOptions,
+    solver::vass_reach::VASSReachSolver,
 };
 
 fn main() {
@@ -39,12 +40,14 @@ fn main() {
         "".to_string(),
         None,
     );
-    let res = VASSReachSolverOptions::default()
-        .with_mu_limit(100)
-        .with_time_limit(Duration::from_secs(5)) // some time that is long enough, but makes the test run in a reasonable time
-        .with_logger(&logger)
-        .to_vass_solver(&initialized_vass)
-        .solve();
+
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
+        Some(&logger),
+    )
+    .solve();
 
     det();
     // lim_cfg_test();

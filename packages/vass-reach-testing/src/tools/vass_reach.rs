@@ -54,10 +54,7 @@ impl<'a> Tool for VASSReachTool<'a> {
         Ok(())
     }
 
-    fn run_on_file(
-        &self,
-        file_path: &std::path::Path,
-    ) -> anyhow::Result<SolverRunResult> {
+    fn run_on_file(&self, file_path: &std::path::Path) -> anyhow::Result<SolverRunResult> {
         // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p RuntimeMaxSec={self.test_config.timeout} ./target/release/vass-reach {file_path}`
         let mut command = Command::new("systemd-run");
         command.args(&[

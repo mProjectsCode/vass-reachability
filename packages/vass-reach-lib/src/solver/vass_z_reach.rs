@@ -1,8 +1,3 @@
-use std::{
-    sync::{Arc, atomic::AtomicBool},
-    thread,
-};
-
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use z3::{
@@ -12,80 +7,19 @@ use z3::{
 
 use crate::{
     automaton::{
-        AutomatonEdge, AutomatonNode,
+        AutomatonNode,
         cfg::{CFG, vasscfg::VASSCFG},
         index_map::OptionIndexMap,
         path::{Path, parikh_image::ParikhImage},
-        vass::{counter::VASSCounterValuation, initialized::InitializedVASS},
+        vass::counter::VASSCounterValuation,
     },
+    config::VASSZReachConfig,
     logger::Logger,
     solver::{
         SolverResult, SolverStatus,
         utils::{forbid_parikh_image, parikh_image_from_edge_map},
     },
 };
-
-#[derive(Debug, Default)]
-pub struct VASSZReachSolverOptions<'a> {
-    logger: Option<&'a Logger>,
-    max_iterations: Option<u32>,
-    max_time: Option<std::time::Duration>,
-    stop_signal: Option<Arc<AtomicBool>>,
-}
-
-impl<'a> VASSZReachSolverOptions<'a> {
-    pub fn with_logger(mut self, logger: &'a Logger) -> Self {
-        self.logger = Some(logger);
-        self
-    }
-
-    pub fn with_iteration_limit(mut self, limit: u32) -> Self {
-        self.max_iterations = Some(limit);
-        self
-    }
-
-    pub fn with_time_limit(mut self, limit: std::time::Duration) -> Self {
-        self.max_time = Some(limit);
-        self
-    }
-
-    pub fn with_stop_signal(mut self, signal: Arc<AtomicBool>) -> Self {
-        self.stop_signal = Some(signal);
-        self
-    }
-
-    pub fn with_optional_time_limit(mut self, limit: Option<std::time::Duration>) -> Self {
-        self.max_time = limit;
-        self
-    }
-
-    pub fn with_optional_iteration_limit(mut self, limit: Option<u32>) -> Self {
-        self.max_iterations = limit;
-        self
-    }
-
-    pub fn to_solver<Cfg: CFG>(
-        self,
-        cfg: Cfg,
-        initial_valuation: VASSCounterValuation,
-        final_valuation: VASSCounterValuation,
-    ) -> VASSZReachSolver<'a, Cfg> {
-        VASSZReachSolver::new(cfg, initial_valuation, final_valuation, self)
-    }
-
-    pub fn to_vass_solver<N: AutomatonNode, E: AutomatonEdge>(
-        self,
-        ivass: InitializedVASS<N, E>,
-    ) -> VASSZReachSolver<'a, VASSCFG<()>> {
-        let cfg = ivass.to_cfg();
-
-        self.to_solver(
-            cfg,
-            ivass.initial_valuation.clone(),
-            ivass.final_valuation.clone(),
-        )
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VASSZReachSolverError {
@@ -96,12 +30,12 @@ pub enum VASSZReachSolverError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VASSZReachSolverStatistics {
-    pub step_count: u32,
+    pub step_count: u64,
     pub time: std::time::Duration,
 }
 
 impl VASSZReachSolverStatistics {
-    pub fn new(step_count: u32, time: std::time::Duration) -> Self {
+    pub fn new(step_count: u64, time: std::time::Duration) -> Self {
         VASSZReachSolverStatistics { step_count, time }
     }
 }
@@ -160,36 +94,32 @@ impl VASSZReachSolverResult {
 ///
 /// Since this constraint act's on sets of nodes and there are only a limited
 /// number of subsets of nodes, the solver terminates.
-pub struct VASSZReachSolver<'a, Cfg: CFG> {
-    cfg: Cfg,
+pub struct VASSZReachSolver<'l, 'c, Cfg: CFG> {
+    cfg: &'c Cfg,
     initial_valuation: VASSCounterValuation,
     final_valuation: VASSCounterValuation,
-    options: VASSZReachSolverOptions<'a>,
-    step_count: u32,
+    options: VASSZReachConfig,
+    logger: Option<&'l Logger>,
+    step_count: u64,
     solver_start_time: Option<std::time::Instant>,
-    stop_signal: Arc<AtomicBool>,
 }
 
-impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
+impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
     pub fn new(
-        cfg: Cfg,
+        cfg: &'c Cfg,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
-        options: VASSZReachSolverOptions<'a>,
+        options: VASSZReachConfig,
+        logger: Option<&'l Logger>,
     ) -> Self {
-        let stop_signal = options
-            .stop_signal
-            .clone()
-            .unwrap_or(Arc::new(AtomicBool::new(false)));
-
         VASSZReachSolver {
             cfg,
             initial_valuation,
             final_valuation,
             options,
+            logger,
             step_count: 0,
             solver_start_time: None,
-            stop_signal,
         }
     }
 
@@ -201,40 +131,7 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
         let ctx = Context::new(&config);
         let solver = Solver::new(&ctx);
 
-        let context_handle = ctx.handle();
-
-        let start_time = self.solver_start_time.unwrap();
-        let stop_signal = self.stop_signal.clone();
-        let max_time = self.options.max_time;
-
-        let mut result = None;
-
-        thread::scope(|s| {
-            s.spawn(|| {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-
-                    if let Some(max_time) = max_time
-                        && start_time.elapsed() >= max_time
-                    {
-                        stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
-                    }
-
-                    if stop_signal.load(std::sync::atomic::Ordering::SeqCst) {
-                        context_handle.interrupt();
-                        break;
-                    }
-                }
-            });
-
-            result = Some(self.solve_inner(&ctx, &solver));
-
-            stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
-        });
-
-        result.expect("Thread panicked")
-
-        // self.start_watchdog(context_handle);
+        self.solve_inner(&ctx, &solver)
     }
 
     fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult {
@@ -331,7 +228,7 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
                     let parikh_image = parikh_image_from_edge_map(&edge_map, &model);
                     let (_, components) = parikh_image
                         .clone()
-                        .split_into_connected_components(&self.cfg);
+                        .split_into_connected_components(self.cfg);
 
                     if components.is_empty() {
                         status = SolverStatus::True(parikh_image);
@@ -346,7 +243,7 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
                         return self.max_time_reached_result();
                     }
 
-                    if let Some(l) = self.options.logger {
+                    if let Some(l) = self.logger {
                         l.debug(&format!(
                             "Restricting {} connected components",
                             components.len()
@@ -354,7 +251,7 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
                     }
 
                     for component in components {
-                        forbid_parikh_image(&component, &self.cfg, &edge_map, solver, ctx);
+                        forbid_parikh_image(&component, self.cfg, &edge_map, solver, ctx);
                     }
 
                     self.step_count += 1;
@@ -370,7 +267,7 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
             };
         }
 
-        if let Some(l) = self.options.logger {
+        if let Some(l) = self.logger {
             l.debug(&format!("Solved Z-Reach in {} steps", self.step_count));
         }
 
@@ -379,13 +276,16 @@ impl<'a, Cfg: CFG> VASSZReachSolver<'a, Cfg> {
 
     fn max_iterations_reached(&self) -> bool {
         self.options
-            .max_iterations
+            .get_max_iterations()
             .map(|x| x <= self.step_count)
             .unwrap_or(false)
     }
 
     fn max_time_reached(&self) -> bool {
-        self.stop_signal.load(std::sync::atomic::Ordering::SeqCst)
+        match (self.get_solver_time(), self.options.get_timeout()) {
+            (Some(t), Some(max_time)) => &t > max_time,
+            _ => false,
+        }
     }
 
     fn max_iterations_reached_result(&self) -> VASSZReachSolverResult {

@@ -40,7 +40,7 @@ pub struct LSGExtender<'a, N: AutomatonNode, Chooser: NodeChooser<N>> {
     /// The node chooser used to select nodes to add to the LSG.
     pub node_chooser: Chooser,
     /// Maximum number of refinement steps to perform.
-    pub max_refinements: usize,
+    pub max_refinements: u64,
 }
 
 impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> {
@@ -51,7 +51,7 @@ impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> 
         node_chooser: Chooser,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
-        max_refinements: usize,
+        max_refinements: u64,
     ) -> Self {
         let lsg = LinearSubGraph::from_path(path, cfg, dimension);
 
@@ -127,7 +127,7 @@ impl<'a, Chooser: NodeChooser<()>> LSGExtender<'a, (), Chooser> {
         path: &MultiGraphPath,
         cfg_product: &'a ImplicitCFGProduct,
         node_chooser: Chooser,
-        max_refinements: usize,
+        max_refinements: u64,
     ) -> Self {
         let path = path.to_path(&cfg_product.cfg).into();
 
@@ -147,7 +147,7 @@ pub trait NodeChooser<N: AutomatonNode> {
     fn choose_node(
         &mut self,
         lsg: &LinearSubGraph<N>,
-        step: usize,
+        step: u64,
         black_list: &[NodeIndex],
     ) -> Option<NodeIndex>;
 }
@@ -172,7 +172,7 @@ impl<N: AutomatonNode> NodeChooser<N> for RandomNodeChooser {
     fn choose_node(
         &mut self,
         lsg: &LinearSubGraph<N>,
-        _step: usize,
+        _step: u64,
         black_list: &[NodeIndex],
     ) -> Option<NodeIndex> {
         // first pick a node in the lsg at random, then pick one of its neighbors at

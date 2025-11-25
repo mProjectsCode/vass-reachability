@@ -22,7 +22,7 @@ pub struct ImplicitCFGProduct {
     pub cfg: VASSCFG<()>,
     /// mu for modulo counting, one per counter
     pub mu: Box<[i32]>,
-    pub limit: Box<[LimitCFGCache]>,
+    pub bound: Box<[BoundedCFGCache]>,
     pub other_cfg: Vec<VASSCFG<()>>,
 }
 
@@ -34,7 +34,7 @@ impl ImplicitCFGProduct {
         cfg: VASSCFG<()>,
     ) -> Self {
         let mu = vec![2; dimension].into_boxed_slice();
-        let limit = LimitCFGCache::build_initial(dimension, &initial_valuation, &final_valuation);
+        let limit = BoundedCFGCache::build_initial(dimension, &initial_valuation, &final_valuation);
         let other_cfg = vec![];
 
         ImplicitCFGProduct {
@@ -43,7 +43,7 @@ impl ImplicitCFGProduct {
             final_valuation,
             cfg,
             mu,
-            limit,
+            bound: limit,
             other_cfg,
         }
     }
@@ -63,7 +63,7 @@ impl ImplicitCFGProduct {
 
     pub fn set_limit(&mut self, counter: VASSCounterIndex, limit: u32) {
         assert!(limit > 0);
-        self.limit[counter.to_usize()] = LimitCFGCache::new(
+        self.bound[counter.to_usize()] = BoundedCFGCache::new(
             limit,
             counter,
             self.dimension,
@@ -73,13 +73,13 @@ impl ImplicitCFGProduct {
     }
 
     pub fn get_limit(&self, counter: VASSCounterIndex) -> u32 {
-        self.limit[counter.to_usize()].limit
+        self.bound[counter.to_usize()].bound
     }
 
     pub fn limit_values(&self) -> Box<[u32]> {
-        self.limit
+        self.bound
             .iter()
-            .map(|cache| cache.limit)
+            .map(|cache| cache.bound)
             .collect::<Vec<_>>()
             .into_boxed_slice()
     }
@@ -194,28 +194,28 @@ impl ImplicitCFGProduct {
 
     pub fn iter_all_graphs(&self) -> impl Iterator<Item = &VASSCFG<()>> {
         std::iter::once(&self.cfg)
-            .chain(self.limit.iter().map(|cache| &cache.forward))
-            .chain(self.limit.iter().map(|cache| &cache.backward))
+            .chain(self.bound.iter().map(|cache| &cache.forward))
+            .chain(self.bound.iter().map(|cache| &cache.backward))
             .chain(self.other_cfg.iter())
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct LimitCFGCache {
-    pub limit: u32,
+pub struct BoundedCFGCache {
+    pub bound: u32,
     pub forward: VASSCFG<()>,
     pub backward: VASSCFG<()>,
 }
 
-impl LimitCFGCache {
+impl BoundedCFGCache {
     pub fn new(
-        limit: u32,
+        bound: u32,
         counter: VASSCounterIndex,
         dimension: usize,
         initial_valuation: i32,
         final_valuation: i32,
     ) -> Self {
-        let min_limit = limit
+        let min_limit = bound
             .max(initial_valuation.unsigned_abs())
             .max(final_valuation.unsigned_abs());
 
@@ -234,8 +234,8 @@ impl LimitCFGCache {
             final_valuation,
         );
 
-        LimitCFGCache {
-            limit,
+        BoundedCFGCache {
+            bound,
             forward,
             backward,
         }
@@ -245,9 +245,11 @@ impl LimitCFGCache {
         dimension: usize,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-    ) -> Box<[LimitCFGCache]> {
+    ) -> Box<[BoundedCFGCache]> {
         VASSCounterIndex::iter_counters(dimension)
-            .map(|i| LimitCFGCache::new(2, i, dimension, initial_valuation[i], final_valuation[i]))
+            .map(|i| {
+                BoundedCFGCache::new(2, i, dimension, initial_valuation[i], final_valuation[i])
+            })
             .collect::<Vec<_>>()
             .into_boxed_slice()
     }

@@ -6,10 +6,13 @@ use std::{
     str::FromStr,
 };
 
+use chrono::Local;
 use colored::{ColoredString, Colorize};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use crate::config::LoggerConfig;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogLevel {
     Debug,
     Info,
@@ -122,6 +125,23 @@ impl Logger {
                 n_no_color
             ),
         }
+    }
+
+    pub fn from_config(config: &LoggerConfig, name: String) -> Option<Self> {
+        if !*config.get_enabled() {
+            return None;
+        }
+
+        let log_file_path = if *config.get_log_file() {
+            Some(format!(
+                "./logs/solver_run_{}.txt",
+                Local::now().format("%Y-%m-%d_%H-%M-%S")
+            ))
+        } else {
+            None
+        };
+
+        Some(Logger::new(*config.get_log_level(), name, log_file_path))
     }
 
     pub fn get_prefix(&self, level: &LogLevel) -> &str {

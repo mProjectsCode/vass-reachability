@@ -42,10 +42,7 @@ impl Test {
         })
     }
 
-    pub fn is_inside_folder<P: AsRef<Path>>(
-        &self,
-        folder: P,
-    ) -> anyhow::Result<bool> {
+    pub fn is_inside_folder<P: AsRef<Path>>(&self, folder: P) -> anyhow::Result<bool> {
         let canonical_folder = fs::canonicalize(folder)?;
         Ok(self.path.starts_with(canonical_folder))
     }
@@ -85,10 +82,7 @@ impl Test {
         Ok(())
     }
 
-    pub fn write_nets(
-        &self,
-        nets: &Vec<InitializedPetriNet>,
-    ) -> anyhow::Result<()> {
+    pub fn write_nets(&self, nets: &Vec<InitializedPetriNet>) -> anyhow::Result<()> {
         let instances_folder = self.instances_folder();
         if !instances_folder.exists() {
             fs::create_dir_all(&instances_folder)?
@@ -179,9 +173,12 @@ pub type ToolConfig = HashMap<String, path::PathBuf>;
 
 pub fn load_tool_config() -> anyhow::Result<ToolConfig> {
     let config_path = path::Path::new("./tools.config.toml");
-    let canonic_path = fs::canonicalize(config_path).with_context(|| format!("failed to canonicalize: {}", config_path.display()))?;
-    let content = fs::read_to_string(&canonic_path).with_context(|| format!("failed to read: {}", canonic_path.display()))?;
-    let config: HashMap<String, String> = toml::from_str(&content).with_context(|| format!("failed to parse: {}", canonic_path.display()))?;
+    let canonic_path = fs::canonicalize(config_path)
+        .with_context(|| format!("failed to canonicalize: {}", config_path.display()))?;
+    let content = fs::read_to_string(&canonic_path)
+        .with_context(|| format!("failed to read: {}", canonic_path.display()))?;
+    let config: HashMap<String, String> = toml::from_str(&content)
+        .with_context(|| format!("failed to parse: {}", canonic_path.display()))?;
     Ok(config
         .into_iter()
         .map(|(k, v)| (k, path::PathBuf::from(v)))
