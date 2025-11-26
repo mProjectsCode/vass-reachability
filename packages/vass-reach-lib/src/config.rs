@@ -8,6 +8,8 @@ use crate::logger::LogLevel;
 /// The first parameter is the name of the config struct.
 /// Any further parameter is a tuple describing a config field.
 macro_rules! config {
+    // TODO: change format to something like
+    // ident: Type (OptionalType = default),
     ($struct_name:ident, $( ($field:ident, $field_type:ty, $partial_field_type:ty, $default:expr) ),*) => {
         paste::paste! {
             #[derive(Debug, Clone, serde::Serialize)]
