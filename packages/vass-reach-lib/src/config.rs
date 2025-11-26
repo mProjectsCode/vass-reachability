@@ -10,7 +10,7 @@ use crate::logger::LogLevel;
 macro_rules! config {
     // TODO: change format to something like
     // ident: Type (OptionalType = default),
-    ($struct_name:ident, $( ($field:ident, $field_type:ty, $partial_field_type:ty, $default:expr) ),*) => {
+    ($struct_name:ident, $( $field:ident: $field_type:ty [$partial_field_type:ty = $default:expr], )*) => {
         paste::paste! {
             #[derive(Debug, Clone, serde::Serialize)]
             pub struct $struct_name {
@@ -112,46 +112,21 @@ pub trait GeneralConfig {
 }
 
 config!(LoggerConfig,
-    (enabled, bool, Option<bool>, false),
-    (log_file, bool, Option<bool>, false),
-    (log_level, LogLevel, Option<LogLevel>, LogLevel::Warn)
+    enabled: bool [Option<bool> = false],
+    log_file: bool [Option<bool> = false],
+    log_level: LogLevel [Option<LogLevel> = LogLevel::Warn],
 );
 
 config!(
     VASSReachConfig,
-    (
-        timeout,
-        Option<std::time::Duration>,
-        Option<std::time::Duration>,
-        None
-    ),
-    (max_iterations, Option<u64>, Option<u64>, None),
-    (
-        modulo,
-        ModuloConfig,
-        Option<PartialModuloConfig>,
-        ModuloConfig::default()
-    ),
+    timeout: Option<std::time::Duration> [Option<std::time::Duration> = None],
+    max_iterations: Option<u64> [Option<u64> = None],
+    modulo: ModuloConfig [Option<PartialModuloConfig> = ModuloConfig::default()],
     // (bounded_counting, BoundedCountingConfig, Option<PartialBoundedCountingConfig>,
     // BoundedCountingConfig::default()),
-    (
-        lts,
-        LTSConfig,
-        Option<PartialLTSConfig>,
-        LTSConfig::default()
-    ),
-    (
-        lsg,
-        LSGConfig,
-        Option<PartialLSGConfig>,
-        LSGConfig::default()
-    ),
-    (
-        logger,
-        LoggerConfig,
-        Option<PartialLoggerConfig>,
-        LoggerConfig::default()
-    )
+    lts: LTSConfig [Option<PartialLTSConfig> = LTSConfig::default()],
+    lsg: LSGConfig [Option<PartialLSGConfig> = LSGConfig::default()],
+    logger: LoggerConfig [Option<PartialLoggerConfig> = LoggerConfig::default()],
 );
 
 impl GeneralConfig for VASSReachConfig {
@@ -168,12 +143,7 @@ pub enum ModuloMode {
 
 config!(
     ModuloConfig,
-    (
-        mode,
-        ModuloMode,
-        Option<ModuloMode>,
-        ModuloMode::LeastCommonMultiple
-    )
+    mode: ModuloMode [Option<ModuloMode> = ModuloMode::LeastCommonMultiple],
 );
 
 // config!(BoundedCountingConfig,
@@ -181,8 +151,8 @@ config!(
 // );
 
 config!(LTSConfig,
-    (enabled, bool, Option<bool>, true),
-    (relaxed_enabled, bool, Option<bool>, true)
+    enabled: bool [Option<bool> = true],
+    relaxed_enabled: bool [Option<bool> = true],
 );
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -191,26 +161,16 @@ pub enum NodeChooser {
 }
 
 config!(LSGConfig,
-    (enabled, bool, Option<bool>, true),
-    (max_refinement_steps, u64, Option<u64>, 10),
-    (node_chooser, NodeChooser, Option<NodeChooser>, NodeChooser::Random)
+    enabled: bool [Option<bool> = true],
+    max_refinement_steps: u64 [Option<u64> = 10],
+    node_chooser: NodeChooser [Option<NodeChooser> = NodeChooser::Random],
 );
 
 config!(
     VASSZReachConfig,
-    (
-        timeout,
-        Option<std::time::Duration>,
-        Option<std::time::Duration>,
-        None
-    ),
-    (max_iterations, Option<u64>, Option<u64>, None),
-    (
-        logger,
-        LoggerConfig,
-        Option<PartialLoggerConfig>,
-        LoggerConfig::default()
-    )
+    timeout: Option<std::time::Duration> [Option<std::time::Duration> = None],
+    max_iterations: Option<u64> [Option<u64> = None],
+    logger: LoggerConfig [Option<PartialLoggerConfig> = LoggerConfig::default()],
 );
 
 impl GeneralConfig for VASSZReachConfig {
