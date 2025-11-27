@@ -1,9 +1,12 @@
-use std::process::{Command, Stdio};
+use std::{
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 use vass_reach_lib::solver::{SerializableSolverResult, vass_reach::VASSReachSolverStatistics};
 
 use crate::{
-    config::{TestConfig, ToolConfig},
+    config::{TestConfig, TestRunConfig, ToolConfig},
     testing::SolverRunResult,
     tools::Tool,
 };
@@ -12,13 +15,19 @@ use crate::{
 pub struct VASSReachTool<'a> {
     tool_config: &'a ToolConfig,
     test_config: &'a TestConfig,
+    test_path: PathBuf,
 }
 
 impl<'a> VASSReachTool<'a> {
-    pub fn new(tool_config: &'a ToolConfig, test_config: &'a TestConfig) -> Self {
+    pub fn new(
+        tool_config: &'a ToolConfig,
+        test_config: &'a TestConfig,
+        test_path: PathBuf,
+    ) -> Self {
         Self {
             tool_config,
             test_config,
+            test_path,
         }
     }
 }
@@ -54,7 +63,11 @@ impl<'a> Tool for VASSReachTool<'a> {
         Ok(())
     }
 
-    fn run_on_file(&self, file_path: &std::path::Path) -> anyhow::Result<SolverRunResult> {
+    fn run_on_file(
+        &self,
+        file_path: &std::path::Path,
+        config: &TestRunConfig,
+    ) -> anyhow::Result<SolverRunResult> {
         // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p RuntimeMaxSec={self.test_config.timeout} ./target/release/vass-reach {file_path}`
         let mut command = Command::new("systemd-run");
         command.args(&[
@@ -68,6 +81,7 @@ impl<'a> Tool for VASSReachTool<'a> {
             &format!("-pRuntimeMaxSec={}", self.test_config.timeout),
             "./target/release/vass-reach",
             file_path.to_str().unwrap(),
+            &format!("-c={}", self.test_path.join(&config.config).display()),
         ]);
         command.current_dir(self.get_tool_path()?);
         command.stdout(Stdio::piped());

@@ -1,6 +1,4 @@
 use std::{
-    error::Error,
-    fmt::Display,
     fs,
     path::{self, Path, PathBuf},
 };
@@ -67,15 +65,16 @@ impl Test {
         &self,
         tool: &impl Tool,
         results: HashMap<String, SolverResultStatistic>,
+        config: &TestRunConfig,
     ) -> anyhow::Result<()> {
         let results_folder = self.results_folder();
         if !results_folder.exists() {
             fs::create_dir_all(&results_folder)?
         }
 
-        let results_file = results_folder.join(format!("{}.json", tool.name()));
+        let results_file = results_folder.join(format!("{}.json", config.name));
 
-        let tool_result = ToolResult::new(tool.name().to_string(), results);
+        let tool_result = ToolResult::new(tool.name().to_string(), config.name.clone(), results);
 
         std::fs::write(&results_file, serde_json::to_string_pretty(&tool_result)?)?;
 
@@ -140,7 +139,7 @@ impl TryFrom<Test> for TestData {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TestConfig {
-    pub tools: Vec<String>,
+    pub runs: Vec<TestRunConfig>,
     pub timeout: u64,
     pub memory_max_gb: u64,
 }
@@ -150,6 +149,14 @@ impl TestConfig {
         let content = fs::read_to_string(path)?;
         Ok(toml::from_str(&content)?)
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TestRunConfig {
+    pub name: String,
+    pub tool: String,
+    pub config: String,
+    pub max_parallel: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -202,12 +209,21 @@ pub fn load_ui_config() -> anyhow::Result<UIConfig> {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolResult {
-    pub tool_name: String,
+    pub tool: String,
+    pub run_name: String,
     pub results: HashMap<String, SolverResultStatistic>,
 }
 
 impl ToolResult {
-    pub fn new(tool_name: String, results: HashMap<String, SolverResultStatistic>) -> Self {
-        Self { tool_name, results }
+    pub fn new(
+        tool: String,
+        run_name: String,
+        results: HashMap<String, SolverResultStatistic>,
+    ) -> Self {
+        Self {
+            tool,
+            run_name,
+            results,
+        }
     }
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { API_list_test_folders, API_test_data } from "./fetch";
-    import Plot from "./Plot.svelte";
+    import Plot from "./lib/Plot.svelte";
     import { type PlotDatum, PlotDatumState, map_datum_state } from "./types";
 
     let selected: string | undefined = $state();
@@ -21,15 +21,13 @@
                     net: net,
                 };
                 existing.state = map_datum_state(existing.state, result.result);
-                existing.times[tool_result.tool_name] = result.ms_taken;
+                existing.times[tool_result.run_name] = result.ms_taken;
                 map.set(net, existing);
             }
         }
 
         return [...map.values()];
     });
-
-
 
     let conflict_data = $derived(plot_data.filter(x => x.state === PlotDatumState.Conflict));
     
@@ -56,9 +54,6 @@
                     {/each}
                 </ul>
             {/if}
-        </div>
-        <div class="container">
-            <pre><code>{JSON.stringify(selected_data, null, 4)}</code></pre>
         </div>
     {/if}
 </main>

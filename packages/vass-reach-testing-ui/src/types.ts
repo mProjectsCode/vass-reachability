@@ -64,13 +64,20 @@ export interface InstanceConfig {
 }
 
 export interface TestConfig {
-    tools: string[],
+    runs: TestRunConfig[],
     timeout: number,
     memory_max_gb: number,
 }
 
+export interface TestRunConfig {
+    name: string,
+    tool: string,
+    config: string,
+}
+
 export interface ToolResult {
-    tool_name: string,
+    tool: string,
+    run_name: string,
     results: Record<string, SolverResultStatistic>,
 }
 

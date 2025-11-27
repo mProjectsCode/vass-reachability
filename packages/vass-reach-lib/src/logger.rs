@@ -1,9 +1,9 @@
 use std::{
-    cell::RefCell,
     fmt::Display,
     fs::File,
     io::{BufWriter, Write},
     str::FromStr,
+    sync::Mutex,
 };
 
 use chrono::Local;
@@ -77,7 +77,7 @@ impl Display for LogLevel {
 #[derive(Debug)]
 pub struct Logger {
     level: LogLevel,
-    file: Option<RefCell<BufWriter<File>>>,
+    file: Option<Mutex<BufWriter<File>>>,
     debug_prefix: String,
     info_prefix: String,
     warn_prefix: String,
@@ -94,7 +94,7 @@ impl Logger {
         let n_no_color = format!("{name}:");
         let file = log_file_path.map(|path| {
             let file = File::create(path).unwrap();
-            RefCell::new(BufWriter::new(file))
+            Mutex::new(BufWriter::new(file))
         });
 
         Logger {
@@ -197,7 +197,7 @@ impl Logger {
 
     fn writeln_to_file(&self, string: &str) {
         if let Some(file) = &self.file {
-            let mut f = file.borrow_mut();
+            let mut f = file.lock().unwrap();
 
             f.write_all(string.as_bytes()).unwrap();
             f.write_all(b"\n").unwrap();

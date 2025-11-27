@@ -1,3 +1,20 @@
-tools = ["vass-reach", "kreach"]
 timeout = 120
 memory_max_gb = 4
+
+[[runs]]
+name = "vass-reach-inc"
+tool = "vass-reach"
+config = "./vass_reach_inc.toml"
+max_parallel = 8
+
+[[runs]]
+name = "vass-reach-lcm"
+tool = "vass-reach"
+config = "./vass_reach_lcm.toml"
+max_parallel = 8
+
+[[runs]]
+name = "kreach"
+tool = "kreach"
+config = ""
+max_parallel = 4

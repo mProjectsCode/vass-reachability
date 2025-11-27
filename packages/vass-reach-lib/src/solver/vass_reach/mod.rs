@@ -236,7 +236,7 @@ impl<'l> VASSReachSolver<'l> {
                 if max_value > 2 * mu {
                     let new_mu = match self.options.get_modulo().get_mode() {
                         ModuloMode::Increment => mu + 1,
-                        ModuloMode::LeastCommonMultiple => mu.lcm(&max_value),
+                        ModuloMode::LeastCommonMultiple => mu.lcm(&(max_value + 1)),
                     };
 
                     if let Some(l) = self.logger {

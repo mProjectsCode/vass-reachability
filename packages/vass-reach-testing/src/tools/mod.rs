@@ -1,7 +1,7 @@
 use enum_dispatch::enum_dispatch;
 
 use crate::{
-    config::{TestConfig, ToolConfig},
+    config::{TestConfig, TestRunConfig, ToolConfig},
     testing::SolverRunResult,
     tools::{kreach::KReachTool, vass_reach::VASSReachTool},
 };
@@ -16,7 +16,11 @@ pub trait Tool {
     fn test_config(&self) -> &TestConfig;
     fn test(&self) -> anyhow::Result<()>;
     fn build(&self) -> anyhow::Result<()>;
-    fn run_on_file(&self, file_path: &std::path::Path) -> anyhow::Result<SolverRunResult>;
+    fn run_on_file(
+        &self,
+        file_path: &std::path::Path,
+        config: &TestRunConfig,
+    ) -> anyhow::Result<SolverRunResult>;
 
     fn get_tool_path(&self) -> anyhow::Result<std::path::PathBuf> {
         match self.tool_config().get(self.name()) {

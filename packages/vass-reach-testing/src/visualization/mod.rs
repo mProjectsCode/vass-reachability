@@ -28,7 +28,7 @@ pub fn visualize(logger: &Logger, args: &Args) -> anyhow::Result<()> {
         .context("failed to run server")
 }
 
-async fn start_server(logger: &Logger, args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
+async fn start_server(_logger: &Logger, _args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
     let config = Arc::new(ui_config);
 
     let cors_layer = CorsLayer::new()
