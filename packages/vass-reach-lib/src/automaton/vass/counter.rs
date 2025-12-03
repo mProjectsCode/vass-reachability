@@ -151,6 +151,24 @@ impl VASSCounterValuation {
             .position(|&x| x < 0)
             .map(|i| VASSCounterIndex::new(i as u32))
     }
+
+    pub fn element_max(&mut self, other: &VASSCounterValuation) {
+        debug_assert_eq!(
+            self.dimension(),
+            other.dimension(),
+            "Both valuations must have the same dimension"
+        );
+        self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a = i32::max(*a, *b))
+    }
+
+    pub fn element_min(&mut self, other: &VASSCounterValuation) {
+        debug_assert_eq!(
+            self.dimension(),
+            other.dimension(),
+            "Both valuations must have the same dimension"
+        );
+        self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a = i32::min(*a, *b))
+    }
 }
 
 impl From<Box<[i32]>> for VASSCounterValuation {

@@ -16,6 +16,13 @@ use crate::{
     solver::{SolverResult, SolverStatus},
 };
 
+pub enum VASSReachRefinementAction {
+    IncreaseModulo(VASSCounterIndex, i32),
+    IncreaseForwardsBound(VASSCounterIndex, u32),
+    IncreaseBackwardsBound(VASSCounterIndex, u32),
+    BuildAutomaton,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VASSReachSolverError {
     Timeout,
@@ -270,6 +277,32 @@ impl<'l> VASSReachSolver<'l> {
         self.print_end_banner(&statistics);
 
         statistics
+    }
+
+    fn solve_inner(&mut self) -> Result<(), SolverResult> {
+        loop {
+
+        }
+    }
+
+    fn select_refinement_action(&self, path: &MultiGraphPath) -> VASSReachRefinementAction {
+        let (reaching, counters) =
+                path.is_n_reaching(&self.state.initial_valuation, &self.state.final_valuation);
+
+        if let PathNReaching::Negative((index, counter)) = reaching {
+            if let Some(l) = self.logger {
+                l.debug(&format!("Path does not stay positive at index {:?}", index));
+            }
+
+            let max_counter_value =
+                path.max_counter_value(&self.state.initial_valuation, counter);
+
+            return VASSReachRefinementAction::IncreaseForwardsBound(counter, max_counter_value);
+        }
+        
+
+
+        VASSReachRefinementAction::BuildAutomaton
     }
 
     fn ltc(&mut self, path: &MultiGraphPath) -> Option<bool> {

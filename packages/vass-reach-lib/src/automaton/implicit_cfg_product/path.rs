@@ -59,6 +59,7 @@ impl MultiGraphPath {
         self.updates.iter().copied()
     }
 
+    /// Checks if a path is N-reaching and returns the valuation the path leads to.
     pub fn is_n_reaching(
         &self,
         initial_valuation: &VASSCounterValuation,
@@ -87,6 +88,39 @@ impl MultiGraphPath {
             )
         }
     }
+
+    pub fn find_negative_counter_forward(&self, initial_valuation: &VASSCounterValuation) -> Option<(VASSCounterIndex, i32)> {
+        let mut counters = initial_valuation.clone();
+        let mut max_counters = initial_valuation.clone();
+
+        for edge in self.iter() {
+            counters.apply_cfg_update(edge);
+            max_counters.element_max(&counters);
+
+            if let Some(counter) = counters.find_negative_counter() {
+                return Some((counter, max_counters[counter]))
+            }
+        }
+
+        None
+    }
+
+    pub fn find_negative_counter_backward(&self, final_valuation: &VASSCounterValuation) -> Option<(VASSCounterIndex, i32)> {
+        let mut counters = final_valuation.clone();
+        let mut max_counters = final_valuation.clone();
+
+        for edge in self.iter() {
+            counters.apply_cfg_update(edge.reverse());
+            max_counters.element_max(&counters);
+
+            if let Some(counter) = counters.find_negative_counter() {
+                return Some((counter, max_counters[counter]))
+            }
+        }
+
+        None
+    }
+
 
     pub fn max_counter_value(
         &self,
