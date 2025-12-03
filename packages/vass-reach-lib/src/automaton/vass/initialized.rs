@@ -179,9 +179,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
                 .edge_weight(e)
                 .expect("edge index to be present");
 
-            net.add_transition_struct(PetriNetTransition::from_vass_update(
-                update
-            ));
+            net.add_transition_struct(PetriNetTransition::from_vass_update(update));
         }
 
         net.init(self.initial_valuation.clone(), self.final_valuation.clone())

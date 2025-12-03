@@ -1,4 +1,7 @@
-use std::{fmt::{Debug, Display}, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 use itertools::Itertools;
 
@@ -122,12 +125,15 @@ impl FromStr for CFGCounterUpdate {
         let Some(first) = first else {
             anyhow::bail!("expected \"+\" or \"-\" at position 0, received eof")
         };
-        let positive = if first == '+' { 
-            true 
-        } else if first == '-' { 
-            false 
-        } else { 
-            anyhow::bail!("expected \"+\" or \"-\" at position 0, received \"{}\"", first) 
+        let positive = if first == '+' {
+            true
+        } else if first == '-' {
+            false
+        } else {
+            anyhow::bail!(
+                "expected \"+\" or \"-\" at position 0, received \"{}\"",
+                first
+            )
         };
         let second = chars.next();
         let Some(second) = second else {
@@ -143,15 +149,17 @@ impl FromStr for CFGCounterUpdate {
             if let Some(digit) = char.to_digit(10) {
                 number = number * 10 + digit;
             } else {
-                anyhow::bail!("expected digit at position {}, received \"{}\"", index, char)
+                anyhow::bail!(
+                    "expected digit at position {}, received \"{}\"",
+                    index,
+                    char
+                )
             }
 
             index += 1;
         }
-        
-        Ok(
-            CFGCounterUpdate::new(number, positive)
-        )
+
+        Ok(CFGCounterUpdate::new(number, positive))
     }
 }
 
@@ -176,7 +184,10 @@ fn test_cfg_counter_update_parser() {
 
     let s = counters.iter().map(|c| c.to_string()).join(" ");
 
-    assert_eq!(counters.as_slice(), &CFGCounterUpdate::from_str_to_vec(&s).unwrap());
+    assert_eq!(
+        counters.as_slice(),
+        &CFGCounterUpdate::from_str_to_vec(&s).unwrap()
+    );
 }
 
 pub trait CFGCounterUpdatable {

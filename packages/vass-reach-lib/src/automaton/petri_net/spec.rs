@@ -262,10 +262,7 @@ impl<'a> TransitionSpec<'a> {
             }
         }
 
-        Ok(PetriNetTransition::from_vass_updates(
-            &input,
-            &output,
-        ))
+        Ok(PetriNetTransition::from_vass_updates(&input, &output))
     }
 }
 

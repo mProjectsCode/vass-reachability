@@ -1,6 +1,9 @@
 use std::{fmt::Display, vec::IntoIter};
 
-use petgraph::{graph::{EdgeIndex, NodeIndex}, visit::EdgeRef};
+use petgraph::{
+    graph::{EdgeIndex, NodeIndex},
+    visit::EdgeRef,
+};
 
 use crate::automaton::{
     AutBuild, Automaton, AutomatonEdge, AutomatonNode,
@@ -54,9 +57,16 @@ impl Path {
         let mut path = Path::new(cfg.get_start());
 
         for letter in word {
-            let edge = cfg.get_graph().edges(path.end()).find(|e | cfg.edge_update(e.id()) == *letter);
+            let edge = cfg
+                .get_graph()
+                .edges(path.end())
+                .find(|e| cfg.edge_update(e.id()) == *letter);
             let Some(edge) = edge else {
-                anyhow::bail!("Found no edge with letter {} from node {:?}", letter, path.end())
+                anyhow::bail!(
+                    "Found no edge with letter {} from node {:?}",
+                    letter,
+                    path.end()
+                )
             };
 
             path.add(edge.id(), edge.target());
@@ -115,59 +125,6 @@ impl Path {
         dfa.invert_mut();
 
         dfa
-    }
-
-    /// Creates a bounded counting automaton from a path.
-    pub fn to_bounded_counting_cfg(
-        &self,
-        cfg: &impl CFG,
-        initial_valuation: &VASSCounterValuation,
-        final_valuation: &VASSCounterValuation,
-        negative_counter: VASSCounterIndex,
-    ) -> VASSCFG<()> {
-        let counter_updates = self
-            .transitions
-            .iter()
-            .map(|(edge, _)| cfg.edge_update(*edge))
-            .filter(|update| update.counter() == negative_counter);
-
-        let mut counter = 0;
-        let mut max_counter = 0;
-        for update in counter_updates {
-            counter += update.op();
-            max_counter = max_counter.max(counter);
-        }
-
-        let start = initial_valuation[negative_counter];
-        let end = final_valuation[negative_counter];
-        let max = ((start + max_counter) as u32).max(1);
-
-        // println!("start: {}, max: {}", start, start + max_counter);
-
-        build_bounded_counting_cfg(
-            initial_valuation.dimension(),
-            negative_counter,
-            max,
-            start,
-            end,
-        )
-    }
-
-    /// Creates a reverse bounded counting automaton from a path.
-    pub fn to_rev_bounded_counting_cfg(
-        &self,
-        cfg: &impl CFG,
-        initial_valuation: &VASSCounterValuation,
-        final_valuation: &VASSCounterValuation,
-        negative_counter: VASSCounterIndex,
-    ) -> VASSCFG<()> {
-        let bccfg =
-            self.to_bounded_counting_cfg(cfg, final_valuation, initial_valuation, negative_counter);
-
-        let mut reversed = bccfg.reverse();
-        reversed.reverse_counter_updates();
-
-        reversed
     }
 
     pub fn is_n_reaching(
@@ -247,7 +204,7 @@ impl Path {
         }
 
         // if !current_part.is_empty() {
-            parts.push(current_part);
+        parts.push(current_part);
         // }
 
         parts

@@ -57,9 +57,7 @@ impl VASSCounterValuation {
     }
 
     pub fn extend(&self, other: impl IntoIterator<Item = i32>) -> Self {
-        VASSCounterValuation::new(
-            self.values.iter().cloned().chain(other).collect()
-        )
+        VASSCounterValuation::new(self.values.iter().cloned().chain(other).collect())
     }
 
     pub fn dimension(&self) -> usize {
@@ -158,7 +156,9 @@ impl VASSCounterValuation {
             other.dimension(),
             "Both valuations must have the same dimension"
         );
-        self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a = i32::max(*a, *b))
+        self.iter_mut()
+            .zip(other.iter())
+            .for_each(|(a, b)| *a = i32::max(*a, *b))
     }
 
     pub fn element_min(&mut self, other: &VASSCounterValuation) {
@@ -167,7 +167,25 @@ impl VASSCounterValuation {
             other.dimension(),
             "Both valuations must have the same dimension"
         );
-        self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a = i32::min(*a, *b))
+        self.iter_mut()
+            .zip(other.iter())
+            .for_each(|(a, b)| *a = i32::min(*a, *b))
+    }
+
+    /// Finds the first counter value mismatch between two counter valuations.
+    /// Returns the counter index and the difference.
+    pub fn find_mismatch(&self, other: &VASSCounterValuation) -> Option<(VASSCounterIndex, i32)> {
+        debug_assert_eq!(
+            self.dimension(),
+            other.dimension(),
+            "Both valuations must have the same dimension"
+        );
+
+        self.iter()
+            .zip(other.iter())
+            .enumerate()
+            .find(|(_, (a, b))| a != b)
+            .map(|(x, (a, b))| (VASSCounterIndex::new(x as u32), b - a))
     }
 }
 
@@ -268,9 +286,7 @@ impl VASSCounterUpdate {
     }
 
     pub fn extend(&self, other: impl IntoIterator<Item = i32>) -> Self {
-        VASSCounterUpdate::new(
-            self.values.iter().cloned().chain(other).collect()
-        )
+        VASSCounterUpdate::new(self.values.iter().cloned().chain(other).collect())
     }
 
     pub fn dimension(&self) -> usize {

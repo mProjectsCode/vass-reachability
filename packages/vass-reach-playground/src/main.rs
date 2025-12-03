@@ -2,7 +2,16 @@ use std::time::Duration;
 
 use vass_reach_lib::{
     automaton::{
-        AutBuild, cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG}, dfa::{minimization::Minimizable, node::DfaNode}, nfa::NFA, path::Path, petri_net::{self, spec::ToSpecFormat}, vass::{VASS, counter::{VASSCounterIndex, VASSCounterUpdate}}
+        AutBuild,
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::{minimization::Minimizable, node::DfaNode},
+        nfa::NFA,
+        path::Path,
+        petri_net::{self, spec::ToSpecFormat},
+        vass::{
+            VASS,
+            counter::{VASSCounterIndex, VASSCounterUpdate},
+        },
     },
     cfg_dec, cfg_inc,
     config::VASSReachConfig,
@@ -50,69 +59,6 @@ fn main() {
     difficult_instance();
 }
 
-fn lim_cfg_test() {
-    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(1));
-
-    let q0 = cfg.add_state(DfaNode::accepting(()));
-    let q1 = cfg.add_state(DfaNode::non_accepting(()));
-    let q2 = cfg.add_state(DfaNode::non_accepting(()));
-
-    cfg.set_start(q0);
-
-    cfg.add_transition(q0, q0, cfg_inc!(0));
-    cfg.add_transition(q0, q1, cfg_dec!(0));
-    cfg.add_transition(q1, q2, cfg_dec!(0));
-    cfg.add_transition(q2, q0, cfg_inc!(0));
-
-    cfg.add_failure_state(());
-
-    let initial_valuation = vec![1].into();
-    let final_valuation = vec![0].into();
-
-    let path = cfg
-        .modulo_reach(4, &initial_valuation, &final_valuation)
-        .unwrap();
-
-    println!("Path: {:#?}", &path);
-
-    let lim = path.to_bounded_counting_cfg(
-        &cfg,
-        &initial_valuation,
-        &final_valuation,
-        VASSCounterIndex::new(0),
-    );
-
-    println!("Limit CFG: {:#?}", &lim);
-    println!("{}", lim.to_graphviz(None as Option<Path>));
-
-    let rev_lim = path.to_rev_bounded_counting_cfg(
-        &cfg,
-        &initial_valuation,
-        &final_valuation,
-        VASSCounterIndex::new(0),
-    );
-
-    println!("Reverse Limit CFG: {:#?}", &rev_lim);
-    println!("{}", rev_lim.to_graphviz(None as Option<Path>));
-
-    let cut_cfg = cfg.intersect(&lim).intersect(&rev_lim);
-
-    let min_cut_cfg = cut_cfg.minimize();
-
-    println!("Cut CFG: {:#?}", &cut_cfg);
-    println!("{}", cut_cfg.to_graphviz(None as Option<Path>));
-
-    println!("Minimized Cut CFG: {:#?}", &min_cut_cfg);
-    println!("{}", min_cut_cfg.to_graphviz(None as Option<Path>));
-
-    // let overlap = lim.intersect(&rev_lim);
-
-    // let min_overlap = overlap.minimize();
-
-    // println!("Overlap CFG: {:#?}", &min_overlap);
-    // println!("{}", min_overlap.to_graphviz(None as Option<Path>));
-}
-
 fn difficult_instance() {
     let mut vass = VASS::new(2, (0..10).collect());
 
@@ -158,6 +104,4 @@ fn difficult_instance() {
         Some(&logger),
     )
     .solve();
-
-
 }

@@ -1,6 +1,10 @@
 use std::{time::Duration, vec};
 
-use vass_reach_lib::{automaton::{AutBuild, Automaton, vass::VASS}, config::VASSReachConfig, solver::vass_reach::VASSReachSolver};
+use vass_reach_lib::{
+    automaton::{AutBuild, Automaton, vass::VASS},
+    config::VASSReachConfig,
+    solver::vass_reach::VASSReachSolver,
+};
 
 #[test]
 fn test_vass() {
@@ -49,23 +53,24 @@ fn test_vass_to_cfg() {
 //     vass.add_transition(q0, q1, ('b', vec![-2, 0].into()));
 //     vass.add_transition(q1, q1, ('b', vec![-1, 0].into()));
 
-//     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
+//     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(),
+// q0, q1);
 
 //     let initialized_vas = initialized_vass.to_vas();
 
 //     let vass_res = VASSReachSolver::new(
 //         &initialized_vass,
-//         // some time that is long enough, but makes the test run in a reasonable time
-//         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-//         None,
+//         // some time that is long enough, but makes the test run in a
+// reasonable time         VASSReachConfig::default().
+// with_timeout(Some(Duration::from_secs(5))),         None,
 //     )
 //     .solve();
 
 //     let vas_res = VASSReachSolver::new(
 //         &initialized_vas,
-//         // some time that is long enough, but makes the test run in a reasonable time
-//         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-//         None,
+//         // some time that is long enough, but makes the test run in a
+// reasonable time         VASSReachConfig::default().
+// with_timeout(Some(Duration::from_secs(5))),         None,
 //     )
 //     .solve();
 
@@ -82,22 +87,22 @@ fn test_vass_to_cfg() {
 //     vass.add_transition(q0, q1, ('b', vec![0, 1].into()));
 //     vass.add_transition(q1, q1, ('b', vec![-1, 0].into()));
 
-//     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
-//     let initialized_vas = initialized_vass.to_vas();
+//     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(),
+// q0, q1);     let initialized_vas = initialized_vass.to_vas();
 
 //     let vass_res = VASSReachSolver::new(
 //         &initialized_vass,
-//         // some time that is long enough, but makes the test run in a reasonable time
-//         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-//         None,
+//         // some time that is long enough, but makes the test run in a
+// reasonable time         VASSReachConfig::default().
+// with_timeout(Some(Duration::from_secs(5))),         None,
 //     )
 //     .solve();
 
 //     let vas_res = VASSReachSolver::new(
 //         &initialized_vas,
-//         // some time that is long enough, but makes the test run in a reasonable time
-//         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-//         None,
+//         // some time that is long enough, but makes the test run in a
+// reasonable time         VASSReachConfig::default().
+// with_timeout(Some(Duration::from_secs(5))),         None,
 //     )
 //     .solve();
 
@@ -113,23 +118,24 @@ fn test_vass_to_cfg() {
 //     vass.add_transition(q0, q1, ('a', vec![-1, 0].into()));
 //     vass.add_transition(q1, q1, ('b', vec![1, 0].into()));
 
-//     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
+//     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(),
+// q0, q1);
 
 //     let initialized_vas = initialized_vass.to_vas();
 
 //     let vass_res = VASSReachSolver::new(
 //         &initialized_vass,
-//         // some time that is long enough, but makes the test run in a reasonable time
-//         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-//         None,
+//         // some time that is long enough, but makes the test run in a
+// reasonable time         VASSReachConfig::default().
+// with_timeout(Some(Duration::from_secs(5))),         None,
 //     )
 //     .solve();
 
 //     let vas_res = VASSReachSolver::new(
 //         &initialized_vas,
-//         // some time that is long enough, but makes the test run in a reasonable time
-//         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-//         None,
+//         // some time that is long enough, but makes the test run in a
+// reasonable time         VASSReachConfig::default().
+// with_timeout(Some(Duration::from_secs(5))),         None,
 //     )
 //     .solve();
 

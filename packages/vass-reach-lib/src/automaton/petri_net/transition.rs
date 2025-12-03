@@ -18,7 +18,10 @@ impl PetriNetTransition {
     /// Converts from a Subtract and Add representation to a PetriNetTransition.
     /// Note that the input update must all be negative or zero, and the output
     /// update must all be positive or zero.
-    pub fn from_vass_updates<'a>(input: impl IntoIterator<Item = &'a i32>, output: impl IntoIterator<Item = &'a i32>) -> Self {
+    pub fn from_vass_updates<'a>(
+        input: impl IntoIterator<Item = &'a i32>,
+        output: impl IntoIterator<Item = &'a i32>,
+    ) -> Self {
         let mut input_vec = vec![];
         let mut output_vec = vec![];
 
