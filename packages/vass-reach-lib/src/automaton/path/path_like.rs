@@ -47,7 +47,7 @@ pub trait PathLike: EdgeListLike {
         }
         self.add(edge, endpoints.1);
     }
-
+    
     fn take_edges<'a, N: AutomatonNode, E: AutomatonEdge>(
         &mut self,
         edges: impl IntoIterator<Item = &'a EdgeIndex<u32>>,

@@ -222,6 +222,9 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         // As a simple solution, we split the paths beforehand, so that we don't have to
         // deal with the complexity of splitting paths later in this function.
 
+        // dbg!(&self.parts);
+        // dbg!(node);
+
         let neighbors = self.cfg.graph.neighbors_undirected(node).collect_vec();
 
         // first we split all paths at the given node
@@ -277,6 +280,8 @@ impl<'a, N: AutomatonNode> LinearSubGraph<'a, N> {
         // thanks to the way we search for neighbors, the indices should be sorted
         let first_part = *neighbor_parts_indices.first().unwrap();
         let last_part = *neighbor_parts_indices.last().unwrap();
+
+        // dbg!(&neighbor_parts_indices);
 
         let first_part_index = first_part.0 + usize::from(first_part.1);
         let last_part_index = last_part.0 - usize::from(last_part.1);

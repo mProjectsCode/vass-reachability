@@ -1,4 +1,6 @@
-use std::fmt::{Debug, Display};
+use std::{fmt::{Debug, Display}, str::FromStr};
+
+use itertools::Itertools;
 
 use crate::automaton::vass::counter::{VASSCounterIndex, VASSCounterValuation};
 
@@ -88,6 +90,7 @@ impl CFGCounterUpdate {
         if self.positive { 1 } else { -1 }
     }
 
+    /// Returns the increment or decrement value of the counter update.
     pub fn op_i64(&self) -> i64 {
         if self.positive { 1 } else { -1 }
     }
@@ -108,6 +111,72 @@ impl Debug for CFGCounterUpdate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
+}
+
+impl FromStr for CFGCounterUpdate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+        let first = chars.next();
+        let Some(first) = first else {
+            anyhow::bail!("expected \"+\" or \"-\" at position 0, received eof")
+        };
+        let positive = if first == '+' { 
+            true 
+        } else if first == '-' { 
+            false 
+        } else { 
+            anyhow::bail!("expected \"+\" or \"-\" at position 0, received \"{}\"", first) 
+        };
+        let second = chars.next();
+        let Some(second) = second else {
+            anyhow::bail!("expected \"c\" at position 1, received eof")
+        };
+        if second != 'c' {
+            anyhow::bail!("expected \"c\" at position 1, received \"{}\"", second)
+        }
+
+        let mut number = 0;
+        let mut index = 2;
+        while let Some(char) = chars.next() {
+            if let Some(digit) = char.to_digit(10) {
+                number = number * 10 + digit;
+            } else {
+                anyhow::bail!("expected digit at position {}, received \"{}\"", index, char)
+            }
+
+            index += 1;
+        }
+        
+        Ok(
+            CFGCounterUpdate::new(number, positive)
+        )
+    }
+}
+
+impl CFGCounterUpdate {
+    pub fn from_str_to_vec(s: &str) -> anyhow::Result<Vec<CFGCounterUpdate>> {
+        s.split(" ").map(|p| p.parse()).collect()
+    }
+}
+
+#[test]
+fn test_cfg_counter_update_parser() {
+    let counters = [
+        CFGCounterUpdate::new(0, true),
+        CFGCounterUpdate::new(0, false),
+        CFGCounterUpdate::new(123, true),
+        CFGCounterUpdate::new(123, false),
+    ];
+
+    for c in counters {
+        assert_eq!(c, c.to_string().parse().unwrap())
+    }
+
+    let s = counters.iter().map(|c| c.to_string()).join(" ");
+
+    assert_eq!(counters.as_slice(), &CFGCounterUpdate::from_str_to_vec(&s).unwrap());
 }
 
 pub trait CFGCounterUpdatable {

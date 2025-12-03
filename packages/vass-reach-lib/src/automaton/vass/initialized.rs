@@ -1,3 +1,6 @@
+use std::iter::repeat;
+
+use itertools::Itertools;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
 use crate::automaton::{
@@ -6,8 +9,12 @@ use crate::automaton::{
     dfa::node::DfaNode,
     index_map::IndexMap,
     nfa::NFA,
+    petri_net::{PetriNet, initialized::InitializedPetriNet, transition::PetriNetTransition},
     utils::{self},
-    vass::{VASS, counter::VASSCounterValuation},
+    vass::{
+        VASS,
+        counter::{VASSCounterUpdate, VASSCounterValuation},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -74,6 +81,110 @@ impl<N: AutomatonNode, E: AutomatonEdge> InitializedVASS<N, E> {
             false,
             Some(self.vass.graph[state].clone()),
         )
+    }
+
+    /// Converts the VASS into a VAS, a Vector Addition System (without states),
+    /// using Hopcroft's and Pansiot's construction from 1978.
+    pub fn to_vas(&self) -> InitializedVASS<(), usize> {
+        let new_alphabet = (0..(self.transition_count() + self.dimension() * 2)).collect_vec();
+        let mut vas = VASS::new(self.dimension() + 3, new_alphabet);
+
+        let node = vas.add_state(());
+
+        for i in 0..self.state_count() {
+            let (a, b) = self.vas_translation_ab(i as i32);
+
+            let (other_a, other_b) = self.vas_translation_ab((self.state_count() - i - 1) as i32);
+
+            vas.add_transition(
+                node,
+                node,
+                (
+                    self.vass.alphabet.len() + i * 2,
+                    VASSCounterUpdate::new(
+                        repeat(0)
+                            .take(self.dimension())
+                            .chain([-a, other_a - b, other_b])
+                            .collect(),
+                    ),
+                ),
+            );
+
+            vas.add_transition(
+                node,
+                node,
+                (
+                    self.vass.alphabet.len() + i * 2,
+                    VASSCounterUpdate::new(
+                        repeat(0)
+                            .take(self.dimension())
+                            .chain([b, -other_a, a - other_b])
+                            .collect(),
+                    ),
+                ),
+            );
+        }
+
+        for e in self.vass.graph.edge_indices() {
+            let (from, to) = self
+                .vass
+                .graph
+                .edge_endpoints(e)
+                .expect("edge index to be present");
+
+            let (from_a, from_b) = self.vas_translation_ab(from.index() as i32);
+            let (to_a, to_b) = self.vas_translation_ab(to.index() as i32);
+
+            let (_, update) = self
+                .vass
+                .graph
+                .edge_weight(e)
+                .expect("edge index to be present");
+
+            vas.add_transition(
+                node,
+                node,
+                (e.index(), update.extend([to_a - from_b, to_b, -from_a])),
+            );
+        }
+
+        let (initial_a, initial_b) = self.vas_translation_ab(self.initial_node.index() as i32);
+        let (final_a, final_b) = self.vas_translation_ab(self.final_node.index() as i32);
+
+        vas.init(
+            self.initial_valuation.extend([initial_a, initial_b, 0]),
+            self.final_valuation.extend([final_a, final_b, 0]),
+            node,
+            node,
+        )
+    }
+
+    fn vas_translation_ab(&self, node: i32) -> (i32, i32) {
+        let a = node + 1;
+        let b = (self.state_count() as i32 + 1) * (self.state_count() as i32 - node);
+        (a, b)
+    }
+
+    /// Converts a VAS into a PetriNet. Panics if this is not a VAS, so has more
+    /// than one state.
+    pub fn to_petri_net(&self) -> InitializedPetriNet {
+        assert_eq!(self.state_count(), 1);
+
+        let mut net = PetriNet::new(self.dimension());
+
+        for e in self.vass.graph.edge_indices() {
+            let (_, update) = self
+                .vass
+                .graph
+                .edge_weight(e)
+                .expect("edge index to be present");
+
+            net.add_transition_struct(PetriNetTransition::from_vass_update(
+                update
+            ));
+        }
+
+        net.init(self.initial_valuation.clone(), self.final_valuation.clone())
     }
 
     pub fn state_count(&self) -> usize {

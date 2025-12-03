@@ -1,10 +1,12 @@
+use petgraph::graph::NodeIndex;
 use vass_reach_lib::{
     automaton::{
         AutBuild, Automaton,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
-        lsg::LinearSubGraph,
+        lsg::{LinearSubGraph, extender},
         path::Path,
+        vass::VASS,
     },
     cfg_dec, cfg_inc,
     solver::lsg_reach::LSGReachSolverOptions,
@@ -24,7 +26,7 @@ fn lgs_1() {
     let _e3 = cfg.add_transition(s2, s1, cfg_dec!(0));
     let e4 = cfg.add_transition(s1, s3, cfg_dec!(0));
 
-    let path = Path::new_from_iterator(s0, &[e1, e4], &cfg);
+    let path = Path::from_edges(s0, &[e1, e4], &cfg);
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
@@ -95,7 +97,7 @@ fn lgs_2() {
     let _e4 = cfg.add_transition(s2, s3, cfg_inc!(0));
     let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
 
-    let path = Path::new_from_iterator(s0, &[e1, e2], &cfg);
+    let path = Path::from_edges(s0, &[e1, e2], &cfg);
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // Initial path should have one part
@@ -163,6 +165,47 @@ fn lgs_2() {
 }
 
 #[test]
+fn lsg_3() {
+    // Note: this test is from a crash
+    let mut vass = VASS::new(2, (0..10).collect());
+
+    let s0 = vass.add_state(());
+    let s1 = vass.add_state(());
+    let s2 = vass.add_state(());
+    let s3 = vass.add_state(());
+
+    let _e0 = vass.add_transition(s0, s1, (0, vec![6, 0].into()));
+
+    let _e1 = vass.add_transition(s1, s1, (1, vec![1, 1].into()));
+    let _e2 = vass.add_transition(s1, s1, (2, vec![-1, -1].into()));
+    let _e3 = vass.add_transition(s1, s1, (3, vec![1, 0].into()));
+
+    let _e4 = vass.add_transition(s1, s2, (4, vec![0, 0].into()));
+
+    let _e5 = vass.add_transition(s2, s2, (5, vec![1, 2].into()));
+    let _e6 = vass.add_transition(s2, s2, (6, vec![-1, -2].into()));
+
+    let _e7 = vass.add_transition(s2, s3, (7, vec![0, 0].into()));
+
+    let _e8 = vass.add_transition(s3, s3, (8, vec![0, 1].into()));
+    let _e9 = vass.add_transition(s3, s3, (9, vec![0, -1].into()));
+
+    let initialized = vass.init(vec![0, 0].into(), vec![0, 0].into(), s0, s3);
+
+    let cfg = initialized.to_cfg();
+    let word = CFGCounterUpdate::from_str_to_vec("+c0 +c0 +c0 +c0 +c0 +c0 +c0 +c0 +c0 +c0 +c1 +c0 +c1 +c0 +c1 +c0 +c1 -c0 -c1 -c0 -c1 -c0 -c1 -c1").unwrap();
+    let path = Path::from_word(&word, &cfg).unwrap();
+
+    let lsg = LinearSubGraph::from_path(path, &cfg, 2);
+
+    lsg.add_node(NodeIndex::from(15));
+    // In the crash, this panic-ed
+    lsg.add_node(NodeIndex::from(11));
+
+    assert!(lsg.accepts(&word));
+}
+
+#[test]
 fn lsg_reach() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_state(DfaNode::non_accepting(()));
@@ -177,7 +220,7 @@ fn lsg_reach() {
     let _e3 = cfg.add_transition(s2, s1, cfg_dec!(0));
     let e4 = cfg.add_transition(s1, s3, cfg_dec!(0));
 
-    let path = Path::new_from_iterator(s0, &[e1, e4], &cfg);
+    let path = Path::from_edges(s0, &[e1, e4], &cfg);
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
@@ -228,7 +271,7 @@ fn lsg_reach2() {
     let _e4 = cfg.add_transition(s2, s3, cfg_inc!(0));
     let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
 
-    let path = Path::new_from_iterator(s0, &[e1, e2], &cfg);
+    let path = Path::from_edges(s0, &[e1, e2], &cfg);
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     let res = LSGReachSolverOptions::default()

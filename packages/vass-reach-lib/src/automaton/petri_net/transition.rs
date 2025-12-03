@@ -18,18 +18,40 @@ impl PetriNetTransition {
     /// Converts from a Subtract and Add representation to a PetriNetTransition.
     /// Note that the input update must all be negative or zero, and the output
     /// update must all be positive or zero.
-    pub fn from_vass_updates(input: VASSCounterUpdate, output: VASSCounterUpdate) -> Self {
+    pub fn from_vass_updates<'a>(input: impl IntoIterator<Item = &'a i32>, output: impl IntoIterator<Item = &'a i32>) -> Self {
         let mut input_vec = vec![];
         let mut output_vec = vec![];
 
-        for (i, &val) in input.iter().enumerate() {
+        for (i, &val) in input.into_iter().enumerate() {
             if val < 0 {
                 input_vec.push(((-val) as usize, i + 1));
+            } else if val > 0 {
+                panic!("input update had a positive component");
             }
         }
 
-        for (i, &val) in output.iter().enumerate() {
+        for (i, &val) in output.into_iter().enumerate() {
             if val > 0 {
+                output_vec.push(((val) as usize, i + 1));
+            } else if val < 0 {
+                panic!("input update had a negative component");
+            }
+        }
+
+        Self {
+            input: input_vec,
+            output: output_vec,
+        }
+    }
+
+    pub fn from_vass_update<'a>(update: impl IntoIterator<Item = &'a i32>) -> Self {
+        let mut input_vec = vec![];
+        let mut output_vec = vec![];
+
+        for (i, &val) in update.into_iter().enumerate() {
+            if val < 0 {
+                input_vec.push(((-val) as usize, i + 1));
+            } else if val > 0 {
                 output_vec.push(((val) as usize, i + 1));
             }
         }

@@ -1,6 +1,6 @@
 use std::{fmt::Display, vec::IntoIter};
 
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::{graph::{EdgeIndex, NodeIndex}, visit::EdgeRef};
 
 use crate::automaton::{
     AutBuild, Automaton, AutomatonEdge, AutomatonNode,
@@ -35,7 +35,7 @@ impl Path {
         }
     }
 
-    pub fn new_from_iterator<'a, N: AutomatonNode, E: AutomatonEdge>(
+    pub fn from_edges<'a, N: AutomatonNode, E: AutomatonEdge>(
         start_index: NodeIndex<u32>,
         edges: impl IntoIterator<Item = &'a EdgeIndex<u32>>,
         graph: &DFA<N, E>,
@@ -45,6 +45,24 @@ impl Path {
         path.take_edges(edges, graph);
 
         path
+    }
+
+    pub fn from_word<'a>(
+        word: impl IntoIterator<Item = &'a CFGCounterUpdate>,
+        cfg: &impl CFG,
+    ) -> anyhow::Result<Self> {
+        let mut path = Path::new(cfg.get_start());
+
+        for letter in word {
+            let edge = cfg.get_graph().edges(path.end()).find(|e | cfg.edge_update(e.id()) == *letter);
+            let Some(edge) = edge else {
+                anyhow::bail!("Found no edge with letter {} from node {:?}", letter, path.end())
+            };
+
+            path.add(edge.id(), edge.target());
+        }
+
+        Ok(path)
     }
 
     pub fn new_from_sequence(start_index: NodeIndex<u32>, transitions: TransitionSequence) -> Self {
@@ -228,9 +246,9 @@ impl Path {
             }
         }
 
-        if !current_part.is_empty() {
+        // if !current_part.is_empty() {
             parts.push(current_part);
-        }
+        // }
 
         parts
     }

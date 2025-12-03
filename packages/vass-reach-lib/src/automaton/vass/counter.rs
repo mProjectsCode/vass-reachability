@@ -56,6 +56,12 @@ impl VASSCounterValuation {
         }
     }
 
+    pub fn extend(&self, other: impl IntoIterator<Item = i32>) -> Self {
+        VASSCounterValuation::new(
+            self.values.iter().cloned().chain(other).collect()
+        )
+    }
+
     pub fn dimension(&self) -> usize {
         self.values.len()
     }
@@ -206,6 +212,26 @@ impl IndexMut<usize> for VASSCounterValuation {
     }
 }
 
+impl IntoIterator for VASSCounterValuation {
+    type Item = i32;
+
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a VASSCounterUpdate {
+    type Item = &'a i32;
+
+    type IntoIter = std::slice::Iter<'a, i32>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct VASSCounterUpdate {
@@ -221,6 +247,12 @@ impl VASSCounterUpdate {
         VASSCounterUpdate {
             values: vec![0; dimension].into_boxed_slice(),
         }
+    }
+
+    pub fn extend(&self, other: impl IntoIterator<Item = i32>) -> Self {
+        VASSCounterUpdate::new(
+            self.values.iter().cloned().chain(other).collect()
+        )
     }
 
     pub fn dimension(&self) -> usize {

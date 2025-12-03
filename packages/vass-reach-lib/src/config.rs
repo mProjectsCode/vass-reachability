@@ -162,7 +162,7 @@ pub enum NodeChooser {
 
 config!(LSGConfig,
     enabled: bool [Option<bool> = true],
-    max_refinement_steps: u64 [Option<u64> = 10],
+    max_refinement_steps: u64 [Option<u64> = 20],
     node_chooser: NodeChooser [Option<NodeChooser> = NodeChooser::Random],
 );
 
