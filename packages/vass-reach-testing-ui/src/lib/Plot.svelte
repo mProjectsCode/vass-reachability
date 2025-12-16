@@ -49,18 +49,18 @@
         };
 
         for (const datum of filtered_plot_data) {
-            if (datum.times[compare_run_x] < bounds.min_x) {
-                bounds.min_x = datum.times[compare_run_x];
+            if (datum.runs[compare_run_x].ms_taken < bounds.min_x) {
+                bounds.min_x = datum.runs[compare_run_x].ms_taken;
             }
-            if (datum.times[compare_run_y] < bounds.min_y) {
-                bounds.min_y = datum.times[compare_run_y];
+            if (datum.runs[compare_run_y].ms_taken < bounds.min_y) {
+                bounds.min_y = datum.runs[compare_run_y].ms_taken;
             }
 
-            if (datum.times[compare_run_x] > bounds.max_x) {
-                bounds.max_x = datum.times[compare_run_x];
+            if (datum.runs[compare_run_x].ms_taken > bounds.max_x) {
+                bounds.max_x = datum.runs[compare_run_x].ms_taken;
             }
-            if (datum.times[compare_run_y] > bounds.max_y) {
-                bounds.max_y = datum.times[compare_run_y];
+            if (datum.runs[compare_run_y].ms_taken > bounds.max_y) {
+                bounds.max_y = datum.runs[compare_run_y].ms_taken;
             }
         }
 
@@ -79,17 +79,17 @@
 
 <div class="container flex-row">
     <span>Run on X axis:</span>
-    {#each selected.test_config.runs as run}
-        <button type="button" class:is-selected={compare_run_x === run.name} onclick={() => { compare_run_x = run.name }}>
-            {run.name}
+    {#each selected.tool_results as result}
+        <button type="button" class:is-selected={compare_run_x === result.run_name} onclick={() => { compare_run_x = result.run_name }}>
+            {result.run_name}
         </button>
     {/each}
 </div>
 <div class="container flex-row">
     <span>Run on Y axis:</span>
-    {#each selected.test_config.runs as run}
-        <button type="button" class:is-selected={compare_run_y === run.name} onclick={() => { compare_run_y = run.name }}>
-            {run.name}
+    {#each selected.tool_results as result}
+        <button type="button" class:is-selected={compare_run_y === result.run_name} onclick={() => { compare_run_y = result.run_name }}>
+            {result.run_name}
         </button>
     {/each}
 </div>
@@ -116,11 +116,14 @@
             width={plot_container_width}
             height={plot_container_height}
         >
-            <Dot data={filtered_plot_data} x={(d) => d.times[compare_run_x!]} y={(d) => d.times[compare_run_y!]} stroke={(d) => map_state_to_color(d.state)} />
+            <Dot data={filtered_plot_data} x={(d) => d.runs[compare_run_x!].ms_taken} y={(d) => d.runs[compare_run_y!].ms_taken} stroke={(d) => map_state_to_color(d.state)} />
         </Plot>
     {:else}
         <span>
             Please select tools to display above.
         </span>
     {/if}
+</div>
+<div class="container">
+
 </div>

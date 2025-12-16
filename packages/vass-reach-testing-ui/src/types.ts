@@ -43,7 +43,7 @@ export function map_state_to_color(state: PlotDatumState): string {
 
 export type PlotDatum = {
     state: PlotDatumState;
-    times: Record<string, number>;
+    runs: Record<string, SolverResultStatistic>;
     net: string;
 };
 

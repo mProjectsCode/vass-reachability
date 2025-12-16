@@ -1,7 +1,7 @@
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use vass_reach_lib::automaton::{
-    AutBuild,
-    vass::{VASS, counter::VASSCounterValuation, initialized::InitializedVASS},
+    Automaton,
+    vass::{VASS, VASSEdge, counter::VASSCounterValuation, initialized::InitializedVASS},
 };
 
 use crate::random::RandomOptions;
@@ -22,7 +22,7 @@ pub fn generate_radom_vass(
 
             let mut states = vec![];
             for _i in 0..state_count {
-                let state = vass.add_state(());
+                let state = vass.add_node(());
                 states.push(state);
             }
 
@@ -36,7 +36,7 @@ pub fn generate_radom_vass(
                     input.push(r.gen_range(-max_tokens_per_transition..=max_tokens_per_transition));
                 }
 
-                vass.add_transition(states[from], states[to], (i, input.into()));
+                vass.add_edge(states[from], states[to], VASSEdge::new(i, input.into()));
             }
 
             let initial_m: VASSCounterValuation = (0..dimension)

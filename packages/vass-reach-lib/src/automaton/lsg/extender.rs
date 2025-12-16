@@ -1,12 +1,11 @@
 use std::fmt::Debug;
 
-use petgraph::graph::NodeIndex;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use crate::{
     automaton::{
-        AutomatonNode,
-        cfg::vasscfg::VASSCFG,
+        GIndex,
+        cfg::{CFG, vasscfg::VASSCFG},
         implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
         lsg::LinearSubGraph,
         path::Path,
@@ -18,21 +17,21 @@ use crate::{
 /// Struct to iteratively extend a Linear Subgraph (LSG) by adding nodes chosen
 /// by a `NodeChooser`, while keeping the LSG unreachable.
 #[derive(Debug, Clone)]
-pub struct LSGExtender<'a, N: AutomatonNode, Chooser: NodeChooser<N>> {
+pub struct LSGExtender<'a, C: CFG, Chooser: NodeChooser<C>> {
     /// The current Linear Subgraph being extended.
-    pub lsg: LinearSubGraph<'a, N>,
+    pub lsg: LinearSubGraph<'a, C>,
     /// The previous Linear Subgraph before the last extension.
     /// This is used to backtrack if the current LSG becomes reachable.
-    pub old_lsg: Option<LinearSubGraph<'a, N>>,
+    pub old_lsg: Option<LinearSubGraph<'a, C>>,
     /// The last node added to the LSG during the extension process.
     /// We use this to blacklist nodes that lead to reachability, when we
     /// backtrack.
-    pub last_added_node: Option<NodeIndex>,
+    pub last_added_node: Option<C::NIndex>,
     /// Blacklisted nodes that should not be added to the LSG, because they led
     /// to reachability in previous attempts.
-    pub blacklist: Vec<NodeIndex>,
+    pub blacklist: Vec<C::NIndex>,
     /// Reference to the underlying CFG.
-    pub cfg: &'a VASSCFG<N>,
+    pub cfg: &'a C,
     /// Dimension of the CFG.
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
@@ -43,10 +42,10 @@ pub struct LSGExtender<'a, N: AutomatonNode, Chooser: NodeChooser<N>> {
     pub max_refinements: u64,
 }
 
-impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> {
+impl<'a, C: CFG, Chooser: NodeChooser<C>> LSGExtender<'a, C, Chooser> {
     pub fn new(
-        path: Path,
-        cfg: &'a VASSCFG<N>,
+        path: Path<C::NIndex, C::EIndex>,
+        cfg: &'a C,
         dimension: usize,
         node_chooser: Chooser,
         initial_valuation: VASSCounterValuation,
@@ -122,7 +121,7 @@ impl<'a, N: AutomatonNode, Chooser: NodeChooser<N>> LSGExtender<'a, N, Chooser> 
     }
 }
 
-impl<'a, Chooser: NodeChooser<()>> LSGExtender<'a, (), Chooser> {
+impl<'a, Chooser: NodeChooser<VASSCFG<()>>> LSGExtender<'a, VASSCFG<()>, Chooser> {
     pub fn from_cfg_product(
         path: &MultiGraphPath,
         cfg_product: &'a ImplicitCFGProduct,
@@ -143,13 +142,13 @@ impl<'a, Chooser: NodeChooser<()>> LSGExtender<'a, (), Chooser> {
     }
 }
 
-pub trait NodeChooser<N: AutomatonNode> {
+pub trait NodeChooser<C: CFG> {
     fn choose_node(
         &mut self,
-        lsg: &LinearSubGraph<N>,
+        lsg: &LinearSubGraph<C>,
         step: u64,
-        black_list: &[NodeIndex],
-    ) -> Option<NodeIndex>;
+        black_list: &[C::NIndex],
+    ) -> Option<C::NIndex>;
 }
 
 pub struct RandomNodeChooser {
@@ -168,31 +167,31 @@ impl RandomNodeChooser {
     }
 }
 
-impl<N: AutomatonNode> NodeChooser<N> for RandomNodeChooser {
+impl<C: CFG> NodeChooser<C> for RandomNodeChooser {
     fn choose_node(
         &mut self,
-        lsg: &LinearSubGraph<N>,
+        lsg: &LinearSubGraph<C>,
         _step: u64,
-        black_list: &[NodeIndex],
-    ) -> Option<NodeIndex> {
+        black_list: &[C::NIndex],
+    ) -> Option<C::NIndex> {
         // first pick a node in the lsg at random, then pick one of its neighbors at
         // random if the chosen neighbor is already in the lsg, retry a fixed
         // number of times
 
         for _ in 0..self.max_retries {
-            let node_index = NodeIndex::new(self.random.gen_range(0..lsg.cfg.state_count()));
-            if !lsg.contains_node(node_index) {
+            let node = C::NIndex::new(self.random.gen_range(0..lsg.cfg.node_count()));
+            if !lsg.contains_node(node) {
                 continue;
             }
 
-            let neighbors: Vec<_> = lsg.cfg.graph.neighbors(node_index).collect();
+            let neighbors: Vec<_> = lsg.cfg.undirected_neighbor_indices(node);
 
-            let node = neighbors
+            let selected = neighbors
                 .iter()
                 .find(|n| !lsg.contains_node(**n) && !black_list.contains(n));
 
-            if let Some(node) = node {
-                return Some(*node);
+            if let Some(selected) = selected {
+                return Some(*selected);
             }
         }
 

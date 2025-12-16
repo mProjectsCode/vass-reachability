@@ -4,7 +4,7 @@ use anyhow::Context;
 use hashbrown::HashMap;
 use rayon::{
     ThreadPoolBuilder,
-    iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator},
+    iter::{IntoParallelRefIterator, ParallelIterator},
 };
 use serde::{Deserialize, Serialize};
 use vass_reach_lib::{logger::Logger, solver::SerializableSolverResult};
@@ -94,11 +94,13 @@ fn run_tool_on_folder<T: Tool + Send + Sync>(
         .build()
         .expect("Failed to build thread pool");
 
+    let counter = std::sync::atomic::AtomicUsize::new(1);
+
     let results = thread_pol.install(|| {
         files
             .par_iter()
-            .enumerate()
-            .map(|(i, file)| {
+            .map(|file| {
+                let i = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let result = if file.path().extension().and_then(|s| s.to_str()) == Some("spec") {
                     println!(
                         "Processing file {}/{}: {}",

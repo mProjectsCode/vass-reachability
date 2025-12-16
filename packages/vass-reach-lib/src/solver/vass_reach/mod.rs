@@ -1,43 +1,52 @@
-use num::Integer;
+use petgraph::graph::{EdgeIndex, NodeIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     automaton::{
-        AutomatonEdge, AutomatonNode,
+        Automaton, AutomatonEdge, AutomatonNode, FromLetter,
+        cfg::vasscfg::VASSCFG,
         dfa::minimization::Minimizable,
-        implicit_cfg_product::{BoundedCFGDirection, ImplicitCFGProduct, path::MultiGraphPath},
+        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
         lsg::extender::{LSGExtender, RandomNodeChooser},
         ltc::{LTC, translation::LTCTranslation},
-        path::{Path, PathNReaching, path_like},
-        vass::{
-            counter::{VASSCounterIndex, VASSCounterValuation},
-            initialized::InitializedVASS,
-        },
+        vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
     config::{ModuloMode, VASSReachConfig},
     logger::{LogLevel, Logger},
     solver::{SolverResult, SolverStatus},
 };
 
+/// Enum representing the different refinement actions that the algorithm can
+/// do.
 pub enum VASSReachRefinementAction {
+    /// Increase the modulo for the given counter, depending on strategy, so
+    /// that the given value does no longer equal the final valuation modulo mu.
     IncreaseModulo(VASSCounterIndex, i32),
+    /// Increase the forward counting bound for the given counter to the given
+    /// value.
     IncreaseForwardsBound(VASSCounterIndex, u32),
+    /// Increase the backward counting bound for the given counter to the given
+    /// value.
     IncreaseBackwardsBound(VASSCounterIndex, u32),
+    /// Build some automaton (LTC, LSG, ...?) to cut away the spurious path.
     BuildAutomaton,
 }
 
+/// The different errors that can occur during VASS reachability solving.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VASSReachSolverError {
+    /// We ran out of time.
     Timeout,
+    /// We hit the maximum number of iterations.
     MaxIterationsReached,
-    MaxMuReached,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VASSReachSolverStatistics {
     pub step_count: u64,
     pub mu: Box<[i32]>,
-    pub limit: Box<[u32]>,
+    pub forwards_bound: Box<[u32]>,
+    pub backwards_bound: Box<[u32]>,
     pub time: std::time::Duration,
 }
 
@@ -45,13 +54,15 @@ impl VASSReachSolverStatistics {
     pub fn new(
         step_count: u64,
         mu: Box<[i32]>,
-        limit: Box<[u32]>,
+        forwards_bound: Box<[u32]>,
+        backwards_bound: Box<[u32]>,
         time: std::time::Duration,
     ) -> Self {
         VASSReachSolverStatistics {
             step_count,
             mu,
-            limit,
+            forwards_bound,
+            backwards_bound,
             time,
         }
     }
@@ -72,18 +83,18 @@ pub struct VASSReachSolver<'l> {
 }
 
 impl<'l> VASSReachSolver<'l> {
-    pub fn new<N: AutomatonNode, E: AutomatonEdge>(
+    pub fn new<N: AutomatonNode, E: AutomatonEdge + FromLetter>(
         ivass: &InitializedVASS<N, E>,
         config: VASSReachConfig,
         logger: Option<&'l Logger>,
     ) -> Self {
         let mut cfg = ivass.to_cfg();
-        cfg.add_failure_state(());
+        cfg.make_complete(());
         cfg = cfg.minimize();
 
-        if let Some(l) = logger {
-            l.debug(&cfg.to_graphviz(None as Option<Path>));
-        }
+        // if let Some(l) = logger {
+        //     l.debug(&cfg.to_graphviz(None as Option<Path>));
+        // }
 
         let state = ImplicitCFGProduct::new(
             ivass.dimension(),
@@ -100,191 +111,6 @@ impl<'l> VASSReachSolver<'l> {
             solver_start_time: None,
         }
     }
-
-    // pub fn solve(&mut self) -> VASSReachSolverResult {
-    //     // IDEA: on paths, for each node, try to find loops back to that node and
-    //     // include them in the ltc check. this makes the ltc check more powerful
-    //     // and can cut away more paths.
-
-    //     // IDEA: check for n-reach on each counter individually, treating other
-    // counter     // updates as empty transitions. if a counter is not
-    // n-reachable, the     // entire thing can't be n-reachable either.
-
-    //     // IDEA: if negative, cut away with automaton that counts until highest
-    // value     // reached on that counter
-
-    //     self.solver_start_time = Some(std::time::Instant::now());
-
-    //     self.print_start_banner();
-    //     if let Some(l) = self.logger {
-    //         l.empty(LogLevel::Info);
-    //     }
-
-    //     // let z_reachable = self.check_z_reach();
-    //     // if z_reachable.is_failure() {
-    //     //     return self.get_solver_result(false);
-    //     // }
-
-    //     let result;
-    //     let mut step_time;
-
-    //     loop {
-    //         self.step_count += 1;
-    //         step_time = std::time::Instant::now();
-
-    //         if let Some(l) = self.logger {
-    //             l.object("Step Info")
-    //                 .add_field("step", &self.step_count.to_string())
-    //                 .add_field("mu", &format!("{:?}", self.state.mu))
-    //                 .add_field("limit", &format!("{:?}",
-    // self.state.get_forward_bounds()))                 
-    // .add_field("intersection size", &self.state.other_cfg.len().to_string())
-    //                 .log(LogLevel::Info);
-    //         }
-
-    //         if self.max_iterations_reached() {
-    //             return self.max_iterations_reached_result();
-    //         }
-
-    //         if self.max_time_reached() {
-    //             return self.max_time_reached_result();
-    //         }
-
-    //         let reach_path = self.state.reach();
-
-    //         // if let Some(l) = self.logger {
-    //         //     l.debug(&self.cfg.to_graphviz(None as Option<Path>));
-    //         // }
-
-    //         if reach_path.is_none() {
-    //             if let Some(l) = self.logger {
-    //                 l.debug("No path found");
-    //             }
-
-    //             result = false;
-    //             break;
-    //         }
-
-    //         let path = reach_path.unwrap();
-    //         let (reaching, counters) =
-    //             path.is_n_reaching(&self.state.initial_valuation,
-    // &self.state.final_valuation);
-
-    //         // we found a path that is n-reachable => we are done
-    //         if reaching == PathNReaching::True {
-    //             if let Some(l) = self.logger {
-    //                 l.debug(&format!("Reaching: {:?}", path.to_fancy_string()));
-    //             }
-    //             result = true;
-    //             break;
-    //         }
-
-    //         if let Some(l) = self.logger {
-    //             l.debug(&format!(
-    //                 "Not reaching ({:?}): {:?}",
-    //                 counters,
-    //                 path.to_fancy_string()
-    //             ));
-    //         }
-
-    //         // ---
-    //         // Bounded counting separator
-    //         // ---
-
-    //         if let PathNReaching::Negative((index, counter)) = reaching {
-    //             if let Some(l) = self.logger {
-    //                 l.debug(&format!("Path does not stay positive at index {:?}",
-    // index));             }
-
-    //             let max_counter_value =
-    //                 path.max_counter_value(&self.state.initial_valuation,
-    // counter);
-
-    //             self.state.set_bound(counter, max_counter_value);
-    //         }
-
-    //         // ---
-    //         // LTC
-    //         // ---
-
-    //         if *self.options.get_lts().get_enabled() {
-    //             if let Some(l) = self.logger {
-    //                 l.debug("Building and checking LTC");
-    //             }
-
-    //             if let Some(r) = self.ltc(&path) {
-    //                 result = r;
-    //                 break;
-    //             }
-    //         }
-
-    //         // ---
-    //         // LSG
-    //         // ---
-
-    //         if *self.options.get_lsg().get_enabled() {
-    //             if let Some(l) = self.logger {
-    //                 l.debug("Building and checking LSG");
-    //             }
-
-    //             let mut extender = LSGExtender::from_cfg_product(
-    //                 &path,
-    //                 &self.state,
-    //                 RandomNodeChooser::new(5, self.step_count as u64),
-    //                 *self.options.get_lsg().get_max_refinement_steps(),
-    //             );
-    //             let mut cfg = extender.run();
-    //             cfg.invert_mut();
-    //             self.state.add_cfg(cfg);
-    //         }
-
-    //         // ---
-    //         // mu
-    //         // ---
-
-    //         for i in VASSCounterIndex::iter_counters(self.state.dimension) {
-    //             let max_value =
-    // path.max_counter_value(&self.state.initial_valuation, i);             let
-    // mu = self.state.get_mu(i) as u32;
-
-    //             if max_value > 2 * mu {
-    //                 let new_mu = match self.options.get_modulo().get_mode() {
-    //                     ModuloMode::Increment => mu + 1,
-    //                     ModuloMode::LeastCommonMultiple => mu.lcm(&(max_value +
-    // 1)),                 };
-
-    //                 if let Some(l) = self.logger {
-    //                     l.debug(&format!(
-    //                         "Counter {:?} max value {:?} is more than double mu
-    // {:?}, increasing mu to {:?}",                         i, max_value, mu,
-    // new_mu                     ));
-    //                 }
-
-    //                 self.state.set_mu(i, new_mu as i32);
-    //             }
-    //         }
-
-    //         if let Some(l) = self.logger {
-    //             l.debug(&format!("Step time: {:?}", step_time.elapsed()));
-    //             l.empty(LogLevel::Info);
-    //         }
-    //     }
-
-    //     if let Some(l) = self.logger {
-    //         l.debug(&format!("Step time: {:?}", step_time.elapsed()));
-    //         l.empty(LogLevel::Info);
-    //     }
-
-    //     if let Some(l) = self.logger {
-    //         l.empty(LogLevel::Info);
-    //     }
-
-    //     let statistics = self.get_solver_result(result);
-
-    //     self.print_end_banner(&statistics);
-
-    //     statistics
-    // }
 
     pub fn solve(&mut self) -> VASSReachSolverResult {
         self.solver_start_time = Some(std::time::Instant::now());
@@ -307,6 +133,8 @@ impl<'l> VASSReachSolver<'l> {
         let mut step_time;
 
         loop {
+            self.step_count += 1;
+
             self.max_iterations_reached()?;
             self.max_time_reached()?;
 
@@ -328,27 +156,127 @@ impl<'l> VASSReachSolver<'l> {
                     .log(LogLevel::Info);
             }
 
+            // Run reachability on the current approximation
             let reach_path = self.state.reach();
 
+            // Since we over-approximate reachability, not finding a path means there can't
+            // be a real one
             let Some(path) = reach_path else {
                 if let Some(l) = self.logger {
-                    l.debug("No path in approximation found. Instance is unreachable.");
+                    l.info("No path in approximation found. Instance is unreachable.");
                 }
 
                 return Err(SolverStatus::False(()));
             };
 
-            let refinement_action = self.select_refinement_action(&path);
+            // We check if we by change found a real N-reaching path
+            if path.is_n_reaching(&self.state.initial_valuation, &self.state.final_valuation) {
+                if let Some(l) = self.logger {
+                    l.info(&format!(
+                        "Found N-reaching path: {:?}",
+                        path.to_fancy_string()
+                    ));
+                }
 
-            match refinement_action {
-                VASSReachRefinementAction::IncreaseModulo(counter_index, x) => todo!(),
+                return Err(SolverStatus::True(()));
+            }
+
+            if let Some(l) = self.logger {
+                l.debug(&format!("Spurious path: {:?}", path.to_fancy_string()));
+            }
+
+            // Now we know that the path is spurious, we need to refine our approximation.
+            // We select a refinement action based on the path.
+            match self.select_refinement_action(&path) {
+                VASSReachRefinementAction::IncreaseModulo(counter_index, x) => {
+                    let current_mu = self.state.get_mu(counter_index);
+                    let new_mu = match self.options.get_modulo().get_mode() {
+                        ModuloMode::Increment => current_mu + 1,
+                        ModuloMode::LeastCommonMultiple => {
+                            let mut new_mu = current_mu;
+                            while x.rem_euclid(new_mu)
+                                == self.state.final_valuation[counter_index].rem_euclid(new_mu)
+                            {
+                                new_mu += current_mu;
+                            }
+                            new_mu
+                        }
+                    };
+                    self.state.set_mu(counter_index, new_mu);
+
+                    if let Some(l) = self.logger {
+                        l.debug(&format!(
+                            "Increasing mu for counter {:?} from {:?} to {:?}",
+                            counter_index, current_mu, new_mu
+                        ));
+                    }
+                }
                 VASSReachRefinementAction::IncreaseForwardsBound(counter_index, bound) => {
-                    self.state.set_forward_bound(counter_index, bound)
+                    self.state.set_forward_bound(counter_index, bound);
+
+                    if let Some(l) = self.logger {
+                        l.debug(&format!(
+                            "Increasing forward bound for counter {:?} to {:?}",
+                            counter_index, bound
+                        ));
+                    }
                 }
                 VASSReachRefinementAction::IncreaseBackwardsBound(counter_index, bound) => {
-                    self.state.set_backward_bound(counter_index, bound)
+                    self.state.set_backward_bound(counter_index, bound);
+
+                    if let Some(l) = self.logger {
+                        l.debug(&format!(
+                            "Increasing backward bound for counter {:?} to {:?}",
+                            counter_index, bound
+                        ));
+                    }
                 }
-                VASSReachRefinementAction::BuildAutomaton => todo!(),
+                VASSReachRefinementAction::BuildAutomaton => {
+                    let ltc_automaton = if *self.options.get_lts().get_enabled() {
+                        if let Some(l) = self.logger {
+                            l.debug("Building and checking LTC");
+                        }
+
+                        Some(self.ltc(&path)?)
+                    } else {
+                        None
+                    };
+
+                    let lsg_automaton = if *self.options.get_lsg().get_enabled() {
+                        if let Some(l) = self.logger {
+                            l.debug("Building and checking LSG");
+                        }
+
+                        let mut extender = LSGExtender::from_cfg_product(
+                            &path,
+                            &self.state,
+                            RandomNodeChooser::new(10, self.step_count as u64),
+                            *self.options.get_lsg().get_max_refinement_steps(),
+                        );
+                        let mut cfg = extender.run();
+                        cfg.invert_mut();
+                        Some(cfg)
+                    } else {
+                        None
+                    };
+
+                    match (ltc_automaton, lsg_automaton) {
+                        (Some(ltc_cfg), Some(lsg_cfg)) => {
+                            // We would expect both automata to be somewhat similar, they are built
+                            // from the same path at least. So we would
+                            // expect their intersection to not blow up too much.
+                            let product = ltc_cfg.intersect(&lsg_cfg);
+                            self.state.add_cfg(product);
+                        }
+                        (Some(ltc_cfg), None) => {
+                            self.state.add_cfg(ltc_cfg);
+                        }
+                        (None, Some(lsg_cfg)) => {
+                            self.state.add_cfg(lsg_cfg);
+                        }
+                        (None, None) => {}
+                    }
+                }
             }
 
             if let Some(l) = self.logger {
@@ -358,22 +286,49 @@ impl<'l> VASSReachSolver<'l> {
         }
     }
 
+    /// Selects a refinement action based on the given spurious path.
     fn select_refinement_action(&self, path: &MultiGraphPath) -> VASSReachRefinementAction {
+        let path_final_valuation = path.get_path_final_valuation(&self.state.initial_valuation);
+
+        if let Some(l) = self.logger {
+            l.debug(&format!("Path final valuation: {:?}", path_final_valuation));
+        }
+
         // we find a counter that turns negative
         if let Some((counter, path_index)) =
             path.find_negative_counter_forward(&self.state.initial_valuation)
         {
             let segment = path.slice(0..path_index);
             // if the path before wasn't pumped, we increase the bound we count up to, to
-            // cover this path TODO: maybe we need a better pumping detection.
+            // cover this path
+
+            // TODO: maybe we need a better pumping detection.
             // We should probably look before and after the position.
-            if !segment.visits_node_multiple_times(&self.state.cfg, 2) {
-                let max_value = segment.max_counter_value(&self.state.initial_valuation, counter);
-                return VASSReachRefinementAction::IncreaseForwardsBound(
-                    counter,
-                    i32::min(1, max_value) as u32,
-                );
+            // TODO: look into the full product, compare valuations to see if they got
+            // bigger
+
+            let current_bound = self.state.get_forward_bound(counter);
+            let max_value = segment.max_counter_value(&self.state.initial_valuation, counter);
+            let max_value = i32::max(1, max_value) as u32;
+
+            // if let Some(l) = self.logger {
+            //     l.debug(&format!("Segment: {}", segment.to_fancy_string()));
+
+            //     l.debug(&format!(
+            //         "Found negative counter: {:?} at {}, max value in segment: {:?},
+            // current bound: {:?}",         counter,
+            //         path_index,
+            //         max_value,
+            //         current_bound
+            //     ));
+            // }
+
+            if current_bound < max_value {
+                return VASSReachRefinementAction::IncreaseForwardsBound(counter, max_value);
             }
+
+            // if !segment.visits_node_multiple_times(&self.state.cfg, 2) {
+            // }
         }
 
         // same as above, but from the back of the path
@@ -381,17 +336,26 @@ impl<'l> VASSReachSolver<'l> {
             path.find_negative_counter_backward(&self.state.final_valuation)
         {
             let segment = path.slice(path_index..path.len());
-            if !segment.visits_node_multiple_times(&self.state.cfg, 2) {
-                let max_value =
-                    segment.max_counter_value_from_back(&self.state.final_valuation, counter);
-                return VASSReachRefinementAction::IncreaseBackwardsBound(
-                    counter,
-                    i32::min(1, max_value) as u32,
-                );
+
+            let current_bound = self.state.get_backward_bound(counter);
+            let max_value =
+                segment.max_counter_value_from_back(&self.state.initial_valuation, counter);
+            let max_value = i32::max(1, max_value) as u32;
+            if current_bound < max_value {
+                return VASSReachRefinementAction::IncreaseForwardsBound(counter, max_value);
             }
+
+            // if !segment.visits_node_multiple_times(&self.state.cfg, 2) {
+            // let max_value =
+            // segment.max_counter_value_from_back(&self.state.final_valuation,
+            // counter);
+            // return VASSReachRefinementAction::IncreaseBackwardsBound(
+            //     counter,
+            //     i32::min(1, max_value) as u32,
+            // );
+            // }
         }
 
-        let path_final_valuation = path.get_path_final_valuation(&self.state.initial_valuation);
         if let Some((mismatch, difference)) =
             path_final_valuation.find_mismatch(&self.state.final_valuation)
         {
@@ -416,7 +380,8 @@ impl<'l> VASSReachSolver<'l> {
         VASSReachRefinementAction::BuildAutomaton
     }
 
-    fn ltc(&mut self, path: &MultiGraphPath) -> Option<bool> {
+    /// Builds and checks the LTC automaton for the given path.
+    fn ltc(&self, path: &MultiGraphPath) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let translation = LTCTranslation::from_multi_graph_path(&self.state, &path);
         let ltc = translation.to_ltc(&self.state.cfg, self.state.dimension);
 
@@ -427,7 +392,11 @@ impl<'l> VASSReachSolver<'l> {
         }
     }
 
-    fn ltc_relaxed(&mut self, ltc: LTC, translation: LTCTranslation) -> Option<bool> {
+    fn ltc_relaxed(
+        &self,
+        ltc: LTC,
+        translation: LTCTranslation<NodeIndex, EdgeIndex>,
+    ) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let result_relaxed =
             ltc.reach_n_relaxed(&self.state.initial_valuation, &self.state.final_valuation);
 
@@ -442,14 +411,15 @@ impl<'l> VASSReachSolver<'l> {
                 l.debug("LTC is not relaxed reachable");
             }
 
-            self.state
-                .add_cfg(translation.to_dfa(&self.state.cfg, self.state.dimension, true));
-
-            None
+            Ok(translation.to_dfa(&self.state.cfg, self.state.dimension, true))
         }
     }
 
-    fn ltc_strict(&mut self, ltc: LTC, translation: LTCTranslation) -> Option<bool> {
+    fn ltc_strict(
+        &self,
+        ltc: LTC,
+        translation: LTCTranslation<NodeIndex, EdgeIndex>,
+    ) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let result_strict = ltc.reach_n(&self.state.initial_valuation, &self.state.final_valuation);
 
         if result_strict.is_success() {
@@ -457,19 +427,18 @@ impl<'l> VASSReachSolver<'l> {
                 l.debug("LTC is N-reachable");
             }
 
-            Some(true)
+            Err(VASSReachSolverStatus::True(()))
         } else {
             if let Some(l) = self.logger {
                 l.debug("LTC is not N-reachable");
             }
 
-            self.state
-                .add_cfg(translation.to_dfa(&self.state.cfg, self.state.dimension, false));
-
-            None
+            Ok(translation.to_dfa(&self.state.cfg, self.state.dimension, false))
         }
     }
 
+    /// Checks if the maximum number of iterations has been reached.
+    /// If so, returns an `Err` value.
     fn max_iterations_reached(&self) -> Result<(), VASSReachSolverStatus> {
         if self
             .options
@@ -485,13 +454,13 @@ impl<'l> VASSReachSolver<'l> {
         Ok(())
     }
 
+    /// Checks if the time limit has been reached.
+    /// If so, returns an `Err` value.
     fn max_time_reached(&self) -> Result<(), VASSReachSolverStatus> {
-        let exceeded = match (self.get_solver_time(), self.options.get_timeout()) {
-            (Some(t), Some(max_time)) => &t > max_time,
-            _ => false,
-        };
-
-        if exceeded {
+        if let Some(t) = self.get_solver_time()
+            && let Some(max_time) = self.options.get_timeout()
+            && &t > max_time
+        {
             return Err(SolverStatus::Unknown(VASSReachSolverError::Timeout));
         }
 
@@ -503,6 +472,7 @@ impl<'l> VASSReachSolver<'l> {
             self.step_count,
             self.state.mu.clone(),
             self.state.get_forward_bounds(),
+            self.state.get_backward_bounds(),
             self.get_solver_time().unwrap_or_default(),
         )
     }
@@ -515,7 +485,7 @@ impl<'l> VASSReachSolver<'l> {
         if let Some(l) = self.logger {
             l.object("Solver Info")
                 .add_field("dimension", &self.state.dimension.to_string())
-                .add_field("cfg.states", &self.state.cfg.state_count().to_string())
+                .add_field("cfg.states", &self.state.cfg.node_count().to_string())
                 .add_field(
                     "cfg.transitions",
                     &self.state.cfg.graph.edge_count().to_string(),
@@ -529,7 +499,14 @@ impl<'l> VASSReachSolver<'l> {
             l.object("Result")
                 .add_field("result", &format!("{:?}", result.status))
                 .add_field("mu", &format!("{:?}", &result.statistics.mu))
-                .add_field("limit", &format!("{:?}", &result.statistics.limit))
+                .add_field(
+                    "forwards bound",
+                    &format!("{:?}", &result.statistics.forwards_bound),
+                )
+                .add_field(
+                    "backwards bound",
+                    &format!("{:?}", &result.statistics.backwards_bound),
+                )
                 .add_field("step count", &result.statistics.step_count.to_string())
                 .add_field("time", &format!("{:?}", result.statistics.time))
                 .log(LogLevel::Info);

@@ -1,23 +1,12 @@
 use std::{fmt::Display, vec::IntoIter};
 
-use petgraph::{
-    graph::{EdgeIndex, NodeIndex},
-    visit::EdgeRef,
-};
-
 use crate::automaton::{
-    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
-    cfg::{
-        CFG,
-        update::{CFGCounterUpdatable, CFGCounterUpdate},
-        vasscfg::{VASSCFG, build_bounded_counting_cfg},
-    },
-    dfa::{DFA, node::DfaNode},
+    Automaton, GIndex, InitializedAutomaton,
+    cfg::{CFG, update::CFGCounterUpdate},
     path::{
-        path_like::{EdgeListLike, PathLike},
+        path_like::{EdgeIndexList, IndexPath},
         transition_sequence::TransitionSequence,
     },
-    vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
 pub mod parikh_image;
@@ -25,24 +14,37 @@ pub mod path_like;
 pub mod transition_sequence;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Path {
-    transitions: TransitionSequence,
-    start: NodeIndex<u32>,
+pub struct Path<NIndex: GIndex, EIndex: GIndex> {
+    transitions: TransitionSequence<NIndex, EIndex>,
+    start: NIndex,
 }
 
-impl Path {
-    pub fn new(start_index: NodeIndex<u32>) -> Self {
+impl<NIndex: GIndex, EIndex: GIndex> Path<NIndex, EIndex> {
+    pub fn new(start_index: NIndex) -> Self {
         Path {
             transitions: TransitionSequence::new(),
             start: start_index,
         }
     }
 
-    pub fn from_edges<'a, N: AutomatonNode, E: AutomatonEdge>(
-        start_index: NodeIndex<u32>,
-        edges: impl IntoIterator<Item = &'a EdgeIndex<u32>>,
-        graph: &DFA<N, E>,
+    pub fn new_from_sequence(
+        start_index: NIndex,
+        transitions: TransitionSequence<NIndex, EIndex>,
     ) -> Self {
+        Path {
+            transitions,
+            start: start_index,
+        }
+    }
+
+    pub fn from_edges<'a>(
+        start_index: NIndex,
+        edges: impl IntoIterator<Item = &'a EIndex>,
+        graph: &impl Automaton<NIndex = NIndex, EIndex = EIndex>,
+    ) -> Self
+    where
+        EIndex: 'a,
+    {
         let mut path = Path::new(start_index);
 
         path.take_edges(edges, graph);
@@ -50,36 +52,31 @@ impl Path {
         path
     }
 
-    pub fn from_word<'a>(
-        word: impl IntoIterator<Item = &'a CFGCounterUpdate>,
-        cfg: &impl CFG,
-    ) -> anyhow::Result<Self> {
-        let mut path = Path::new(cfg.get_start());
+    pub fn from_word<'a, A: InitializedAutomaton<NIndex = NIndex, EIndex = EIndex>>(
+        word: impl IntoIterator<Item = &'a A::E>,
+        graph: &A,
+    ) -> anyhow::Result<Self>
+    where
+        A::E: 'a,
+    {
+        let mut path = Path::new(graph.get_initial());
 
         for letter in word {
-            let edge = cfg
-                .get_graph()
-                .edges(path.end())
-                .find(|e| cfg.edge_update(e.id()) == *letter);
+            let edge = graph
+                .outgoing_edge_indices(path.end())
+                .find(|e| graph.get_edge_unchecked(*e) == letter);
             let Some(edge) = edge else {
                 anyhow::bail!(
-                    "Found no edge with letter {} from node {:?}",
+                    "Found no edge with letter {:?} from node {:?}",
                     letter,
                     path.end()
                 )
             };
 
-            path.add(edge.id(), edge.target());
+            path.add(edge, graph.edge_target_unchecked(edge));
         }
 
         Ok(path)
-    }
-
-    pub fn new_from_sequence(start_index: NodeIndex<u32>, transitions: TransitionSequence) -> Self {
-        Path {
-            transitions,
-            start: start_index,
-        }
     }
 
     /// Checks if a path has a loop by checking if an edge in taken twice
@@ -87,77 +84,21 @@ impl Path {
         self.transitions.has_loop()
     }
 
-    pub fn start(&self) -> NodeIndex<u32> {
+    pub fn start(&self) -> NIndex {
         self.start
     }
 
-    pub fn end(&self) -> NodeIndex<u32> {
+    pub fn end(&self) -> NIndex {
         self.transitions.end().unwrap_or(self.start)
     }
 
     /// Whether the path contains a specific node.
     /// This does **not** check the start node.
-    pub fn transitions_contain_node(&self, node: NodeIndex<u32>) -> bool {
+    pub fn transitions_contain_node(&self, node: NIndex) -> bool {
         self.transitions.contains_node(node)
     }
 
-    pub fn to_cfg(&self, cfg: impl CFG, trap: bool, dimension: usize) -> VASSCFG<()> {
-        let mut dfa = DFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
-
-        let mut current = dfa.add_state(DfaNode::default());
-        dfa.set_start(current);
-
-        for (edge, _) in &self.transitions {
-            let new = dfa.add_state(DfaNode::default());
-            dfa.add_transition(current, new, cfg.edge_update(*edge));
-            current = new;
-        }
-
-        dfa.graph[current].accepting = true;
-
-        if trap {
-            for letter in dfa.alphabet().clone() {
-                dfa.add_transition(current, current, letter);
-            }
-        }
-
-        dfa.add_failure_state(());
-        dfa.invert_mut();
-
-        dfa
-    }
-
-    pub fn is_n_reaching(
-        &self,
-        cfg: impl CFG,
-        initial_valuation: &VASSCounterValuation,
-        final_valuation: &VASSCounterValuation,
-    ) -> (PathNReaching, VASSCounterValuation) {
-        let mut counters = initial_valuation.clone();
-        let mut negative_index = None;
-
-        for (i, edge) in self.iter().enumerate() {
-            counters.apply_cfg_update(cfg.edge_update(edge.0));
-
-            let negative_counter = counters.find_negative_counter();
-            if negative_index.is_none()
-                && let Some(counter) = negative_counter
-            {
-                negative_index = Some((i, counter));
-            }
-        }
-
-        if let Some(index) = negative_index {
-            (PathNReaching::Negative(index), counters)
-        } else {
-            (
-                PathNReaching::from_bool(&counters == final_valuation),
-                counters,
-            )
-        }
-    }
-
-    pub fn split_at_node(self, node: NodeIndex<u32>) -> Vec<Self> {
+    pub fn split_at_node(self, node: NIndex) -> Vec<Self> {
         if self.transitions.is_empty() || !self.contains_node(node) {
             return vec![self];
         }
@@ -181,7 +122,7 @@ impl Path {
         parts
     }
 
-    pub fn split_at_nodes(self, nodes: &[NodeIndex<u32>]) -> Vec<Self> {
+    pub fn split_at_nodes(self, nodes: &[NIndex]) -> Vec<Self> {
         // for splitting to have an effect, the path needs to be non-empty and contain
         // at least one of the nodes
         if self.transitions.is_empty() || nodes.iter().all(|n| !self.contains_node(*n)) {
@@ -212,14 +153,14 @@ impl Path {
 
     pub fn iter_cfg_updates<'a>(
         &'a self,
-        cfg: &'a impl CFG,
+        cfg: &'a impl CFG<NIndex = NIndex, EIndex = EIndex>,
     ) -> impl Iterator<Item = CFGCounterUpdate> + 'a {
         self.transitions
             .iter()
-            .map(move |(edge, _)| cfg.edge_update(*edge))
+            .map(move |(edge, _)| *cfg.get_edge_unchecked(*edge))
     }
 
-    pub fn to_fancy_string(&self, get_edge_string: impl Fn(EdgeIndex) -> String) -> String {
+    pub fn to_fancy_string(&self, get_edge_string: impl Fn(EIndex) -> String) -> String {
         format!(
             "{:?} {}",
             self.start.index(),
@@ -237,48 +178,48 @@ impl Path {
     }
 }
 
-impl EdgeListLike for Path {
-    fn iter_edges(&self) -> impl Iterator<Item = EdgeIndex<u32>> {
+impl<NIndex: GIndex, EIndex: GIndex> EdgeIndexList<NIndex, EIndex> for Path<NIndex, EIndex> {
+    fn iter_edges(&self) -> impl Iterator<Item = EIndex> {
         self.transitions.iter_edges()
     }
 
-    fn has_edge(&self, edge: EdgeIndex<u32>) -> bool {
+    fn has_edge(&self, edge: EIndex) -> bool {
         self.transitions.has_edge(edge)
-    }
-
-    fn get_edge_label(&self, edge: EdgeIndex<u32>) -> String {
-        edge.index().to_string()
     }
 }
 
-impl PathLike for Path {
-    fn iter_nodes(&self) -> impl Iterator<Item = NodeIndex<u32>> {
+impl<NIndex: GIndex, EIndex: GIndex> IndexPath<NIndex, EIndex> for Path<NIndex, EIndex> {
+    fn iter_nodes(&self) -> impl Iterator<Item = NIndex> {
         vec![self.start]
             .into_iter()
             .chain(self.transitions.iter_nodes())
     }
 
-    fn has_node(&self, node: NodeIndex<u32>) -> bool {
+    fn has_node(&self, node: NIndex) -> bool {
         self.start == node || self.transitions.has_node(node)
     }
 
-    fn get_node_label(&self, node: NodeIndex<u32>) -> String {
-        node.index().to_string()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &(EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (EIndex, NIndex)>
+    where
+        EIndex: 'a,
+        NIndex: 'a,
+    {
         self.transitions.iter()
     }
 
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut (EIndex, NIndex)>
+    where
+        EIndex: 'a,
+        NIndex: 'a,
+    {
         self.transitions.iter_mut()
     }
 
-    fn first(&self) -> Option<&(EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn first(&self) -> Option<&(EIndex, NIndex)> {
         self.transitions.first()
     }
 
-    fn last(&self) -> Option<&(EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn last(&self) -> Option<&(EIndex, NIndex)> {
         self.transitions.last()
     }
 
@@ -303,7 +244,7 @@ impl PathLike for Path {
         }
     }
 
-    fn add_pair(&mut self, edge: (EdgeIndex<u32>, NodeIndex<u32>)) {
+    fn add_pair(&mut self, edge: (EIndex, NIndex)) {
         self.transitions.add_pair(edge);
     }
 
@@ -315,62 +256,34 @@ impl PathLike for Path {
         self.transitions.is_empty()
     }
 
-    fn contains_node(&self, node: NodeIndex<u32>) -> bool {
+    fn contains_node(&self, node: NIndex) -> bool {
         self.start == node || self.transitions.contains_node(node)
     }
 
-    fn get(&self, index: usize) -> (EdgeIndex<u32>, NodeIndex<u32>) {
+    fn get(&self, index: usize) -> (EIndex, NIndex) {
         self.transitions.get(index)
     }
 
-    fn get_node(&self, index: usize) -> NodeIndex<u32> {
+    fn get_node(&self, index: usize) -> NIndex {
         self.transitions.get_node(index)
     }
 
-    fn get_edge(&self, index: usize) -> EdgeIndex<u32> {
+    fn get_edge(&self, index: usize) -> EIndex {
         self.transitions.get_edge(index)
     }
 }
 
-impl Display for Path {
+impl<NIndex: GIndex, EIndex: GIndex> Display for Path<NIndex, EIndex> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} {}", self.start.index(), self.transitions)
     }
 }
 
-impl IntoIterator for Path {
-    type Item = (EdgeIndex<u32>, NodeIndex<u32>);
-    type IntoIter = IntoIter<(EdgeIndex<u32>, NodeIndex<u32>)>;
+impl<NIndex: GIndex, EIndex: GIndex> IntoIterator for Path<NIndex, EIndex> {
+    type Item = (EIndex, NIndex);
+    type IntoIter = IntoIter<(EIndex, NIndex)>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.transitions.into_iter()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PathNReaching {
-    Negative((usize, VASSCounterIndex)),
-    False,
-    True,
-}
-
-impl PathNReaching {
-    pub fn is_true(&self) -> bool {
-        matches!(self, PathNReaching::True)
-    }
-
-    pub fn is_false(&self) -> bool {
-        matches!(self, PathNReaching::False)
-    }
-
-    pub fn is_negative(&self) -> bool {
-        matches!(self, PathNReaching::Negative(_))
-    }
-
-    pub fn from_bool(b: bool) -> Self {
-        match b {
-            true => PathNReaching::True,
-            false => PathNReaching::False,
-        }
     }
 }

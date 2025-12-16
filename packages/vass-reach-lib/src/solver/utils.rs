@@ -1,25 +1,26 @@
 use itertools::Itertools;
-use petgraph::graph::EdgeIndex;
 use z3::{
     Model,
     ast::{Bool, Int},
 };
 
-use crate::automaton::{cfg::CFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage};
+use crate::automaton::{
+    GIndex, cfg::CFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage,
+};
 
-pub fn parikh_image_from_edge_map<'a>(
-    edge_map: &OptionIndexMap<EdgeIndex, Int<'a>>,
+pub fn parikh_image_from_edge_map<'a, EIndex: GIndex>(
+    edge_map: &OptionIndexMap<EIndex, Int<'a>>,
     model: &Model<'a>,
-) -> ParikhImage {
+) -> ParikhImage<EIndex> {
     ParikhImage::new(
         edge_map.map(|var| model.get_const_interp(var).unwrap().as_u64().unwrap() as u32),
     )
 }
 
-pub fn forbid_parikh_image<'a>(
-    parikh_image: &ParikhImage,
-    cfg: &impl CFG,
-    edge_map: &OptionIndexMap<EdgeIndex, Int<'a>>,
+pub fn forbid_parikh_image<'a, C: CFG>(
+    parikh_image: &ParikhImage<C::EIndex>,
+    cfg: &C,
+    edge_map: &OptionIndexMap<C::EIndex, Int<'a>>,
     solver: &z3::Solver<'a>,
     ctx: &'a z3::Context,
 ) {

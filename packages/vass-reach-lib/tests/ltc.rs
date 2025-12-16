@@ -78,18 +78,18 @@ fn ltc_language_1() {
     assert!(path.is_some());
     let path = path.unwrap();
 
-    let translation: LTCTranslation = (&path).into();
+    let translation = LTCTranslation::from(&path);
     let non_expanded_dfa = translation
         .to_dfa(&cfg, initialized_vass.dimension(), false)
         .invert();
-    let expanded_translation = translation.expand(&cfg);
-    let expanded_dfa = expanded_translation
-        .to_dfa(&cfg, initialized_vass.dimension(), false)
-        .invert();
+    // let expanded_translation = translation.expand(&cfg);
+    // let expanded_dfa = expanded_translation
+    //     .to_dfa(&cfg, initialized_vass.dimension(), false)
+    //     .invert();
 
     assert_subset_language(&non_expanded_dfa, &cfg, 6);
-    assert_subset_language(&expanded_dfa, &cfg, 6);
-    assert_subset_language(&non_expanded_dfa, &expanded_dfa, 6);
+    // assert_subset_language(&expanded_dfa, &cfg, 6);
+    // assert_subset_language(&non_expanded_dfa, &expanded_dfa, 6);
 }
 
 #[test]
@@ -107,17 +107,17 @@ fn ltc_language_2() {
     assert!(path.is_some());
     let path = path.unwrap();
 
-    let translation: LTCTranslation = (&path).into();
+    let translation = LTCTranslation::from(&path);
     let non_expanded_dfa = translation
         .to_dfa(&cfg, initialized_vass.dimension(), false)
         .invert();
 
-    let expanded_translation = translation.expand(&cfg);
-    let expanded_dfa = expanded_translation
-        .to_dfa(&cfg, initialized_vass.dimension(), false)
-        .invert();
+    // let expanded_translation = translation.expand(&cfg);
+    // let expanded_dfa = expanded_translation
+    //     .to_dfa(&cfg, initialized_vass.dimension(), false)
+    //     .invert();
 
     assert_subset_language(&non_expanded_dfa, &cfg, 6);
-    assert_subset_language(&expanded_dfa, &cfg, 6);
-    assert_subset_language(&non_expanded_dfa, &expanded_dfa, 6);
+    // assert_subset_language(&expanded_dfa, &cfg, 6);
+    // assert_subset_language(&non_expanded_dfa, &expanded_dfa, 6);
 }

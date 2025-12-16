@@ -1,12 +1,12 @@
 use petgraph::graph::NodeIndex;
 use vass_reach_lib::{
     automaton::{
-        AutBuild, Automaton,
+        Automaton, InitializedAutomaton, Language,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
-        lsg::{LinearSubGraph, extender},
+        lsg::LinearSubGraph,
         path::Path,
-        vass::VASS,
+        vass::{VASS, VASSEdge},
     },
     cfg_dec, cfg_inc,
     solver::lsg_reach::LSGReachSolverOptions,
@@ -16,15 +16,15 @@ use vass_reach_lib::{
 #[test]
 fn lgs_1() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
-    let s0 = cfg.add_state(DfaNode::non_accepting(()));
-    let s1 = cfg.add_state(DfaNode::non_accepting(()));
-    let s2 = cfg.add_state(DfaNode::non_accepting(()));
-    let s3 = cfg.add_state(DfaNode::accepting(()));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
 
-    let e1 = cfg.add_transition(s0, s1, cfg_inc!(0));
-    let _e2 = cfg.add_transition(s1, s2, cfg_inc!(0));
-    let _e3 = cfg.add_transition(s2, s1, cfg_dec!(0));
-    let e4 = cfg.add_transition(s1, s3, cfg_dec!(0));
+    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let _e2 = cfg.add_edge(s1, s2, cfg_inc!(0));
+    let _e3 = cfg.add_edge(s2, s1, cfg_dec!(0));
+    let e4 = cfg.add_edge(s1, s3, cfg_dec!(0));
 
     let path = Path::from_edges(s0, &[e1, e4], &cfg);
 
@@ -84,18 +84,18 @@ fn lgs_1() {
 #[test]
 fn lgs_2() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
-    let s0 = cfg.add_state(DfaNode::non_accepting(()));
-    let s1 = cfg.add_state(DfaNode::non_accepting(()));
-    let s2 = cfg.add_state(DfaNode::non_accepting(()));
-    let s3 = cfg.add_state(DfaNode::non_accepting(()));
-    let s4 = cfg.add_state(DfaNode::accepting(()));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::non_accepting(()));
+    let s4 = cfg.add_node(DfaNode::accepting(()));
 
     // direct path "s0 -> s1 -> s4" with a loop in s1 "s1 -> s2 -> s3 -> s1"
-    let e1 = cfg.add_transition(s0, s1, cfg_inc!(0));
-    let e2 = cfg.add_transition(s1, s4, cfg_dec!(0));
-    let _e3 = cfg.add_transition(s1, s2, cfg_inc!(0));
-    let _e4 = cfg.add_transition(s2, s3, cfg_inc!(0));
-    let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
+    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let e2 = cfg.add_edge(s1, s4, cfg_dec!(0));
+    let _e3 = cfg.add_edge(s1, s2, cfg_inc!(0));
+    let _e4 = cfg.add_edge(s2, s3, cfg_inc!(0));
+    let _e5 = cfg.add_edge(s3, s1, cfg_dec!(0));
 
     let path = Path::from_edges(s0, &[e1, e2], &cfg);
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
@@ -169,26 +169,26 @@ fn lsg_3() {
     // Note: this test is from a crash
     let mut vass = VASS::new(2, (0..10).collect());
 
-    let s0 = vass.add_state(());
-    let s1 = vass.add_state(());
-    let s2 = vass.add_state(());
-    let s3 = vass.add_state(());
+    let s0 = vass.add_node(());
+    let s1 = vass.add_node(());
+    let s2 = vass.add_node(());
+    let s3 = vass.add_node(());
 
-    let _e0 = vass.add_transition(s0, s1, (0, vec![6, 0].into()));
+    let _e0 = vass.add_edge(s0, s1, VASSEdge::new(0, vec![6, 0].into()));
 
-    let _e1 = vass.add_transition(s1, s1, (1, vec![1, 1].into()));
-    let _e2 = vass.add_transition(s1, s1, (2, vec![-1, -1].into()));
-    let _e3 = vass.add_transition(s1, s1, (3, vec![1, 0].into()));
+    let _e1 = vass.add_edge(s1, s1, VASSEdge::new(1, vec![1, 1].into()));
+    let _e2 = vass.add_edge(s1, s1, VASSEdge::new(2, vec![-1, -1].into()));
+    let _e3 = vass.add_edge(s1, s1, VASSEdge::new(3, vec![1, 0].into()));
 
-    let _e4 = vass.add_transition(s1, s2, (4, vec![0, 0].into()));
+    let _e4 = vass.add_edge(s1, s2, VASSEdge::new(4, vec![0, 0].into()));
 
-    let _e5 = vass.add_transition(s2, s2, (5, vec![1, 2].into()));
-    let _e6 = vass.add_transition(s2, s2, (6, vec![-1, -2].into()));
+    let _e5 = vass.add_edge(s2, s2, VASSEdge::new(5, vec![1, 2].into()));
+    let _e6 = vass.add_edge(s2, s2, VASSEdge::new(6, vec![-1, -2].into()));
 
-    let _e7 = vass.add_transition(s2, s3, (7, vec![0, 0].into()));
+    let _e7 = vass.add_edge(s2, s3, VASSEdge::new(7, vec![0, 0].into()));
 
-    let _e8 = vass.add_transition(s3, s3, (8, vec![0, 1].into()));
-    let _e9 = vass.add_transition(s3, s3, (9, vec![0, -1].into()));
+    let _e8 = vass.add_edge(s3, s3, VASSEdge::new(8, vec![0, 1].into()));
+    let _e9 = vass.add_edge(s3, s3, VASSEdge::new(9, vec![0, -1].into()));
 
     let initialized = vass.init(vec![0, 0].into(), vec![0, 0].into(), s0, s3);
 
@@ -208,17 +208,17 @@ fn lsg_3() {
 #[test]
 fn lsg_reach() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
-    let s0 = cfg.add_state(DfaNode::non_accepting(()));
-    let s1 = cfg.add_state(DfaNode::non_accepting(()));
-    let s2 = cfg.add_state(DfaNode::non_accepting(()));
-    let s3 = cfg.add_state(DfaNode::accepting(()));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
 
-    cfg.set_start(s0);
+    cfg.set_initial(s0);
 
-    let e1 = cfg.add_transition(s0, s1, cfg_inc!(0));
-    let _e2 = cfg.add_transition(s1, s2, cfg_inc!(0));
-    let _e3 = cfg.add_transition(s2, s1, cfg_dec!(0));
-    let e4 = cfg.add_transition(s1, s3, cfg_dec!(0));
+    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let _e2 = cfg.add_edge(s1, s2, cfg_inc!(0));
+    let _e3 = cfg.add_edge(s2, s1, cfg_dec!(0));
+    let e4 = cfg.add_edge(s1, s3, cfg_dec!(0));
 
     let path = Path::from_edges(s0, &[e1, e4], &cfg);
 
@@ -256,20 +256,20 @@ fn lsg_reach() {
 #[test]
 fn lsg_reach2() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
-    let s0 = cfg.add_state(DfaNode::non_accepting(()));
-    let s1 = cfg.add_state(DfaNode::non_accepting(()));
-    let s2 = cfg.add_state(DfaNode::non_accepting(()));
-    let s3 = cfg.add_state(DfaNode::non_accepting(()));
-    let s4 = cfg.add_state(DfaNode::accepting(()));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::non_accepting(()));
+    let s4 = cfg.add_node(DfaNode::accepting(()));
 
-    cfg.set_start(s0);
+    cfg.set_initial(s0);
 
     // direct path "s0 -> s1 -> s4" with a loop in s1 "s1 -> s2 -> s3 -> s1"
-    let e1 = cfg.add_transition(s0, s1, cfg_inc!(0));
-    let e2 = cfg.add_transition(s1, s4, cfg_dec!(0));
-    let _e3 = cfg.add_transition(s1, s2, cfg_inc!(0));
-    let _e4 = cfg.add_transition(s2, s3, cfg_inc!(0));
-    let _e5 = cfg.add_transition(s3, s1, cfg_dec!(0));
+    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let e2 = cfg.add_edge(s1, s4, cfg_dec!(0));
+    let _e3 = cfg.add_edge(s1, s2, cfg_inc!(0));
+    let _e4 = cfg.add_edge(s2, s3, cfg_inc!(0));
+    let _e5 = cfg.add_edge(s3, s1, cfg_dec!(0));
 
     let path = Path::from_edges(s0, &[e1, e2], &cfg);
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);

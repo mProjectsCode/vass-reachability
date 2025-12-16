@@ -1,20 +1,22 @@
 use std::{fmt::Display, vec::IntoIter};
 
 use itertools::Itertools;
-use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::automaton::path::{
-    Path,
-    path_like::{EdgeListLike, PathLike},
+use crate::automaton::{
+    GIndex,
+    path::{
+        Path,
+        path_like::{EdgeIndexList, IndexPath},
+    },
 };
 
 /// A transition sequence is a list of transitions, where each transition is a
 /// tuple of an edge and a node. The edge is the edge taken and the node is the
 /// node reached by that edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransitionSequence(Vec<(EdgeIndex<u32>, NodeIndex<u32>)>);
+pub struct TransitionSequence<NIndex: GIndex, EIndex: GIndex>(Vec<(EIndex, NIndex)>);
 
-impl TransitionSequence {
+impl<NIndex: GIndex, EIndex: GIndex> TransitionSequence<NIndex, EIndex> {
     pub fn new() -> Self {
         TransitionSequence(Vec::new())
     }
@@ -33,11 +35,11 @@ impl TransitionSequence {
         false
     }
 
-    pub fn end(&self) -> Option<NodeIndex<u32>> {
+    pub fn end(&self) -> Option<NIndex> {
         self.0.last().map(|x| x.1)
     }
 
-    pub fn to_fancy_string(&self, get_edge_string: impl Fn(EdgeIndex) -> String) -> String {
+    pub fn to_fancy_string(&self, get_edge_string: impl Fn(EIndex) -> String) -> String {
         self.0
             .iter()
             .map(|x| {
@@ -60,46 +62,50 @@ impl TransitionSequence {
     }
 }
 
-impl EdgeListLike for TransitionSequence {
-    fn iter_edges(&self) -> impl Iterator<Item = EdgeIndex<u32>> {
+impl<NIndex: GIndex, EIndex: GIndex> EdgeIndexList<NIndex, EIndex>
+    for TransitionSequence<NIndex, EIndex>
+{
+    fn iter_edges(&self) -> impl Iterator<Item = EIndex> {
         self.iter().map(|x| x.0)
     }
 
-    fn has_edge(&self, edge: EdgeIndex<u32>) -> bool {
+    fn has_edge(&self, edge: EIndex) -> bool {
         self.0.iter().any(|x| x.0 == edge)
-    }
-
-    fn get_edge_label(&self, edge: EdgeIndex<u32>) -> String {
-        edge.index().to_string()
     }
 }
 
-impl PathLike for TransitionSequence {
-    fn iter_nodes(&self) -> impl Iterator<Item = NodeIndex<u32>> {
+impl<NIndex: GIndex, EIndex: GIndex> IndexPath<NIndex, EIndex>
+    for TransitionSequence<NIndex, EIndex>
+{
+    fn iter_nodes(&self) -> impl Iterator<Item = NIndex> {
         self.iter().map(|x| x.1)
     }
 
-    fn has_node(&self, node: NodeIndex<u32>) -> bool {
+    fn has_node(&self, node: NIndex) -> bool {
         self.0.iter().any(|x| x.1 == node)
     }
 
-    fn get_node_label(&self, node: NodeIndex<u32>) -> String {
-        node.index().to_string()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &(EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (EIndex, NIndex)>
+    where
+        EIndex: 'a,
+        NIndex: 'a,
+    {
         self.0.iter()
     }
 
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut (EIndex, NIndex)>
+    where
+        EIndex: 'a,
+        NIndex: 'a,
+    {
         self.0.iter_mut()
     }
 
-    fn first(&self) -> Option<&(EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn first(&self) -> Option<&(EIndex, NIndex)> {
         self.0.first()
     }
 
-    fn last(&self) -> Option<&(EdgeIndex<u32>, NodeIndex<u32>)> {
+    fn last(&self) -> Option<&(EIndex, NIndex)> {
         self.0.last()
     }
 
@@ -115,7 +121,7 @@ impl PathLike for TransitionSequence {
         TransitionSequence(self.0[index..].to_vec())
     }
 
-    fn add_pair(&mut self, edge: (EdgeIndex<u32>, NodeIndex<u32>)) {
+    fn add_pair(&mut self, edge: (EIndex, NIndex)) {
         self.0.push(edge);
     }
 
@@ -127,65 +133,71 @@ impl PathLike for TransitionSequence {
         self.0.is_empty()
     }
 
-    fn get(&self, index: usize) -> (EdgeIndex<u32>, NodeIndex<u32>) {
+    fn get(&self, index: usize) -> (EIndex, NIndex) {
         self.0[index]
     }
 
-    fn get_node(&self, index: usize) -> NodeIndex<u32> {
+    fn get_node(&self, index: usize) -> NIndex {
         self.0[index].1
     }
 
-    fn get_edge(&self, index: usize) -> EdgeIndex<u32> {
+    fn get_edge(&self, index: usize) -> EIndex {
         self.0[index].0
     }
 }
 
-impl From<Vec<(EdgeIndex<u32>, NodeIndex<u32>)>> for TransitionSequence {
-    fn from(vec: Vec<(EdgeIndex<u32>, NodeIndex<u32>)>) -> Self {
+impl<NIndex: GIndex, EIndex: GIndex> From<Vec<(EIndex, NIndex)>>
+    for TransitionSequence<NIndex, EIndex>
+{
+    fn from(vec: Vec<(EIndex, NIndex)>) -> Self {
         TransitionSequence(vec)
     }
 }
 
-impl From<Path> for TransitionSequence {
-    fn from(path: Path) -> Self {
+impl<NIndex: GIndex, EIndex: GIndex> From<Path<NIndex, EIndex>>
+    for TransitionSequence<NIndex, EIndex>
+{
+    fn from(path: Path<NIndex, EIndex>) -> Self {
         path.transitions
     }
 }
 
-impl IntoIterator for TransitionSequence {
-    type Item = (EdgeIndex<u32>, NodeIndex<u32>);
-    type IntoIter = IntoIter<(EdgeIndex<u32>, NodeIndex<u32>)>;
+impl<NIndex: GIndex, EIndex: GIndex> IntoIterator for TransitionSequence<NIndex, EIndex> {
+    type Item = (EIndex, NIndex);
+    type IntoIter = IntoIter<(EIndex, NIndex)>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl<'a> IntoIterator for &'a TransitionSequence {
-    type Item = &'a (EdgeIndex<u32>, NodeIndex<u32>);
-    type IntoIter = std::slice::Iter<'a, (EdgeIndex<u32>, NodeIndex<u32>)>;
+impl<'a, NIndex: GIndex, EIndex: GIndex> IntoIterator for &'a TransitionSequence<NIndex, EIndex> {
+    type Item = &'a (EIndex, NIndex);
+    type IntoIter = std::slice::Iter<'a, (EIndex, NIndex)>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }
 }
 
-impl<'a> IntoIterator for &'a mut TransitionSequence {
-    type Item = &'a mut (EdgeIndex<u32>, NodeIndex<u32>);
-    type IntoIter = std::slice::IterMut<'a, (EdgeIndex<u32>, NodeIndex<u32>)>;
+impl<'a, NIndex: GIndex, EIndex: GIndex> IntoIterator
+    for &'a mut TransitionSequence<NIndex, EIndex>
+{
+    type Item = &'a mut (EIndex, NIndex);
+    type IntoIter = std::slice::IterMut<'a, (EIndex, NIndex)>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter_mut()
     }
 }
 
-impl Default for TransitionSequence {
+impl<NIndex: GIndex, EIndex: GIndex> Default for TransitionSequence<NIndex, EIndex> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Display for TransitionSequence {
+impl<NIndex: GIndex, EIndex: GIndex> Display for TransitionSequence<NIndex, EIndex> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

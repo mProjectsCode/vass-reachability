@@ -1,5 +1,4 @@
 use hashbrown::HashMap;
-use itertools::Itertools;
 use petgraph::{
     Direction,
     graph::{DiGraph, EdgeIndex, NodeIndex},
@@ -7,20 +6,40 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    AutBuild, Automaton, AutomatonEdge, AutomatonNode,
+    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen, InitializedAutomaton, Language,
     dfa::{DFA, node::DfaNode},
-    path::path_like::EdgeListLike,
 };
 
-#[derive(Debug, Clone)]
-pub struct NFA<N: AutomatonNode, E: AutomatonEdge> {
-    start: Option<NodeIndex>,
-    pub graph: DiGraph<DfaNode<N>, Option<E>>,
-    alphabet: Vec<E>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum NFAEdge<E: AutomatonEdge> {
+    Symbol(E),
+    Epsilon,
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
-    pub fn new(alphabet: Vec<E>) -> Self {
+impl<E: AutomatonEdge + FromLetter> NFAEdge<E> {
+    pub fn is_epsilon(&self) -> bool {
+        matches!(self, NFAEdge::Epsilon)
+    }
+}
+
+impl<E: AutomatonEdge + FromLetter> From<Option<E>> for NFAEdge<E> {
+    fn from(value: Option<E>) -> Self {
+        match value {
+            Some(e) => NFAEdge::Symbol(e),
+            None => NFAEdge::Epsilon,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NFA<N: AutomatonNode, E: AutomatonEdge + FromLetter> {
+    start: Option<NodeIndex>,
+    pub graph: DiGraph<DfaNode<N>, NFAEdge<E>>,
+    alphabet: Vec<E::Letter>,
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
+    pub fn new(alphabet: Vec<E::Letter>) -> Self {
         let graph = DiGraph::new();
 
         NFA {
@@ -45,18 +64,18 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         let nfa_start = self.start.expect("NFA must have a start state");
         let mut state_map = HashMap::new();
 
-        let mut dfa = DFA::new(self.alphabet.clone());
+        let mut dfa = DFA::<(), E>::new(self.alphabet.clone());
 
         // First we need to create the start state.
         let mut start_state_set = vec![nfa_start];
         self.extend_to_e_closure(&mut start_state_set);
-        let dfa_start = dfa.add_state(self.state_from_set(&start_state_set));
-        dfa.set_start(dfa_start);
+        let dfa_start = dfa.add_node(self.state_from_set(&start_state_set));
+        dfa.set_initial(dfa_start);
         state_map.insert(start_state_set.clone(), dfa_start);
 
         // Second we need an explicit trap state.
         let trap_state_set = vec![];
-        let trap_state = dfa.add_state(self.state_from_set(&trap_state_set));
+        let trap_state = dfa.add_node(self.state_from_set(&trap_state_set));
         dfa.graph[trap_state].trap = true;
         state_map.insert(trap_state_set.clone(), trap_state);
 
@@ -68,7 +87,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
 
                 for &node in &state {
                     for edge in self.graph.edges_directed(node, Direction::Outgoing) {
-                        if edge.weight().as_ref() == Some(symbol) {
+                        if edge.weight().matches(symbol) {
                             target_state.push(edge.target());
                         }
                     }
@@ -82,20 +101,20 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
                 let target_dfa_state = if let Some(&x) = state_map.get(&target_state) {
                     x
                 } else {
-                    let new_state = dfa.add_state(self.state_from_set(&target_state));
+                    let new_state = dfa.add_node(self.state_from_set(&target_state));
                     state_map.insert(target_state.clone(), new_state);
                     stack.push(target_state);
                     new_state
                 };
 
-                dfa.add_transition(state_map[&state], target_dfa_state, symbol.clone());
+                dfa.add_edge(state_map[&state], target_dfa_state, E::from_letter(symbol));
             }
         }
 
         #[cfg(debug_assertions)]
         dfa.assert_complete();
 
-        dfa.override_complete();
+        dfa.set_complete_unchecked();
 
         dfa
     }
@@ -107,7 +126,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
 
         while let Some(state) = stack.pop() {
             for edge in self.graph.edges_directed(state, Direction::Outgoing) {
-                if edge.weight().is_none() {
+                if edge.weight().is_epsilon() {
                     let target = edge.target();
 
                     if !states.contains(&target) {
@@ -142,75 +161,172 @@ impl<N: AutomatonNode, E: AutomatonEdge> NFA<N, E> {
         nodes.iter().map(|&x| self.node_data(x).clone()).collect()
     }
 
-    pub fn to_graphviz(&self, edges: Option<impl EdgeListLike>) -> String {
-        let mut dot = String::new();
-        dot.push_str("digraph finite_state_machine {\n");
-        dot.push_str("fontname=\"Helvetica,Arial,sans-serif\"\n");
-        dot.push_str("node [fontname=\"Helvetica,Arial,sans-serif\"]\n");
-        dot.push_str("edge [fontname=\"Helvetica,Arial,sans-serif\"]\n");
-        dot.push_str("rankdir=LR;\n");
-        dot.push_str("node [shape=point,label=\"\"]START\n");
+    // pub fn to_graphviz(&self, edges: Option<impl EdgeIndexList>) -> String {
+    //     let mut dot = String::new();
+    //     dot.push_str("digraph finite_state_machine {\n");
+    //     dot.push_str("fontname=\"Helvetica,Arial,sans-serif\"\n");
+    //     dot.push_str("node [fontname=\"Helvetica,Arial,sans-serif\"]\n");
+    //     dot.push_str("edge [fontname=\"Helvetica,Arial,sans-serif\"]\n");
+    //     dot.push_str("rankdir=LR;\n");
+    //     dot.push_str("node [shape=point,label=\"\"]START\n");
 
-        let accepting_states = self
-            .graph
-            .node_indices()
-            .filter(|node| self.graph[*node].accepting)
-            .collect::<Vec<_>>();
+    //     let accepting_states = self
+    //         .graph
+    //         .node_indices()
+    //         .filter(|node| self.graph[*node].accepting)
+    //         .collect::<Vec<_>>();
 
-        dot.push_str(&format!(
-            "node [shape = doublecircle]; {};\n",
-            accepting_states
-                .iter()
-                .map(|node| node.index().to_string())
-                .join(" ")
-        ));
-        dot.push_str("node [shape = circle];\n");
+    //     dot.push_str(&format!(
+    //         "node [shape = doublecircle]; {};\n",
+    //         accepting_states
+    //             .iter()
+    //             .map(|node| node.index().to_string())
+    //             .join(" ")
+    //     ));
+    //     dot.push_str("node [shape = circle];\n");
 
-        if let Some(start) = self.start {
-            dot.push_str(&format!("START -> {:?};\n", start.index()));
-        }
+    //     if let Some(start) = self.start {
+    //         dot.push_str(&format!("START -> {:?};\n", start.index()));
+    //     }
 
-        for edge in self.graph.edge_references() {
-            let mut attrs = vec![(
-                "label",
-                format!("\"{:?} ({})\"", edge.weight(), edge.id().index()),
-            )];
+    //     for edge in self.graph.edge_references() {
+    //         let mut attrs = vec![(
+    //             "label",
+    //             format!("\"{:?} ({})\"", edge.weight(), edge.id().index()),
+    //         )];
 
-            if let Some(edges) = &edges
-                && edges.has_edge(edge.id())
-            {
-                attrs.push(("color", "red".to_string()));
-            }
-            dot.push_str(&format!(
-                "{:?} -> {:?} [ {} ];\n",
-                edge.source().index(),
-                edge.target().index(),
-                attrs.iter().map(|(k, v)| format!("{}={}", k, v)).join(" ")
-            ));
-        }
+    //         if let Some(edges) = &edges
+    //             && edges.has_edge(edge.id())
+    //         {
+    //             attrs.push(("color", "red".to_string()));
+    //         }
+    //         dot.push_str(&format!(
+    //             "{:?} -> {:?} [ {} ];\n",
+    //             edge.source().index(),
+    //             edge.target().index(),
+    //             attrs.iter().map(|(k, v)| format!("{}={}", k, v)).join(" ")
+    //         ));
+    //     }
 
-        dot.push_str("}\n");
+    //     dot.push_str("}\n");
 
-        dot
-    }
+    //     dot
+    // }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge> AutBuild<NodeIndex, EdgeIndex, DfaNode<N>, Option<E>>
-    for NFA<N, E>
-{
-    fn add_state(&mut self, data: DfaNode<N>) -> NodeIndex {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
+    type NIndex = NodeIndex;
+    type EIndex = EdgeIndex;
+    type N = DfaNode<N>;
+    type E = NFAEdge<E>;
+
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
+    fn node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    fn get_node(&self, index: Self::NIndex) -> Option<&DfaNode<N>> {
+        self.graph.node_weight(index)
+    }
+
+    fn get_edge(&self, index: Self::EIndex) -> Option<&NFAEdge<E>> {
+        self.graph.edge_weight(index)
+    }
+
+    fn get_node_unchecked(&self, index: Self::NIndex) -> &DfaNode<N> {
+        &self.graph[index]
+    }
+
+    fn get_edge_unchecked(&self, index: Self::EIndex) -> &NFAEdge<E> {
+        self.graph.edge_weight(index).unwrap()
+    }
+
+    fn edge_endpoints(&self, edge: Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
+        self.graph.edge_endpoints(edge)
+    }
+
+    fn edge_endpoints_unchecked(&self, edge: Self::EIndex) -> (Self::NIndex, Self::NIndex) {
+        self.graph.edge_endpoints(edge).unwrap()
+    }
+
+    fn outgoing_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+        self.graph
+            .edges_directed(node, Direction::Outgoing)
+            .map(|edge| edge.id())
+    }
+
+    fn incoming_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+        self.graph
+            .edges_directed(node, Direction::Incoming)
+            .map(|edge| edge.id())
+    }
+
+    fn connecting_edge_indices(
+        &self,
+        from: Self::NIndex,
+        to: Self::NIndex,
+    ) -> impl Iterator<Item = Self::EIndex> {
+        self.graph.edges_connecting(from, to).map(|edge| edge.id())
+    }
+
+    fn add_node(&mut self, data: DfaNode<N>) -> Self::NIndex {
         self.graph.add_node(data)
     }
 
-    fn add_transition(&mut self, from: NodeIndex, to: NodeIndex, label: Option<E>) -> EdgeIndex {
+    fn add_edge(
+        &mut self,
+        from: Self::NIndex,
+        to: Self::NIndex,
+        label: NFAEdge<E>,
+    ) -> Self::EIndex {
         self.graph.add_edge(from, to, label)
+    }
+
+    fn remove_node(&mut self, node: Self::NIndex) {
+        self.graph.remove_node(node);
+    }
+
+    fn remove_edge(&mut self, edge: Self::EIndex) {
+        self.graph.remove_edge(edge);
+    }
+
+    fn retain_nodes<F>(&mut self, f: F)
+    where
+        F: Fn(Frozen<Self>, Self::NIndex) -> bool,
+    {
+        for index in self.iter_node_indices().rev() {
+            if !f(Frozen::from(&mut *self), index) {
+                self.remove_node(index);
+            }
+        }
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for NFA<N, E> {
-    fn accepts<'a>(&self, input: impl IntoIterator<Item = &'a E>) -> bool
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton for NFA<N, E> {
+    fn get_initial(&self) -> Self::NIndex {
+        self.start.expect("Self must have a start state")
+    }
+
+    fn set_initial(&mut self, node: Self::NIndex) {
+        self.start = Some(node);
+    }
+
+    fn is_accepting(&self, node: Self::NIndex) -> bool {
+        self.get_node(node)
+            .map(|n| n.accepting)
+            .expect("Node should be part of the NFA")
+    }
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for NFA<N, E> {
+    type Letter = E::Letter;
+
+    fn accepts<'a>(&self, input: impl IntoIterator<Item = &'a E::Letter>) -> bool
     where
-        E: 'a,
+        E::Letter: 'a + Eq,
     {
         let mut current_states = vec![self.start.expect("NFA must have a start state")];
         self.extend_to_e_closure(&mut current_states);
@@ -220,7 +336,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for NFA<N, E> {
 
             for &state in &current_states {
                 for edge in self.graph.edges_directed(state, Direction::Outgoing) {
-                    if edge.weight().as_ref() == Some(symbol) {
+                    if edge.weight().matches(symbol) {
                         next_states.push(edge.target());
                     }
                 }
@@ -238,7 +354,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> Automaton<E> for NFA<N, E> {
         self.is_accepting_set(&current_states)
     }
 
-    fn alphabet(&self) -> &Vec<E> {
-        &self.alphabet
+    fn alphabet(&self) -> &[E::Letter] {
+        self.alphabet.as_slice()
     }
 }

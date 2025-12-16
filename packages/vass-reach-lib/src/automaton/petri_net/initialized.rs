@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::automaton::{
-    AutBuild,
+    Automaton,
     petri_net::{
         PetriNet,
         spec::{PetriNetSpec, ToSpecFormat},
     },
-    vass::{VASS, counter::VASSCounterValuation, initialized::InitializedVASS},
+    vass::{VASS, VASSEdge, counter::VASSCounterValuation, initialized::InitializedVASS},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,15 +34,15 @@ impl InitializedPetriNet {
             self.net.place_count,
             (0..self.net.transitions.len()).collect(),
         );
-        let center_state = vass.add_state(0);
+        let center_state = vass.add_node(0);
 
         for (i, transition) in self.net.transitions.iter().enumerate() {
-            let state = vass.add_state(i + 1);
+            let state = vass.add_node(i + 1);
             let input_vec = transition.input_to_vass_update(self.net.place_count);
             let output_vec = transition.output_to_vass_update(self.net.place_count);
 
-            vass.add_transition(center_state, state, (i, input_vec));
-            vass.add_transition(state, center_state, (i, output_vec));
+            vass.add_edge(center_state, state, VASSEdge::new(i, input_vec));
+            vass.add_edge(state, center_state, VASSEdge::new(i, output_vec));
         }
 
         vass.init(

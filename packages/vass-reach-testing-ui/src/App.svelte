@@ -17,11 +17,11 @@
             for (const [net, result] of Object.entries(tool_result.results)) {
                 let existing = map.get(net) ?? {
                     state: undefined as unknown as PlotDatumState,
-                    times: {},
+                    runs: {},
                     net: net,
                 };
                 existing.state = map_datum_state(existing.state, result.result);
-                existing.times[tool_result.run_name] = result.ms_taken;
+                existing.runs[tool_result.run_name] = result;
                 map.set(net, existing);
             }
         }

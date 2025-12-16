@@ -3,7 +3,7 @@ use std::{
     thread,
 };
 
-use petgraph::{graph::EdgeIndex, visit::EdgeRef};
+use petgraph::graph::EdgeIndex;
 use z3::{
     Config, Context, Solver,
     ast::{Ast, Int},
@@ -11,11 +11,14 @@ use z3::{
 
 use crate::{
     automaton::{
-        AutomatonNode,
+        Automaton,
         cfg::CFG,
         index_map::OptionIndexMap,
-        lsg::{LSGGraph, LSGPart, LSGPath, LinearSubGraph},
-        path::{Path, parikh_image::ParikhImage, path_like::EdgeListLike},
+        lsg::{
+            LinearSubGraph,
+            part::{LSGGraph, LSGPart, LSGPath},
+        },
+        path::{Path, parikh_image::ParikhImage, path_like::EdgeIndexList},
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
         vass::counter::VASSCounterValuation,
     },
@@ -65,19 +68,19 @@ impl<'l> LSGReachSolverOptions<'l> {
         self
     }
 
-    pub fn to_solver<'g, N: AutomatonNode>(
+    pub fn to_solver<'g, C: CFG>(
         self,
-        lsg: &'g LinearSubGraph<'g, N>,
+        lsg: &'g LinearSubGraph<'g, C>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-    ) -> LSGReachSolver<'l, 'g, N> {
+    ) -> LSGReachSolver<'l, 'g, C> {
         LSGReachSolver::new(lsg, initial_valuation, final_valuation, self)
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum LSGSolutionPart {
-    SubGraph(ParikhImage),
+    SubGraph(ParikhImage<EdgeIndex>),
     Path(),
 }
 
@@ -89,18 +92,18 @@ pub struct LSGSolution {
 }
 
 impl LSGSolution {
-    pub fn build_run<'a, N: AutomatonNode>(
+    pub fn build_run<'a, C: CFG>(
         &self,
-        lsg: &LinearSubGraph<'a, N>,
+        lsg: &LinearSubGraph<'a, C>,
         n_run: bool,
-    ) -> Option<Path> {
+    ) -> Option<Path<C::NIndex, C::EIndex>> {
         // the parikh image already determines the initial and final valuations when
         // entering and leaving subgraphs so we can simply build the runs for
         // each part independently and concatenate them
 
         let dimension = self.initial_valuation.dimension();
 
-        let mut cfg_path = Path::new(lsg.cfg.get_start().expect("CFG should have a start node"));
+        let mut cfg_path = Path::new(lsg.cfg.get_initial());
 
         let mut current_valuation = self.initial_valuation.clone();
 
@@ -132,7 +135,7 @@ impl LSGSolution {
                     let update = cfg_updates_to_counter_update(
                         path.path
                             .iter_edges()
-                            .map(|edge| *lsg.cfg.graph.edge_weight(edge).expect("edge not in cfg")),
+                            .map(|edge| *lsg.cfg.get_edge(edge).expect("edge not in cfg")),
                         dimension,
                     );
 
@@ -186,8 +189,8 @@ impl LSGReachSolverResult {
     }
 }
 
-pub struct LSGReachSolver<'l, 'g, N: AutomatonNode> {
-    lsg: &'g LinearSubGraph<'g, N>,
+pub struct LSGReachSolver<'l, 'g, C: CFG> {
+    lsg: &'g LinearSubGraph<'g, C>,
     initial_valuation: &'g VASSCounterValuation,
     final_valuation: &'g VASSCounterValuation,
     options: LSGReachSolverOptions<'l>,
@@ -196,9 +199,9 @@ pub struct LSGReachSolver<'l, 'g, N: AutomatonNode> {
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
+impl<'l, 'g, C: CFG> LSGReachSolver<'l, 'g, C> {
     pub fn new(
-        lsg: &'g LinearSubGraph<'g, N>,
+        lsg: &'g LinearSubGraph<'g, C>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
         options: LSGReachSolverOptions<'l>,
@@ -376,7 +379,7 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
 
     fn build_path_constraints<'c>(
         &self,
-        path: &LSGPath,
+        path: &LSGPath<C::NIndex, C::EIndex>,
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,
@@ -409,38 +412,30 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
     fn build_subgraph_constraints<'c>(
         &self,
         part_index: usize,
-        subgraph: &LSGGraph,
+        subgraph: &LSGGraph<C::NIndex, C::EIndex>,
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,
     ) -> OptionIndexMap<EdgeIndex, Int<'c>> {
         let mut edge_map = OptionIndexMap::new(subgraph.edge_count());
 
-        for edge in subgraph.graph.edge_references() {
-            let edge_marking = edge.weight();
-
+        for (edge, update) in subgraph.iter_edges() {
             // we need one variable for each edge
-            let edge_var = Int::new_const(
-                ctx,
-                format!("graph_{}_edge_{}", part_index, edge.id().index()),
-            );
+            let edge_var =
+                Int::new_const(ctx, format!("graph_{}_edge_{}", part_index, edge.index()));
             // CONSTRAINT: an edge can only be taken positive times
             solver.assert(&edge_var.ge(&Int::from_i64(ctx, 0)));
 
             // add the edges effect to the counter sum
-            let i = edge_marking.counter();
-            sums[i.to_usize()] = &sums[i.to_usize()] + &edge_var * edge_marking.op_i64();
+            let i = update.counter();
+            sums[i.to_usize()] = &sums[i.to_usize()] + &edge_var * update.op_i64();
 
-            edge_map.insert(edge.id(), edge_var);
+            edge_map.insert(edge, edge_var);
         }
 
-        for node in subgraph.graph.node_indices() {
-            let outgoing = subgraph
-                .graph
-                .edges_directed(node, petgraph::Direction::Outgoing);
-            let incoming = subgraph
-                .graph
-                .edges_directed(node, petgraph::Direction::Incoming);
+        for node in subgraph.iter_node_indices() {
+            let outgoing = subgraph.outgoing_edge_indices(node);
+            let incoming = subgraph.incoming_edge_indices(node);
 
             // the end node has one additional outgoing connection, this works, because we
             // always have exactly one end node
@@ -457,12 +452,12 @@ impl<'l, 'g, N: AutomatonNode> LSGReachSolver<'l, 'g, N> {
             };
 
             for edge in outgoing {
-                let edge_var = &edge_map[edge.id()];
+                let edge_var = &edge_map[edge];
                 outgoing_sum += edge_var;
             }
 
             for edge in incoming {
-                let edge_var = &edge_map[edge.id()];
+                let edge_var = &edge_map[edge];
                 incoming_sum += edge_var;
             }
 

@@ -1,72 +1,74 @@
 use itertools::Itertools;
-use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::automaton::{AutomatonEdge, AutomatonNode, dfa::DFA};
+use crate::automaton::{Automaton, GIndex};
 
-pub trait EdgeListLike {
-    fn iter_edges(&self) -> impl Iterator<Item = EdgeIndex<u32>>;
-    fn has_edge(&self, edge: EdgeIndex<u32>) -> bool;
-    fn get_edge_label(&self, edge: EdgeIndex<u32>) -> String;
+pub trait EdgeIndexList<NIndex: GIndex, EIndex: GIndex> {
+    fn iter_edges(&self) -> impl Iterator<Item = EIndex>;
+    fn has_edge(&self, edge: EIndex) -> bool;
 }
 
-pub trait PathLike: EdgeListLike {
-    fn iter_nodes(&self) -> impl Iterator<Item = NodeIndex<u32>>;
-    fn has_node(&self, node: NodeIndex<u32>) -> bool;
-    fn get_node_label(&self, node: NodeIndex<u32>) -> String;
-    fn iter(&self) -> impl Iterator<Item = &(EdgeIndex<u32>, NodeIndex<u32>)>;
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (EdgeIndex<u32>, NodeIndex<u32>)>;
-    fn first(&self) -> Option<&(EdgeIndex<u32>, NodeIndex<u32>)>;
-    fn last(&self) -> Option<&(EdgeIndex<u32>, NodeIndex<u32>)>;
+pub trait IndexPath<NIndex: GIndex, EIndex: GIndex>: EdgeIndexList<NIndex, EIndex> {
+    fn iter_nodes(&self) -> impl Iterator<Item = NIndex>;
+    fn has_node(&self, node: NIndex) -> bool;
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (EIndex, NIndex)>
+    where
+        EIndex: 'a,
+        NIndex: 'a;
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut (EIndex, NIndex)>
+    where
+        EIndex: 'a,
+        NIndex: 'a;
+    fn first(&self) -> Option<&(EIndex, NIndex)>;
+    fn last(&self) -> Option<&(EIndex, NIndex)>;
     fn split_off(&mut self, index: usize) -> Self;
     fn slice(&self, index: usize) -> Self;
     fn slice_end(&self, index: usize) -> Self;
-    fn add_pair(&mut self, edge: (EdgeIndex<u32>, NodeIndex<u32>));
+    fn add_pair(&mut self, edge: (EIndex, NIndex));
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
-    fn get(&self, index: usize) -> (EdgeIndex<u32>, NodeIndex<u32>);
-    fn get_node(&self, index: usize) -> NodeIndex<u32>;
-    fn get_edge(&self, index: usize) -> EdgeIndex<u32>;
+    fn get(&self, index: usize) -> (EIndex, NIndex);
+    fn get_node(&self, index: usize) -> NIndex;
+    fn get_edge(&self, index: usize) -> EIndex;
 
-    fn add(&mut self, edge: EdgeIndex<u32>, node: NodeIndex<u32>) {
+    fn add(&mut self, edge: EIndex, node: NIndex) {
         self.add_pair((edge, node));
     }
 
     /// A safer alternative to `add` that checks that the edge's source matches
     /// the current path end.
-    fn take_edge<N: AutomatonNode, E: AutomatonEdge>(
+    fn take_edge(
         &mut self,
-        edge: EdgeIndex<u32>,
-        graph: &DFA<N, E>,
+        edge: EIndex,
+        graph: &impl Automaton<NIndex = NIndex, EIndex = EIndex>,
     ) {
-        let endpoints = graph
-            .graph
-            .edge_endpoints(edge)
-            .expect("Graph must contain edge");
+        let endpoints = graph.edge_endpoints(edge).expect("Edge index must exist");
         if let Some(last) = self.last() {
             assert_eq!(last.1, endpoints.0, "Edge source must match path end");
         }
         self.add(edge, endpoints.1);
     }
 
-    fn take_edges<'a, N: AutomatonNode, E: AutomatonEdge>(
+    fn take_edges<'a>(
         &mut self,
-        edges: impl IntoIterator<Item = &'a EdgeIndex<u32>>,
-        graph: &DFA<N, E>,
-    ) {
+        edges: impl IntoIterator<Item = &'a EIndex>,
+        graph: &impl Automaton<NIndex = NIndex, EIndex = EIndex>,
+    ) where
+        EIndex: 'a,
+    {
         for edge in edges {
             self.take_edge(*edge, graph);
         }
     }
 
-    fn to_word<T>(&self, get_edge_weight: impl Fn(EdgeIndex<u32>) -> T) -> Vec<T> {
+    fn to_word<T>(&self, get_edge_weight: impl Fn(EIndex) -> T) -> Vec<T> {
         self.iter().map(|x| get_edge_weight(x.0)).collect_vec()
     }
 
-    fn contains_node(&self, node: NodeIndex<u32>) -> bool {
+    fn contains_node(&self, node: NIndex) -> bool {
         self.iter().any(|x| x.1 == node)
     }
 
-    fn contains_edge(&self, edge: EdgeIndex<u32>) -> bool {
+    fn contains_edge(&self, edge: EIndex) -> bool {
         self.iter().any(|x| x.0 == edge)
     }
 }

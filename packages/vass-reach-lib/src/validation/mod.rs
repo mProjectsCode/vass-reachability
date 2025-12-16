@@ -6,9 +6,9 @@ pub mod same_language;
 
 /// Tests that a given Parikh image is arrives at the final valuation in a VASS
 /// CFG.
-pub fn test_parikh_image(
-    parikh_image: &ParikhImage,
-    cfg: &impl CFG,
+pub fn test_parikh_image<C: CFG>(
+    parikh_image: &ParikhImage<C::EIndex>,
+    cfg: &C,
     initial_valuation: &VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
 ) {

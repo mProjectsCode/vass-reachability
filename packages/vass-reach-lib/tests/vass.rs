@@ -1,20 +1,19 @@
-use std::{time::Duration, vec};
+use std::vec;
 
-use vass_reach_lib::{
-    automaton::{AutBuild, Automaton, vass::VASS},
-    config::VASSReachConfig,
-    solver::vass_reach::VASSReachSolver,
+use vass_reach_lib::automaton::{
+    Automaton, Language,
+    vass::{VASS, VASSEdge},
 };
 
 #[test]
 fn test_vass() {
     let mut vass = VASS::<u32, char>::new(2, vec!['a', 'b']);
-    let q0 = vass.add_state(0);
-    let q1 = vass.add_state(1);
+    let q0 = vass.add_node(0);
+    let q1 = vass.add_node(1);
 
-    vass.add_transition(q0, q0, ('a', vec![1, 0].into()));
-    vass.add_transition(q0, q1, ('b', vec![-1, 0].into()));
-    vass.add_transition(q1, q1, ('b', vec![-1, 0].into()));
+    vass.add_edge(q0, q0, VASSEdge::new('a', vec![1, 0].into()));
+    vass.add_edge(q0, q1, VASSEdge::new('b', vec![-1, 0].into()));
+    vass.add_edge(q1, q1, VASSEdge::new('b', vec![-1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![2, 0].into(), q0, q1);
 
@@ -31,12 +30,12 @@ fn test_vass() {
 #[test]
 fn test_vass_to_cfg() {
     let mut vass = VASS::<u32, char>::new(2, vec!['a', 'b']);
-    let q0 = vass.add_state(0);
-    let q1 = vass.add_state(1);
+    let q0 = vass.add_node(0);
+    let q1 = vass.add_node(1);
 
-    vass.add_transition(q0, q0, ('a', vec![1, 0].into()));
-    vass.add_transition(q0, q1, ('b', vec![-2, 0].into()));
-    vass.add_transition(q1, q1, ('b', vec![-1, 0].into()));
+    vass.add_edge(q0, q0, VASSEdge::new('a', vec![1, 0].into()));
+    vass.add_edge(q0, q1, VASSEdge::new('b', vec![-2, 0].into()));
+    vass.add_edge(q1, q1, VASSEdge::new('b', vec![-1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 

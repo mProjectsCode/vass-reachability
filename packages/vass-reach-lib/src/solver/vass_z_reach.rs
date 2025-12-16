@@ -1,4 +1,3 @@
-use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use z3::{
     Config, Context, Solver,
@@ -7,8 +6,8 @@ use z3::{
 
 use crate::{
     automaton::{
-        AutomatonNode,
-        cfg::{CFG, vasscfg::VASSCFG},
+        GIndex,
+        cfg::CFG,
         index_map::OptionIndexMap,
         path::{Path, parikh_image::ParikhImage},
         vass::counter::VASSCounterValuation,
@@ -40,26 +39,27 @@ impl VASSZReachSolverStatistics {
     }
 }
 
-pub type VASSZReachSolverStatus = SolverStatus<ParikhImage, (), VASSZReachSolverError>;
+pub type VASSZReachSolverStatus<EIndex> =
+    SolverStatus<ParikhImage<EIndex>, (), VASSZReachSolverError>;
 
-pub type VASSZReachSolverResult =
-    SolverResult<ParikhImage, (), VASSZReachSolverError, VASSZReachSolverStatistics>;
+pub type VASSZReachSolverResult<EIndex> =
+    SolverResult<ParikhImage<EIndex>, (), VASSZReachSolverError, VASSZReachSolverStatistics>;
 
-impl VASSZReachSolverResult {
-    pub fn get_parikh_image(&self) -> Option<&ParikhImage> {
+impl<EIndex: GIndex> VASSZReachSolverResult<EIndex> {
+    pub fn get_parikh_image(&self) -> Option<&ParikhImage<EIndex>> {
         match &self.status {
             SolverStatus::True(parikh_image) => Some(parikh_image),
             _ => None,
         }
     }
 
-    pub fn build_run<N: AutomatonNode>(
+    pub fn build_run<C: CFG<EIndex = EIndex>>(
         &self,
-        cfg: &VASSCFG<N>,
+        cfg: &C,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
         n_run: bool,
-    ) -> Option<Path> {
+    ) -> Option<Path<C::NIndex, EIndex>> {
         let Some(parikh_image) = self.get_parikh_image() else {
             return None;
         };
@@ -94,8 +94,8 @@ impl VASSZReachSolverResult {
 ///
 /// Since this constraint act's on sets of nodes and there are only a limited
 /// number of subsets of nodes, the solver terminates.
-pub struct VASSZReachSolver<'l, 'c, Cfg: CFG> {
-    cfg: &'c Cfg,
+pub struct VASSZReachSolver<'l, 'c, C: CFG> {
+    cfg: &'c C,
     initial_valuation: VASSCounterValuation,
     final_valuation: VASSCounterValuation,
     options: VASSZReachConfig,
@@ -104,9 +104,9 @@ pub struct VASSZReachSolver<'l, 'c, Cfg: CFG> {
     solver_start_time: Option<std::time::Instant>,
 }
 
-impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
+impl<'l, 'c, C: CFG> VASSZReachSolver<'l, 'c, C> {
     pub fn new(
-        cfg: &'c Cfg,
+        cfg: &'c C,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         options: VASSZReachConfig,
@@ -123,7 +123,7 @@ impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
         }
     }
 
-    pub fn solve(&mut self) -> VASSZReachSolverResult {
+    pub fn solve(&mut self) -> VASSZReachSolverResult<C::EIndex> {
         self.solver_start_time = Some(std::time::Instant::now());
 
         let mut config = Config::new();
@@ -134,7 +134,7 @@ impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
         self.solve_inner(&ctx, &solver)
     }
 
-    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult {
+    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult<C::EIndex> {
         // a map that allows us to access the edge variables by their edge id
         let mut edge_map = OptionIndexMap::new(self.cfg.edge_count());
 
@@ -145,36 +145,28 @@ impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
             .map(|x| Int::from_i64(ctx, *x as i64))
             .collect();
 
-        for edge in self.cfg.get_graph().edge_indices() {
-            let edge_marking = self.cfg.edge_update(edge);
-
+        for (edge, update) in self.cfg.iter_edges() {
             // we need one variable for each edge
             let edge_var = Int::new_const(ctx, format!("edge_{}", edge.index()));
             // CONSTRAINT: an edge can only be taken positive times
             solver.assert(&edge_var.ge(&Int::from_i64(ctx, 0)));
 
             // add the edges effect to the counter sum
-            let i = edge_marking.counter();
-            sums[i.to_usize()] = &sums[i.to_usize()] + &edge_var * edge_marking.op_i64();
+            let i = update.counter();
+            sums[i.to_usize()] = &sums[i.to_usize()] + &edge_var * update.op_i64();
 
             edge_map.insert(edge, edge_var);
         }
 
         let mut final_var_sum = Int::from_i64(ctx, 0);
 
-        for node in self.cfg.get_graph().node_indices() {
-            let outgoing = self
-                .cfg
-                .get_graph()
-                .edges_directed(node, petgraph::Direction::Outgoing);
-            let incoming = self
-                .cfg
-                .get_graph()
-                .edges_directed(node, petgraph::Direction::Incoming);
+        for node in self.cfg.iter_node_indices() {
+            let outgoing = self.cfg.outgoing_edge_indices(node);
+            let incoming = self.cfg.incoming_edge_indices(node);
 
             let mut outgoing_sum = Int::from_i64(ctx, 0);
             // the start node has one additional incoming connection
-            let mut incoming_sum = if node == self.cfg.get_start() {
+            let mut incoming_sum = if node == self.cfg.get_initial() {
                 Int::from_i64(ctx, 1)
             } else {
                 Int::from_i64(ctx, 0)
@@ -191,12 +183,12 @@ impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
             }
 
             for edge in outgoing {
-                let edge_var = &edge_map[edge.id()];
+                let edge_var = &edge_map[edge];
                 outgoing_sum += edge_var;
             }
 
             for edge in incoming {
-                let edge_var = &edge_map[edge.id()];
+                let edge_var = &edge_map[edge];
                 incoming_sum += edge_var;
             }
 
@@ -288,14 +280,14 @@ impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
         }
     }
 
-    fn max_iterations_reached_result(&self) -> VASSZReachSolverResult {
+    fn max_iterations_reached_result(&self) -> VASSZReachSolverResult<C::EIndex> {
         VASSZReachSolverResult::new(
             SolverStatus::Unknown(VASSZReachSolverError::MaxIterationsReached),
             self.get_solver_statistics(),
         )
     }
 
-    fn max_time_reached_result(&self) -> VASSZReachSolverResult {
+    fn max_time_reached_result(&self) -> VASSZReachSolverResult<C::EIndex> {
         VASSZReachSolverResult::new(
             SolverStatus::Unknown(VASSZReachSolverError::Timeout),
             self.get_solver_statistics(),
@@ -306,7 +298,10 @@ impl<'l, 'c, Cfg: CFG> VASSZReachSolver<'l, 'c, Cfg> {
         VASSZReachSolverStatistics::new(self.step_count, self.get_solver_time().unwrap_or_default())
     }
 
-    fn get_solver_result(&self, status: VASSZReachSolverStatus) -> VASSZReachSolverResult {
+    fn get_solver_result(
+        &self,
+        status: VASSZReachSolverStatus<C::EIndex>,
+    ) -> VASSZReachSolverResult<C::EIndex> {
         VASSZReachSolverResult::new(status, self.get_solver_statistics())
     }
 

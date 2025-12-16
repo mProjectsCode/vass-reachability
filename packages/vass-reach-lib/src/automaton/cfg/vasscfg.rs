@@ -5,38 +5,19 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    AutBuild, AutomatonNode,
+    Automaton, AutomatonNode, InitializedAutomaton,
     cfg::{
         CFG,
         update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
     dfa::{DFA, node::DfaNode},
-    path::{Path, path_like::PathLike},
+    path::{Path, path_like::IndexPath},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
 pub type VASSCFG<N> = DFA<N, CFGCounterUpdate>;
 
-impl<N: AutomatonNode> CFG for VASSCFG<N> {
-    type N = DfaNode<N>;
-    type E = CFGCounterUpdate;
-
-    fn get_graph(&self) -> &petgraph::graph::DiGraph<Self::N, Self::E> {
-        &self.graph
-    }
-
-    fn edge_update(&self, edge: EdgeIndex) -> CFGCounterUpdate {
-        *self.graph.edge_weight(edge).unwrap()
-    }
-
-    fn get_start(&self) -> NodeIndex {
-        self.get_start().expect("CFG should have a start node")
-    }
-
-    fn is_accepting(&self, node: NodeIndex) -> bool {
-        self.graph[node].accepting
-    }
-}
+impl<N: AutomatonNode> CFG for VASSCFG<N> {}
 
 impl<N: AutomatonNode> VASSCFG<N> {
     /// Find a reaching paths though the CFG while only counting the counters
@@ -50,16 +31,16 @@ impl<N: AutomatonNode> VASSCFG<N> {
         mu: i32,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-    ) -> Option<Path> {
+    ) -> Option<Path<NodeIndex, EdgeIndex>> {
         // For every node, we track which counter valuations we already visited.
-        let mut visited = vec![std::collections::HashSet::new(); self.state_count()];
+        let mut visited = vec![std::collections::HashSet::new(); self.node_count()];
         let mut queue = std::collections::VecDeque::new();
         let mut mod_initial_valuation = initial_valuation.clone();
         let mut mod_final_valuation = final_valuation.clone();
         mod_initial_valuation.mod_euclid_mut(mu);
         mod_final_valuation.mod_euclid_mut(mu);
 
-        let start = self.get_start().expect("CFG should have a start node");
+        let start = self.get_initial();
         let initial_path = Path::new(start);
         if self.graph[start].accepting && mod_initial_valuation == mod_final_valuation {
             return Some(initial_path);
@@ -121,41 +102,41 @@ pub fn build_bounded_counting_cfg(
 
     let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(dimension));
 
-    let negative = cfg.add_state(DfaNode::new(false, true, ()));
-    let overflow = cfg.add_state(DfaNode::accepting(()));
+    let negative = cfg.add_node(DfaNode::new(false, true, ()));
+    let overflow = cfg.add_node(DfaNode::accepting(()));
 
     // once negative always stays negative
     for c in CFGCounterUpdate::alphabet(dimension) {
-        cfg.add_transition(negative, negative, c);
-        cfg.add_transition(overflow, overflow, c);
+        cfg.add_edge(negative, negative, c);
+        cfg.add_edge(overflow, overflow, c);
     }
 
     let mut states = vec![negative];
-    states.extend((0..=limit).map(|i| cfg.add_state(DfaNode::new(i == end as u32, false, ()))));
+    states.extend((0..=limit).map(|i| cfg.add_node(DfaNode::new(i == end as u32, false, ()))));
     states.push(overflow);
 
     for i in 1..states.len() - 1 {
         let prev = states[i - 1];
         let current = states[i];
         let next = states[i + 1];
-        cfg.add_transition(current, prev, counter_down);
-        cfg.add_transition(current, next, counter_up);
+        cfg.add_edge(current, prev, counter_down);
+        cfg.add_edge(current, next, counter_up);
 
         for c in CFGCounterUpdate::alphabet(dimension) {
             if c != counter_up && c != counter_down {
-                cfg.add_transition(current, current, c);
+                cfg.add_edge(current, current, c);
             }
         }
 
         if i as i32 == start + 1 {
-            cfg.set_start(current);
+            cfg.set_initial(current);
         }
     }
 
     #[cfg(debug_assertions)]
     cfg.assert_complete();
 
-    cfg.override_complete();
+    cfg.set_complete_unchecked();
 
     cfg
 }

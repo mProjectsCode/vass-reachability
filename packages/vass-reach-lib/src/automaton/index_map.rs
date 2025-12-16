@@ -5,6 +5,8 @@ use petgraph::{
     graph::{EdgeIndex, NodeIndex},
 };
 
+use crate::automaton::GIndex;
+
 /// Trait for items that can be used as values in an IndexMap.
 /// The type must have an "empty" value that represents the absence of a value
 /// in the map.
@@ -48,48 +50,20 @@ impl<T: IndexType> IndexMapData for EdgeIndex<T> {
     }
 }
 
-/// Trait for keys that can be used in an IndexMap.
-/// The key must be able to be constructed from a usize index and provide its
-/// usize index.
-pub trait IndexMapKey {
-    fn new(index: usize) -> Self;
-    fn index(self) -> usize;
-}
-
-impl<T: IndexType> IndexMapKey for NodeIndex<T> {
-    fn new(index: usize) -> Self {
-        NodeIndex::new(index)
-    }
-
-    fn index(self) -> usize {
-        NodeIndex::index(self)
-    }
-}
-
-impl<T: IndexType> IndexMapKey for EdgeIndex<T> {
-    fn new(index: usize) -> Self {
-        EdgeIndex::new(index)
-    }
-
-    fn index(self) -> usize {
-        EdgeIndex::index(self)
-    }
-}
-
 /// A vector based map from keys of type K to values of type V.
 /// The maximum key index must be known at map creation time.
 /// Attempts to access keys out of range will in most cases panic.
 #[derive(Debug, Clone)]
-pub struct IndexMap<K: IndexMapKey, V: IndexMapData> {
+pub struct IndexMap<K: GIndex, V: IndexMapData> {
     data: Box<[V]>,
-    _marker: std::marker::PhantomData<K>,
+    __marker: std::marker::PhantomData<K>,
 }
 
-impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
+impl<K: GIndex, V: IndexMapData> IndexMap<K, V> {
     pub fn new(max_index: usize) -> Self {
         IndexMap {
             data: vec![V::empty(); max_index].into_boxed_slice(),
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 
@@ -172,7 +146,7 @@ impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
 
         IndexMap {
             data,
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 
@@ -193,12 +167,12 @@ impl<K: IndexMapKey, V: IndexMapData> IndexMap<K, V> {
 
         OptionIndexMap {
             data,
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<K: IndexMapKey, V: IndexMapData> std::ops::Index<K> for IndexMap<K, V> {
+impl<K: GIndex, V: IndexMapData> std::ops::Index<K> for IndexMap<K, V> {
     type Output = V;
 
     fn index(&self, index: K) -> &Self::Output {
@@ -206,23 +180,23 @@ impl<K: IndexMapKey, V: IndexMapData> std::ops::Index<K> for IndexMap<K, V> {
     }
 }
 
-impl<K: IndexMapKey, V: IndexMapData> std::ops::IndexMut<K> for IndexMap<K, V> {
+impl<K: GIndex, V: IndexMapData> std::ops::IndexMut<K> for IndexMap<K, V> {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         self.get_mut(index)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct OptionIndexMap<K: IndexMapKey, V: Debug + Clone + PartialEq> {
+pub struct OptionIndexMap<K: GIndex, V: Debug + Clone + PartialEq> {
     data: Vec<Option<V>>,
-    _marker: std::marker::PhantomData<K>,
+    __marker: std::marker::PhantomData<K>,
 }
 
-impl<K: IndexMapKey, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
+impl<K: GIndex, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
     pub fn new(max_index: usize) -> Self {
         OptionIndexMap {
             data: vec![None; max_index],
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 
@@ -278,7 +252,7 @@ impl<K: IndexMapKey, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
 
         IndexMap {
             data,
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 
@@ -291,12 +265,12 @@ impl<K: IndexMapKey, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
 
         OptionIndexMap {
             data,
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<K: IndexMapKey, V: Debug + Clone + PartialEq> std::ops::Index<K> for OptionIndexMap<K, V> {
+impl<K: GIndex, V: Debug + Clone + PartialEq> std::ops::Index<K> for OptionIndexMap<K, V> {
     type Output = V;
 
     fn index(&self, index: K) -> &Self::Output {
@@ -304,23 +278,23 @@ impl<K: IndexMapKey, V: Debug + Clone + PartialEq> std::ops::Index<K> for Option
     }
 }
 
-impl<K: IndexMapKey, V: Debug + Clone + PartialEq> std::ops::IndexMut<K> for OptionIndexMap<K, V> {
+impl<K: GIndex, V: Debug + Clone + PartialEq> std::ops::IndexMut<K> for OptionIndexMap<K, V> {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         self.get_mut(index).expect("key not present in map")
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct IndexSet<K: IndexMapKey> {
+pub struct IndexSet<K: GIndex> {
     data: Vec<bool>,
-    _marker: std::marker::PhantomData<K>,
+    __marker: std::marker::PhantomData<K>,
 }
 
-impl<K: IndexMapKey> IndexSet<K> {
+impl<K: GIndex> IndexSet<K> {
     pub fn new(max_index: usize) -> Self {
         IndexSet {
             data: vec![false; max_index],
-            _marker: std::marker::PhantomData,
+            __marker: std::marker::PhantomData,
         }
     }
 
@@ -350,10 +324,16 @@ impl<K: IndexMapKey> IndexSet<K> {
     }
 }
 
-impl<K: IndexMapKey> std::ops::Index<K> for IndexSet<K> {
+impl<K: GIndex> std::ops::Index<K> for IndexSet<K> {
     type Output = bool;
 
     fn index(&self, index: K) -> &Self::Output {
         &self.data[index.index()]
+    }
+}
+
+impl<K: GIndex> std::ops::IndexMut<K> for IndexSet<K> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+        &mut self.data[index.index()]
     }
 }

@@ -1,6 +1,6 @@
 use vass_reach_lib::{
     automaton::{
-        AutBuild,
+        Automaton, InitializedAutomaton,
         cfg::{
             update::CFGCounterUpdate,
             vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
@@ -16,18 +16,18 @@ use vass_reach_lib::{
 fn implicit_product_test() {
     let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(1));
 
-    let q0 = cfg.add_state(DfaNode::accepting(()));
-    let q1 = cfg.add_state(DfaNode::non_accepting(()));
-    let q2 = cfg.add_state(DfaNode::non_accepting(()));
+    let q0 = cfg.add_node(DfaNode::accepting(()));
+    let q1 = cfg.add_node(DfaNode::non_accepting(()));
+    let q2 = cfg.add_node(DfaNode::non_accepting(()));
 
-    cfg.set_start(q0);
+    cfg.set_initial(q0);
 
-    cfg.add_transition(q0, q0, cfg_inc!(0));
-    cfg.add_transition(q0, q1, cfg_dec!(0));
-    cfg.add_transition(q1, q2, cfg_dec!(0));
-    cfg.add_transition(q2, q0, cfg_inc!(0));
+    cfg.add_edge(q0, q0, cfg_inc!(0));
+    cfg.add_edge(q0, q1, cfg_dec!(0));
+    cfg.add_edge(q1, q2, cfg_dec!(0));
+    cfg.add_edge(q2, q0, cfg_inc!(0));
 
-    cfg.add_failure_state(());
+    cfg.make_complete(());
 
     let initial_valuation = VASSCounterValuation::from(vec![1]);
     let final_valuation = VASSCounterValuation::from(vec![0]);

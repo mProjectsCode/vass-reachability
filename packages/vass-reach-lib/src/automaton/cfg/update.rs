@@ -3,8 +3,6 @@ use std::{
     str::FromStr,
 };
 
-use itertools::Itertools;
-
 use crate::automaton::vass::counter::{VASSCounterIndex, VASSCounterValuation};
 
 /// Macro to create a cfg increment update
@@ -171,6 +169,8 @@ impl CFGCounterUpdate {
 
 #[test]
 fn test_cfg_counter_update_parser() {
+    use itertools::Itertools;
+
     let counters = [
         CFGCounterUpdate::new(0, true),
         CFGCounterUpdate::new(0, false),

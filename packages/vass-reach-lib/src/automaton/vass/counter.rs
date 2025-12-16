@@ -150,6 +150,10 @@ impl VASSCounterValuation {
             .map(|i| VASSCounterIndex::new(i as u32))
     }
 
+    pub fn has_negative_counter(&self) -> bool {
+        self.values.iter().any(|&x| x < 0)
+    }
+
     pub fn element_max(&mut self, other: &VASSCounterValuation) {
         debug_assert_eq!(
             self.dimension(),

@@ -2,18 +2,10 @@ use std::time::Duration;
 
 use vass_reach_lib::{
     automaton::{
-        AutBuild,
-        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
-        dfa::{minimization::Minimizable, node::DfaNode},
-        nfa::NFA,
-        path::Path,
-        petri_net::{self, spec::ToSpecFormat},
-        vass::{
-            VASS,
-            counter::{VASSCounterIndex, VASSCounterUpdate},
-        },
+        Automaton,
+        petri_net::spec::ToSpecFormat,
+        vass::{VASS, VASSEdge},
     },
-    cfg_dec, cfg_inc,
     config::VASSReachConfig,
     logger::Logger,
     solver::vass_reach::VASSReachSolver,
@@ -60,28 +52,30 @@ fn main() {
 }
 
 fn difficult_instance() {
+    //                                              a1 + 6 >= a0 & a1 >= 0 & a0 >= 0
+    // (a0)^6      .     (a0a1 cup a0'a1' cup a0)*                 .                 (a0a1a1 cup a0'a1'a1')*    .         (a1 cup a1')*
     let mut vass = VASS::new(2, (0..10).collect());
 
-    let s0 = vass.add_state(());
-    let s1 = vass.add_state(());
-    let s2 = vass.add_state(());
-    let s3 = vass.add_state(());
+    let s0 = vass.add_node(());
+    let s1 = vass.add_node(());
+    let s2 = vass.add_node(());
+    let s3 = vass.add_node(());
 
-    let _e0 = vass.add_transition(s0, s1, (0, vec![6, 0].into()));
+    let _e0 = vass.add_edge(s0, s1, VASSEdge::new(0, vec![6, 0].into()));
 
-    let _e1 = vass.add_transition(s1, s1, (1, vec![1, 1].into()));
-    let _e2 = vass.add_transition(s1, s1, (2, vec![-1, -1].into()));
-    let _e3 = vass.add_transition(s1, s1, (3, vec![1, 0].into()));
+    let _e1 = vass.add_edge(s1, s1, VASSEdge::new(1, vec![1, 1].into()));
+    let _e2 = vass.add_edge(s1, s1, VASSEdge::new(2, vec![-1, -1].into()));
+    let _e3 = vass.add_edge(s1, s1, VASSEdge::new(3, vec![1, 0].into()));
 
-    let _e4 = vass.add_transition(s1, s2, (4, vec![0, 0].into()));
+    let _e4 = vass.add_edge(s1, s2, VASSEdge::new(4, vec![0, 0].into()));
 
-    let _e5 = vass.add_transition(s2, s2, (5, vec![1, 2].into()));
-    let _e6 = vass.add_transition(s2, s2, (6, vec![-1, -2].into()));
+    let _e5 = vass.add_edge(s2, s2, VASSEdge::new(5, vec![1, 2].into()));
+    let _e6 = vass.add_edge(s2, s2, VASSEdge::new(6, vec![-1, -2].into()));
 
-    let _e7 = vass.add_transition(s2, s3, (7, vec![0, 0].into()));
+    let _e7 = vass.add_edge(s2, s3, VASSEdge::new(7, vec![0, 0].into()));
 
-    let _e8 = vass.add_transition(s3, s3, (8, vec![0, 1].into()));
-    let _e9 = vass.add_transition(s3, s3, (9, vec![0, -1].into()));
+    let _e8 = vass.add_edge(s3, s3, VASSEdge::new(8, vec![0, 1].into()));
+    let _e9 = vass.add_edge(s3, s3, VASSEdge::new(9, vec![0, -1].into()));
 
     let initialized = vass.init(vec![0, 0].into(), vec![0, 0].into(), s0, s3);
 

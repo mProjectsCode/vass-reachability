@@ -1,12 +1,11 @@
-use petgraph::visit::EdgeRef;
-
 use crate::automaton::{
+    AutomatonEdge,
     cfg::{
+        CFG,
         update::{CFGCounterUpdatable, CFGCounterUpdate},
-        vasscfg::VASSCFG,
     },
     index_map::IndexMap,
-    path::{Path, PathNReaching, path_like::PathLike},
+    path::{Path, path_like::IndexPath},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
@@ -21,20 +20,17 @@ impl MultiGraphPath {
         MultiGraphPath { updates: vec![] }
     }
 
-    pub fn to_path(&self, cfg: &VASSCFG<()>) -> Path {
-        let start = cfg.get_start().expect("CFG should have a start node");
-        let mut last_node = start;
+    pub fn to_path<C: CFG>(&self, cfg: &C) -> Path<C::NIndex, C::EIndex> {
+        let start = cfg.get_initial();
         let mut path = Path::new(start);
 
         for update in &self.updates {
-            let edge_ref = cfg
-                .graph
-                .edges_directed(last_node, petgraph::Direction::Outgoing)
-                .find(|e| e.weight() == update)
+            let edge = cfg
+                .outgoing_edge_indices(path.end())
+                .find(|e| cfg.get_edge_unchecked(*e).matches(update))
                 .expect("Path should be valid");
 
-            path.add(edge_ref.id(), edge_ref.target());
-            last_node = edge_ref.target();
+            path.add(edge, cfg.edge_target_unchecked(edge));
         }
 
         path
@@ -58,35 +54,23 @@ impl MultiGraphPath {
         self.updates.iter().copied()
     }
 
-    /// Checks if a path is N-reaching and returns the valuation the path leads
-    /// to.
+    /// Checks if a path is N-reaching.
     pub fn is_n_reaching(
         &self,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-    ) -> (PathNReaching, VASSCounterValuation) {
+    ) -> bool {
         let mut counters = initial_valuation.clone();
-        let mut negative_index = None;
 
-        for (i, edge) in self.iter().enumerate() {
+        for edge in self.iter() {
             counters.apply_cfg_update(edge);
 
-            let negative_counter = counters.find_negative_counter();
-            if negative_index.is_none()
-                && let Some(counter) = negative_counter
-            {
-                negative_index = Some((i, counter));
+            if counters.has_negative_counter() {
+                return false;
             }
         }
 
-        if let Some(index) = negative_index {
-            (PathNReaching::Negative(index), counters)
-        } else {
-            (
-                PathNReaching::from_bool(&counters == final_valuation),
-                counters,
-            )
-        }
+        &counters == final_valuation
     }
 
     pub fn get_path_final_valuation(
@@ -142,20 +126,19 @@ impl MultiGraphPath {
 
     /// Checks if the path visits a cfg note more than a certain number of
     /// times.
-    pub fn visits_node_multiple_times(&self, cfg: &VASSCFG<()>, limit: u32) -> bool {
-        let start = cfg.get_start().expect("CFG should have a start node");
+    pub fn visits_node_multiple_times(&self, cfg: &impl CFG, limit: u32) -> bool {
+        let start = cfg.get_initial();
         let mut last_node = start;
-        let mut visited = IndexMap::new(cfg.state_count());
+        let mut visited = IndexMap::new(cfg.node_count());
         visited.insert(last_node, 1);
 
         for update in &self.updates {
             let edge_ref = cfg
-                .graph
-                .edges_directed(last_node, petgraph::Direction::Outgoing)
-                .find(|e| e.weight() == update)
+                .outgoing_edge_indices(last_node)
+                .find(|e| cfg.get_edge_unchecked(*e) == update)
                 .expect("Path should be valid");
 
-            last_node = edge_ref.target();
+            last_node = cfg.edge_endpoints_unchecked(edge_ref).1;
             let value = visited.get_mut(last_node);
             *value += 1;
             if *value > limit {

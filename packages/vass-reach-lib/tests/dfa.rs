@@ -1,9 +1,9 @@
 use itertools::Itertools;
 use vass_reach_lib::{
     automaton::{
-        AutBuild, Automaton,
+        Automaton, InitializedAutomaton, Language,
         dfa::{DFA, minimization::Minimizable, node::DfaNode},
-        path::{Path, path_like::PathLike},
+        path::{Path, path_like::IndexPath},
     },
     validation::same_language::{assert_inverse_language, assert_same_language, same_language},
 };
@@ -11,16 +11,16 @@ use vass_reach_lib::{
 #[test]
 fn test_dfa() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::accepting(2));
-    dfa.set_start(q0);
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::accepting(2));
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q1, q2, 'b');
-    dfa.add_transition(q2, q1, 'a');
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q1, q2, 'b');
+    dfa.add_edge(q2, q1, 'a');
 
-    dfa.add_failure_state(3);
+    dfa.make_complete(3);
 
     let input = "ababab";
     let chars = input.chars().collect_vec();
@@ -34,16 +34,16 @@ fn test_dfa() {
 #[test]
 fn test_dfa_inversion() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::accepting(2));
-    dfa.set_start(q0);
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::accepting(2));
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q1, q2, 'b');
-    dfa.add_transition(q2, q1, 'a');
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q1, q2, 'b');
+    dfa.add_edge(q2, q1, 'a');
 
-    dfa.add_failure_state(3);
+    dfa.make_complete(3);
 
     let inverted = dfa.invert();
 
@@ -69,26 +69,26 @@ fn test_dfa_inversion() {
 #[test]
 fn test_dfa_intersection() {
     let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa1.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa1.add_state(DfaNode::accepting(1));
-    dfa1.set_start(q0);
+    let q0 = dfa1.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa1.add_node(DfaNode::accepting(1));
+    dfa1.set_initial(q0);
 
     // a* b b*
-    dfa1.add_transition(q0, q0, 'a');
-    dfa1.add_transition(q0, q1, 'b');
-    dfa1.add_transition(q1, q1, 'b');
+    dfa1.add_edge(q0, q0, 'a');
+    dfa1.add_edge(q0, q1, 'b');
+    dfa1.add_edge(q1, q1, 'b');
 
     let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa2.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa2.add_state(DfaNode::accepting(1));
-    dfa2.set_start(q0);
+    let q0 = dfa2.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa2.add_node(DfaNode::accepting(1));
+    dfa2.set_initial(q0);
 
     // a b*
-    dfa2.add_transition(q0, q1, 'a');
-    dfa2.add_transition(q1, q1, 'b');
+    dfa2.add_edge(q0, q1, 'a');
+    dfa2.add_edge(q1, q1, 'b');
 
-    dfa1.add_failure_state(2);
-    dfa2.add_failure_state(2);
+    dfa1.make_complete(2);
+    dfa2.make_complete(2);
 
     // we want to figure out if L2 is a subset of L1
     // so (a b*) is a subset of (a* b b*)
@@ -102,26 +102,26 @@ fn test_dfa_intersection() {
 #[test]
 fn test_dfa_intersection_2() {
     let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa1.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa1.add_state(DfaNode::accepting(1));
-    dfa1.set_start(q0);
+    let q0 = dfa1.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa1.add_node(DfaNode::accepting(1));
+    dfa1.set_initial(q0);
 
     // a* b b*
-    dfa1.add_transition(q0, q0, 'a');
-    dfa1.add_transition(q0, q1, 'b');
-    dfa1.add_transition(q1, q1, 'b');
+    dfa1.add_edge(q0, q0, 'a');
+    dfa1.add_edge(q0, q1, 'b');
+    dfa1.add_edge(q1, q1, 'b');
 
     let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa2.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa2.add_state(DfaNode::accepting(1));
-    dfa2.set_start(q0);
+    let q0 = dfa2.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa2.add_node(DfaNode::accepting(1));
+    dfa2.set_initial(q0);
 
     // a b*
-    dfa2.add_transition(q0, q1, 'a');
-    dfa2.add_transition(q1, q1, 'b');
+    dfa2.add_edge(q0, q1, 'a');
+    dfa2.add_edge(q1, q1, 'b');
 
-    dfa1.add_failure_state(2);
-    dfa2.add_failure_state(2);
+    dfa1.make_complete(2);
+    dfa2.make_complete(2);
 
     // we want to figure out if L1 is a subset of L2
     // which is wrong, since "b b*" is not in (a b*)
@@ -132,26 +132,26 @@ fn test_dfa_intersection_2() {
 #[test]
 fn test_dfa_intersection_3() {
     let mut dfa1 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa1.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa1.add_state(DfaNode::accepting(1));
-    dfa1.set_start(q0);
+    let q0 = dfa1.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa1.add_node(DfaNode::accepting(1));
+    dfa1.set_initial(q0);
 
     // a* b b*
-    dfa1.add_transition(q0, q0, 'a');
-    dfa1.add_transition(q0, q1, 'b');
-    dfa1.add_transition(q1, q1, 'b');
+    dfa1.add_edge(q0, q0, 'a');
+    dfa1.add_edge(q0, q1, 'b');
+    dfa1.add_edge(q1, q1, 'b');
 
     let mut dfa2 = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa2.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa2.add_state(DfaNode::accepting(1));
-    dfa2.set_start(q0);
+    let q0 = dfa2.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa2.add_node(DfaNode::accepting(1));
+    dfa2.set_initial(q0);
 
     // a* b
-    dfa2.add_transition(q0, q0, 'a');
-    dfa2.add_transition(q0, q1, 'b');
+    dfa2.add_edge(q0, q0, 'a');
+    dfa2.add_edge(q0, q1, 'b');
 
-    dfa1.add_failure_state(2);
-    dfa2.add_failure_state(2);
+    dfa1.make_complete(2);
+    dfa2.make_complete(2);
 
     // we want to figure out if L2 is a subset of L1
     // which should be true
@@ -162,116 +162,116 @@ fn test_dfa_intersection_3() {
 #[test]
 fn minimize_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::non_accepting(2));
-    let q3 = dfa.add_state(DfaNode::accepting(3));
-    let q4 = dfa.add_state(DfaNode::non_accepting(4));
-    let q5 = dfa.add_state(DfaNode::accepting(5));
-    dfa.set_start(q0);
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::non_accepting(2));
+    let q3 = dfa.add_node(DfaNode::accepting(3));
+    let q4 = dfa.add_node(DfaNode::non_accepting(4));
+    let q5 = dfa.add_node(DfaNode::accepting(5));
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q0, q3, 'b');
-    dfa.add_transition(q1, q0, 'a');
-    dfa.add_transition(q1, q3, 'b');
-    dfa.add_transition(q2, q1, 'a');
-    dfa.add_transition(q2, q4, 'b');
-    dfa.add_transition(q3, q5, 'a');
-    dfa.add_transition(q3, q5, 'b');
-    dfa.add_transition(q4, q3, 'a');
-    dfa.add_transition(q4, q3, 'b');
-    dfa.add_transition(q5, q5, 'a');
-    dfa.add_transition(q5, q5, 'b');
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q0, q3, 'b');
+    dfa.add_edge(q1, q0, 'a');
+    dfa.add_edge(q1, q3, 'b');
+    dfa.add_edge(q2, q1, 'a');
+    dfa.add_edge(q2, q4, 'b');
+    dfa.add_edge(q3, q5, 'a');
+    dfa.add_edge(q3, q5, 'b');
+    dfa.add_edge(q4, q3, 'a');
+    dfa.add_edge(q4, q3, 'b');
+    dfa.add_edge(q5, q5, 'a');
+    dfa.add_edge(q5, q5, 'b');
 
-    dfa.override_complete();
+    dfa.set_complete_unchecked();
 
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
-    assert_eq!(minimized.state_count(), 2);
+    assert_eq!(minimized.node_count(), 2);
 }
 
 #[test]
 fn minimize_2() {
     // example:  https://en.wikipedia.org/wiki/DFA_minimization
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::accepting(2));
-    let q3 = dfa.add_state(DfaNode::accepting(3));
-    let q4 = dfa.add_state(DfaNode::accepting(4));
-    let q5 = dfa.add_state(DfaNode::non_accepting(5));
-    dfa.set_start(q0);
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::accepting(2));
+    let q3 = dfa.add_node(DfaNode::accepting(3));
+    let q4 = dfa.add_node(DfaNode::accepting(4));
+    let q5 = dfa.add_node(DfaNode::non_accepting(5));
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q0, q2, 'b');
-    dfa.add_transition(q1, q0, 'a');
-    dfa.add_transition(q1, q3, 'b');
-    dfa.add_transition(q2, q4, 'a');
-    dfa.add_transition(q2, q5, 'b');
-    dfa.add_transition(q3, q4, 'a');
-    dfa.add_transition(q3, q5, 'b');
-    dfa.add_transition(q4, q4, 'a');
-    dfa.add_transition(q4, q5, 'b');
-    dfa.add_transition(q5, q5, 'a');
-    dfa.add_transition(q5, q5, 'b');
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q0, q2, 'b');
+    dfa.add_edge(q1, q0, 'a');
+    dfa.add_edge(q1, q3, 'b');
+    dfa.add_edge(q2, q4, 'a');
+    dfa.add_edge(q2, q5, 'b');
+    dfa.add_edge(q3, q4, 'a');
+    dfa.add_edge(q3, q5, 'b');
+    dfa.add_edge(q4, q4, 'a');
+    dfa.add_edge(q4, q5, 'b');
+    dfa.add_edge(q5, q5, 'a');
+    dfa.add_edge(q5, q5, 'b');
 
-    dfa.override_complete();
+    dfa.set_complete_unchecked();
 
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
-    assert_eq!(minimized.state_count(), 3);
+    assert_eq!(minimized.node_count(), 3);
 }
 
 #[test]
 fn minimize_3() {
     let mut dfa = DFA::<u32, char>::new(vec!['a']);
 
-    let q0 = dfa.add_state(DfaNode::accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::accepting(2));
-    let q3 = dfa.add_state(DfaNode::non_accepting(3));
+    let q0 = dfa.add_node(DfaNode::accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::accepting(2));
+    let q3 = dfa.add_node(DfaNode::non_accepting(3));
 
-    dfa.set_start(q0);
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q1, q2, 'a');
-    dfa.add_transition(q2, q3, 'a');
-    dfa.add_transition(q3, q0, 'a');
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q1, q2, 'a');
+    dfa.add_edge(q2, q3, 'a');
+    dfa.add_edge(q3, q0, 'a');
 
-    dfa.override_complete();
+    dfa.set_complete_unchecked();
 
     let minimized = dfa.minimize();
 
     assert!(same_language(&dfa, &minimized, 10));
-    assert_eq!(minimized.state_count(), 2);
+    assert_eq!(minimized.node_count(), 2);
 }
 
 #[test]
 fn minimize_4() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c', 'd']);
 
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::accepting(1));
-    let q2 = dfa.add_state(DfaNode::non_accepting(2));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::accepting(1));
+    let q2 = dfa.add_node(DfaNode::non_accepting(2));
 
-    dfa.set_start(q0);
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q0, 'a');
-    dfa.add_transition(q0, q1, 'b');
-    dfa.add_transition(q0, q2, 'c');
-    dfa.add_transition(q0, q2, 'd');
-    dfa.add_transition(q1, q2, 'a');
-    dfa.add_transition(q1, q2, 'b');
-    dfa.add_transition(q1, q1, 'c');
-    dfa.add_transition(q1, q2, 'd');
-    dfa.add_transition(q2, q2, 'a');
-    dfa.add_transition(q2, q2, 'b');
-    dfa.add_transition(q2, q2, 'c');
-    dfa.add_transition(q2, q2, 'd');
+    dfa.add_edge(q0, q0, 'a');
+    dfa.add_edge(q0, q1, 'b');
+    dfa.add_edge(q0, q2, 'c');
+    dfa.add_edge(q0, q2, 'd');
+    dfa.add_edge(q1, q2, 'a');
+    dfa.add_edge(q1, q2, 'b');
+    dfa.add_edge(q1, q1, 'c');
+    dfa.add_edge(q1, q2, 'd');
+    dfa.add_edge(q2, q2, 'a');
+    dfa.add_edge(q2, q2, 'b');
+    dfa.add_edge(q2, q2, 'c');
+    dfa.add_edge(q2, q2, 'd');
 
-    dfa.override_complete();
+    dfa.set_complete_unchecked();
 
     let minimized = dfa.minimize();
 
@@ -282,68 +282,68 @@ fn minimize_4() {
 fn minimize_5() {
     let mut dfa = DFA::<u32, i32>::new(vec![1, 2, -1, -2]);
 
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::non_accepting(2));
-    let q3 = dfa.add_state(DfaNode::non_accepting(3));
-    let q4 = dfa.add_state(DfaNode::non_accepting(4));
-    let q5 = dfa.add_state(DfaNode::accepting(5));
-    let q6 = dfa.add_state(DfaNode::non_accepting(6));
-    let q7 = dfa.add_state(DfaNode::non_accepting(7));
-    let q8 = dfa.add_state(DfaNode::non_accepting(8));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::non_accepting(2));
+    let q3 = dfa.add_node(DfaNode::non_accepting(3));
+    let q4 = dfa.add_node(DfaNode::non_accepting(4));
+    let q5 = dfa.add_node(DfaNode::accepting(5));
+    let q6 = dfa.add_node(DfaNode::non_accepting(6));
+    let q7 = dfa.add_node(DfaNode::non_accepting(7));
+    let q8 = dfa.add_node(DfaNode::non_accepting(8));
 
-    dfa.set_start(q0);
+    dfa.set_initial(q0);
 
-    dfa.add_transition(q0, q1, -2);
-    dfa.add_transition(q0, q2, -1);
-    dfa.add_transition(q0, q3, 1);
-    dfa.add_transition(q0, q1, 2);
+    dfa.add_edge(q0, q1, -2);
+    dfa.add_edge(q0, q2, -1);
+    dfa.add_edge(q0, q3, 1);
+    dfa.add_edge(q0, q1, 2);
 
-    dfa.add_transition(q1, q1, -2);
-    dfa.add_transition(q1, q1, -1);
-    dfa.add_transition(q1, q3, 1);
-    dfa.add_transition(q1, q1, 2);
+    dfa.add_edge(q1, q1, -2);
+    dfa.add_edge(q1, q1, -1);
+    dfa.add_edge(q1, q3, 1);
+    dfa.add_edge(q1, q1, 2);
 
-    dfa.add_transition(q2, q2, -2);
-    dfa.add_transition(q2, q2, -1);
-    dfa.add_transition(q2, q6, 1);
-    dfa.add_transition(q2, q2, 2);
+    dfa.add_edge(q2, q2, -2);
+    dfa.add_edge(q2, q2, -1);
+    dfa.add_edge(q2, q6, 1);
+    dfa.add_edge(q2, q2, 2);
 
-    dfa.add_transition(q3, q1, -2);
-    dfa.add_transition(q3, q4, -1);
-    dfa.add_transition(q3, q3, 1);
-    dfa.add_transition(q3, q1, 2);
+    dfa.add_edge(q3, q1, -2);
+    dfa.add_edge(q3, q4, -1);
+    dfa.add_edge(q3, q3, 1);
+    dfa.add_edge(q3, q1, 2);
 
-    dfa.add_transition(q4, q1, -2);
-    dfa.add_transition(q4, q5, -1);
-    dfa.add_transition(q4, q1, 1);
-    dfa.add_transition(q4, q1, 2);
+    dfa.add_edge(q4, q1, -2);
+    dfa.add_edge(q4, q5, -1);
+    dfa.add_edge(q4, q1, 1);
+    dfa.add_edge(q4, q1, 2);
 
-    dfa.add_transition(q5, q1, -2);
-    dfa.add_transition(q5, q5, -1);
-    dfa.add_transition(q5, q1, 1);
-    dfa.add_transition(q5, q1, 2);
+    dfa.add_edge(q5, q1, -2);
+    dfa.add_edge(q5, q5, -1);
+    dfa.add_edge(q5, q1, 1);
+    dfa.add_edge(q5, q1, 2);
 
-    dfa.add_transition(q6, q2, -2);
-    dfa.add_transition(q6, q7, -1);
-    dfa.add_transition(q6, q6, 1);
-    dfa.add_transition(q6, q2, 2);
+    dfa.add_edge(q6, q2, -2);
+    dfa.add_edge(q6, q7, -1);
+    dfa.add_edge(q6, q6, 1);
+    dfa.add_edge(q6, q2, 2);
 
-    dfa.add_transition(q7, q2, -2);
-    dfa.add_transition(q7, q8, -1);
-    dfa.add_transition(q7, q2, 1);
-    dfa.add_transition(q7, q2, 2);
+    dfa.add_edge(q7, q2, -2);
+    dfa.add_edge(q7, q8, -1);
+    dfa.add_edge(q7, q2, 1);
+    dfa.add_edge(q7, q2, 2);
 
-    dfa.add_transition(q8, q2, -2);
-    dfa.add_transition(q8, q8, -1);
-    dfa.add_transition(q8, q2, 1);
-    dfa.add_transition(q8, q2, 2);
+    dfa.add_edge(q8, q2, -2);
+    dfa.add_edge(q8, q8, -1);
+    dfa.add_edge(q8, q2, 1);
+    dfa.add_edge(q8, q2, 2);
 
-    dfa.override_complete();
+    dfa.set_complete_unchecked();
 
     let minimized = dfa.minimize();
 
-    assert_eq!(minimized.state_count(), 6);
+    assert_eq!(minimized.node_count(), 6);
     // dbg!(&minimized);
 
     assert_same_language(&dfa, &minimized, 8);
@@ -353,19 +353,19 @@ fn minimize_5() {
 fn find_loop_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
 
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::non_accepting(2));
-    let q3 = dfa.add_state(DfaNode::accepting(3));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::non_accepting(2));
+    let q3 = dfa.add_node(DfaNode::accepting(3));
 
-    dfa.set_start(q0);
+    dfa.set_initial(q0);
 
-    let e1 = dfa.add_transition(q0, q1, 'a');
-    let e2 = dfa.add_transition(q1, q2, 'b');
-    let e3 = dfa.add_transition(q2, q3, 'a');
-    let e4 = dfa.add_transition(q3, q0, 'b');
+    let e1 = dfa.add_edge(q0, q1, 'a');
+    let e2 = dfa.add_edge(q1, q2, 'b');
+    let e3 = dfa.add_edge(q2, q3, 'a');
+    let e4 = dfa.add_edge(q3, q0, 'b');
 
-    dfa.override_complete();
+    dfa.make_complete(4);
 
     // loop in q0
     let loop_ = dfa.find_loop_rooted_in_node(q0);
@@ -396,26 +396,26 @@ fn find_loop_1() {
 fn find_loop_2() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
 
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::non_accepting(2));
-    let q3 = dfa.add_state(DfaNode::non_accepting(3));
-    let q4 = dfa.add_state(DfaNode::non_accepting(4));
-    let q5 = dfa.add_state(DfaNode::accepting(5));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::non_accepting(2));
+    let q3 = dfa.add_node(DfaNode::non_accepting(3));
+    let q4 = dfa.add_node(DfaNode::non_accepting(4));
+    let q5 = dfa.add_node(DfaNode::accepting(5));
 
-    dfa.set_start(q0);
+    dfa.set_initial(q0);
 
-    let e1 = dfa.add_transition(q0, q1, 'a');
-    let e2 = dfa.add_transition(q1, q0, 'b');
-    let _e3 = dfa.add_transition(q0, q2, 'b');
-    let _e4 = dfa.add_transition(q2, q3, 'a');
-    let _e5 = dfa.add_transition(q3, q0, 'a');
-    let _e6 = dfa.add_transition(q0, q4, 'c');
-    let e6 = dfa.add_transition(q4, q5, 'b');
-    let e7 = dfa.add_transition(q5, q5, 'a');
-    let e8 = dfa.add_transition(q5, q4, 'b');
+    let e1 = dfa.add_edge(q0, q1, 'a');
+    let e2 = dfa.add_edge(q1, q0, 'b');
+    let _e3 = dfa.add_edge(q0, q2, 'b');
+    let _e4 = dfa.add_edge(q2, q3, 'a');
+    let _e5 = dfa.add_edge(q3, q0, 'a');
+    let _e6 = dfa.add_edge(q0, q4, 'c');
+    let e6 = dfa.add_edge(q4, q5, 'b');
+    let e7 = dfa.add_edge(q5, q5, 'a');
+    let e8 = dfa.add_edge(q5, q4, 'b');
 
-    dfa.override_complete();
+    dfa.make_complete(6);
 
     // loop in q0
     let loop_ = dfa.find_loop_rooted_in_node(q0);
@@ -451,26 +451,26 @@ fn find_loop_2() {
 fn find_loops_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
 
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::non_accepting(2));
-    let q3 = dfa.add_state(DfaNode::non_accepting(3));
-    let q4 = dfa.add_state(DfaNode::non_accepting(4));
-    let q5 = dfa.add_state(DfaNode::accepting(5));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::non_accepting(2));
+    let q3 = dfa.add_node(DfaNode::non_accepting(3));
+    let q4 = dfa.add_node(DfaNode::non_accepting(4));
+    let q5 = dfa.add_node(DfaNode::accepting(5));
 
-    dfa.set_start(q0);
+    dfa.set_initial(q0);
 
-    let _e1 = dfa.add_transition(q0, q1, 'a');
-    let _e2 = dfa.add_transition(q1, q0, 'b');
-    let _e3 = dfa.add_transition(q0, q2, 'b');
-    let _e4 = dfa.add_transition(q2, q3, 'a');
-    let _e5 = dfa.add_transition(q3, q0, 'a');
-    let _e6 = dfa.add_transition(q0, q4, 'c');
-    let _e6 = dfa.add_transition(q4, q5, 'b');
-    let _e7 = dfa.add_transition(q5, q5, 'a');
-    let _e8 = dfa.add_transition(q5, q4, 'b');
+    let _e1 = dfa.add_edge(q0, q1, 'a');
+    let _e2 = dfa.add_edge(q1, q0, 'b');
+    let _e3 = dfa.add_edge(q0, q2, 'b');
+    let _e4 = dfa.add_edge(q2, q3, 'a');
+    let _e5 = dfa.add_edge(q3, q0, 'a');
+    let _e6 = dfa.add_edge(q0, q4, 'c');
+    let _e6 = dfa.add_edge(q4, q5, 'b');
+    let _e7 = dfa.add_edge(q5, q5, 'a');
+    let _e8 = dfa.add_edge(q5, q4, 'b');
 
-    dfa.override_complete();
+    dfa.make_complete(6);
 
     // loop in q0
     let loops = dfa.find_loops_rooted_in_node(q0, None);
@@ -500,15 +500,15 @@ fn find_loops_1() {
 #[test]
 fn reverse_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::accepting(2));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::accepting(2));
 
-    dfa.set_start(q0);
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q1, q2, 'b');
+    dfa.set_initial(q0);
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q1, q2, 'b');
 
-    dfa.add_failure_state(3);
+    dfa.make_complete(3);
 
     let reversed = dfa.reverse();
 
@@ -522,16 +522,16 @@ fn reverse_1() {
 #[test]
 fn reverse_2() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b', 'c']);
-    let q0 = dfa.add_state(DfaNode::non_accepting(0));
-    let q1 = dfa.add_state(DfaNode::non_accepting(1));
-    let q2 = dfa.add_state(DfaNode::accepting(2));
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    let q1 = dfa.add_node(DfaNode::non_accepting(1));
+    let q2 = dfa.add_node(DfaNode::accepting(2));
 
-    dfa.set_start(q0);
-    dfa.add_transition(q0, q1, 'a');
-    dfa.add_transition(q1, q2, 'b');
-    dfa.add_transition(q1, q2, 'c');
+    dfa.set_initial(q0);
+    dfa.add_edge(q0, q1, 'a');
+    dfa.add_edge(q1, q2, 'b');
+    dfa.add_edge(q1, q2, 'c');
 
-    dfa.add_failure_state(3);
+    dfa.make_complete(3);
 
     let reversed = dfa.reverse();
 

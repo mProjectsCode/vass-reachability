@@ -1,10 +1,9 @@
 use petgraph::{Direction, graph::NodeIndex, visit::EdgeRef};
 
 use crate::automaton::{
-    AutBuild, AutomatonEdge, AutomatonNode,
+    Automaton, AutomatonEdge, AutomatonNode, FromLetter, InitializedAutomaton,
     dfa::{DFA, node::DfaNode},
     index_map::{IndexMap, IndexSet},
-    path::Path,
 };
 
 /// Represents the table used in the minimization of a DFA.
@@ -16,13 +15,13 @@ use crate::automaton::{
 /// the alphabet of the DFA. The table contains None for states that have been
 /// merged with another state, as to minimize reallocations when merging states.
 #[derive(Debug, Clone)]
-pub struct DfaMinimizationTable<'a, N: AutomatonNode, E: AutomatonEdge> {
+pub struct DfaMinimizationTable<'a, N: AutomatonNode, E: AutomatonEdge + FromLetter> {
     pub table: Vec<Option<DfaMinimizationTableEntry<'a, N>>>,
     pub graph: &'a DFA<N, E>,
     pub highest_state_index: usize,
 }
 
-impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
+impl<'a, N: AutomatonNode, E: AutomatonEdge + FromLetter> DfaMinimizationTable<'a, N, E> {
     pub fn new(graph: &'a DFA<N, E>) -> Self {
         let highest_state_index = graph
             .graph
@@ -102,14 +101,14 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
     }
 
     pub fn to_dfa(&self) -> DFA<N, E> {
-        let mut dfa = DFA::new(self.graph.alphabet.clone());
+        let mut dfa = DFA::<N, E>::new(self.graph.alphabet.clone());
 
-        let mut state_map = IndexMap::new(self.graph.state_count());
+        let mut state_map = IndexMap::new(self.graph.node_count());
 
         for entry in self.iter_some() {
-            let state = dfa.add_state(DfaNode::new(entry.is_final, false, entry.data.clone()));
+            let state = dfa.add_node(DfaNode::new(entry.is_final, false, entry.data.clone()));
             if entry.is_initial {
-                dfa.set_start(state);
+                dfa.set_initial(state);
             }
 
             state_map.insert(entry.state, state);
@@ -124,7 +123,7 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
             for (i, symbol) in self.graph.alphabet.iter().enumerate() {
                 let target = entry.transitions[i];
                 let to = state_map[target];
-                dfa.add_transition(from, to, (*symbol).clone());
+                dfa.add_edge(from, to, E::from_letter(symbol));
                 if from != to {
                     trap = false;
                 }
@@ -135,7 +134,7 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge> DfaMinimizationTable<'a, N, E> {
             }
         }
 
-        dfa.override_complete();
+        dfa.set_complete_unchecked();
 
         dfa
     }
@@ -269,7 +268,7 @@ pub trait Minimizable {
     fn minimize(&self) -> Self;
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge> Minimizable for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Minimizable for DFA<N, E> {
     fn minimize(&self) -> Self {
         assert!(self.start.is_some(), "Self must have a start state");
         assert!(self.is_complete(), "Self must be complete to minimize");
@@ -277,7 +276,7 @@ impl<N: AutomatonNode, E: AutomatonEdge> Minimizable for DFA<N, E> {
         let mut table = DfaMinimizationTable::new(self);
 
         let start = self.start.unwrap();
-        let mut visited = IndexSet::new(self.state_count());
+        let mut visited = IndexSet::new(self.node_count());
         let mut stack = vec![start];
         visited.insert(start);
 
@@ -293,12 +292,12 @@ impl<N: AutomatonNode, E: AutomatonEdge> Minimizable for DFA<N, E> {
                 let target = self
                     .graph
                     .edges_directed(node, Direction::Outgoing)
-                    .find(|edge| edge.weight() == letter)
+                    .find(|edge| edge.weight().matches(letter))
                     .map(|edge| edge.target());
 
                 if target.is_none() {
                     println!("No target for letter {:?} from state {:?}", letter, node);
-                    println!("{}", self.to_graphviz(None as Option<Path>));
+                    // println!("{}", self.to_graphviz(None as Option<Path>));
                     panic!("DFA must be complete to minimize");
                 }
 

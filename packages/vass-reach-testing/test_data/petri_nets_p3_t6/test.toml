@@ -13,8 +13,20 @@ tool = "vass-reach"
 config = "./vass_reach_lcm.toml"
 max_parallel = 8
 
-[[runs]]
-name = "kreach"
-tool = "kreach"
-config = ""
-max_parallel = 4
+# [[runs]]
+# name = "vass-reach-inc-old"
+# tool = "vass-reach"
+# config = "./vass_reach_inc.toml"
+# max_parallel = 8
+
+# [[runs]]
+# name = "vass-reach-lcm-old"
+# tool = "vass-reach"
+# config = "./vass_reach_lcm.toml"
+# max_parallel = 8
+
+# [[runs]]
+# name = "kreach"
+# tool = "kreach"
+# config = ""
+# max_parallel = 4

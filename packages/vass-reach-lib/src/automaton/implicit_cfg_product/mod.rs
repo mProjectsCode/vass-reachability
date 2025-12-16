@@ -2,7 +2,7 @@ use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 
 use crate::automaton::{
-    Automaton,
+    InitializedAutomaton, Language,
     cfg::{
         update::CFGCounterUpdatable,
         vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
@@ -219,7 +219,7 @@ impl ImplicitCFGProduct {
     fn get_start_multi_state(&self) -> MultiGraphState {
         let start_states = self
             .iter_all_graphs()
-            .map(|cfg| cfg.get_start().expect("must have a start state"))
+            .map(|cfg| cfg.get_initial())
             .collect_vec()
             .into_boxed_slice();
 
