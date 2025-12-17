@@ -154,7 +154,6 @@ impl ImplicitCFGProduct {
             for letter in self.cfg.alphabet() {
                 let target = state.last_state.take_letter(&graphs, letter);
                 let Some(target) = target else {
-                    println!("No target for letter {:?}", letter);
                     continue;
                 };
                 // Optimization: if any of the graphs is in a trap state, we can stop this

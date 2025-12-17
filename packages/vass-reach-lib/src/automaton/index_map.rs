@@ -322,6 +322,15 @@ impl<K: GIndex> IndexSet<K> {
     pub fn remove(&mut self, key: K) {
         self.data[key.index()] = false;
     }
+
+    pub fn to_vec(&self) -> Vec<K> {
+        self.data
+            .iter()
+            .enumerate()
+            .filter(|(_, x)| **x)
+            .map(|(i, _)| K::new(i))
+            .collect()
+    }
 }
 
 impl<K: GIndex> std::ops::Index<K> for IndexSet<K> {

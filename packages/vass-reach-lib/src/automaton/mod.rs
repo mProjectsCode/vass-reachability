@@ -5,6 +5,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::automaton::{cfg::update::CFGCounterUpdate, nfa::NFAEdge, vass::VASSEdge};
 
+pub mod algorithms;
 pub mod cfg;
 pub mod dfa;
 pub mod implicit_cfg_product;
@@ -234,37 +235,85 @@ impl<'a, G> From<&'a mut G> for Frozen<'a, G> {
     }
 }
 
-/// The base trait for automata.
-/// An automaton consists of nodes and edges, each identified by an index type.
-/// We assert that the index types are continuous from 0 to n-1, where n is the
-/// number of nodes/edges.
-pub trait Automaton: Sized {
+pub trait NodeAutomaton: Sized {
     /// The index type used to identify nodes.
     type NIndex: GIndex;
-    /// The index type used to identify edges.
-    type EIndex: GIndex;
     /// The data type associated with nodes.
     type N: AutomatonNode;
-    /// The data type associated with edges.
-    type E: AutomatonEdge;
 
     /// Returns the number of nodes in the automaton.
     /// It should be valid to index nodes from 0 to node_count() - 1
     fn node_count(&self) -> usize;
-    /// Returns the number of edges in the automaton.
-    /// It should be valid to index edges from 0 to edge_count() - 1.
-    fn edge_count(&self) -> usize;
 
     /// Returns the node corresponding to the given index, or None if the index
     /// is invalid.
     fn get_node(&self, index: Self::NIndex) -> Option<&Self::N>;
-    /// Returns the edge corresponding to the given index, or None if the index
-    /// is invalid.
-    fn get_edge(&self, index: Self::EIndex) -> Option<&Self::E>;
 
     /// Returns the node corresponding to the given index, panicking if the
     /// index is invalid.
     fn get_node_unchecked(&self, index: Self::NIndex) -> &Self::N;
+
+    /// Returns an iterator over all node indices in the automaton.
+    fn iter_node_indices(&self) -> GIndexIterator<Self::NIndex> {
+        GIndexIterator::new(0, self.node_count())
+    }
+
+    /// Returns a combined iterator over all nodes in the automaton, yielding
+    /// (node_index, node_reference) pairs.
+    fn iter_nodes<'a>(&'a self) -> impl Iterator<Item = (Self::NIndex, &'a Self::N)>
+    where
+        Self::N: 'a,
+    {
+        self.iter_node_indices()
+            .filter_map(move |idx| self.get_node(idx).map(|n| (idx, n)))
+    }
+}
+
+pub trait NodeSuccessorAutomaton: NodeAutomaton {
+    fn successors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex>;
+    fn predecessors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex>;
+
+    fn undirected_neighbors(&self, node: Self::NIndex) -> Vec<Self::NIndex> {
+        let mut neighbors = self
+            .successors(node)
+            .chain(self.predecessors(node))
+            .collect_vec();
+        neighbors.sort();
+        neighbors.dedup();
+        neighbors
+    }
+}
+
+impl<T: Automaton> NodeSuccessorAutomaton for T {
+    fn successors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex> {
+        self.outgoing_edge_indices(node)
+            .map(|e| self.edge_target_unchecked(e))
+    }
+
+    fn predecessors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex> {
+        self.incoming_edge_indices(node)
+            .map(|e| self.edge_source_unchecked(e))
+    }
+}
+
+/// The base trait for automata.
+/// An automaton consists of nodes and edges, each identified by an index type.
+/// We assert that the index types are continuous from 0 to n-1, where n is the
+/// number of nodes/edges.
+pub trait Automaton: NodeAutomaton {
+    /// The index type used to identify edges.
+    type EIndex: GIndex;
+    /// The data type associated with edges.
+    type E: AutomatonEdge;
+
+    /// Returns the number of edges in the automaton.
+    /// It should be valid to index edges from 0 to edge_count() - 1.
+    fn edge_count(&self) -> usize;
+
+    /// Returns the edge corresponding to the given index, or None if the index
+    /// is invalid.
+    fn get_edge(&self, index: Self::EIndex) -> Option<&Self::E>;
+
     /// Returns the edge corresponding to the given index, panicking if the
     /// index is invalid.
     fn get_edge_unchecked(&self, index: Self::EIndex) -> &Self::E;
@@ -298,24 +347,11 @@ pub trait Automaton: Sized {
         self.edge_endpoints_unchecked(edge).1
     }
 
-    /// Returns an iterator over all node indices in the automaton.
-    fn iter_node_indices(&self) -> GIndexIterator<Self::NIndex> {
-        GIndexIterator::new(0, self.node_count())
-    }
     /// Returns an iterator over all edge indices in the automaton.
     fn iter_edge_indices(&self) -> GIndexIterator<Self::EIndex> {
         GIndexIterator::new(0, self.edge_count())
     }
 
-    /// Returns a combined iterator over all nodes in the automaton, yielding
-    /// (node_index, node_reference) pairs.
-    fn iter_nodes<'a>(&'a self) -> impl Iterator<Item = (Self::NIndex, &'a Self::N)>
-    where
-        Self::N: 'a,
-    {
-        self.iter_node_indices()
-            .filter_map(move |idx| self.get_node(idx).map(|n| (idx, n)))
-    }
     /// Returns a combined iterator over all edges in the automaton, yielding
     /// (edge_index, edge_reference) pairs.
     fn iter_edges<'a>(&'a self) -> impl Iterator<Item = (Self::EIndex, &'a Self::E)>
@@ -335,19 +371,7 @@ pub trait Automaton: Sized {
         self.outgoing_edge_indices(node)
             .chain(self.incoming_edge_indices(node))
     }
-    fn undirected_neighbor_indices(&self, node: Self::NIndex) -> Vec<Self::NIndex> {
-        let mut neighbors = self
-            .outgoing_edge_indices(node)
-            .map(|e| self.edge_target_unchecked(e))
-            .chain(
-                self.incoming_edge_indices(node)
-                    .map(|e| self.edge_source_unchecked(e)),
-            )
-            .collect_vec();
-        neighbors.sort();
-        neighbors.dedup();
-        neighbors
-    }
+
     /// Returns an iterator over the edge indices directly connecting the given
     /// from and to nodes.
     fn connecting_edge_indices(
@@ -355,7 +379,9 @@ pub trait Automaton: Sized {
         from: Self::NIndex,
         to: Self::NIndex,
     ) -> impl Iterator<Item = Self::EIndex>;
+}
 
+pub trait ModifiableAutomaton: Automaton {
     /// Adds a new node with the given data to the automaton.
     /// Returns the index of the newly added node.
     fn add_node(&mut self, data: Self::N) -> Self::NIndex;
@@ -376,7 +402,7 @@ pub trait Automaton: Sized {
         F: Fn(Frozen<Self>, Self::NIndex) -> bool;
 }
 
-pub trait InitializedAutomaton: Automaton {
+pub trait InitializedAutomaton: NodeSuccessorAutomaton {
     /// Returns the start node of the automaton, panicking if no start node is
     /// set.
     fn get_initial(&self) -> Self::NIndex;

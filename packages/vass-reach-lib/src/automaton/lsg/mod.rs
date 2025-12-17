@@ -50,7 +50,7 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
         // dbg!(&self.parts);
         // dbg!(node);
 
-        let neighbors = self.cfg.undirected_neighbor_indices(node);
+        let neighbors = self.cfg.undirected_neighbors(node);
 
         // first we split all paths at the given node
         let mut new_parts = self

@@ -40,20 +40,17 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
         while let Some((vass_state, cfg_state)) = stack.pop() {
             visited.insert(vass_state, cfg_state);
 
-            for vass_edge in self
-                .vass
-                .graph
-                .edges_directed(vass_state, Direction::Outgoing)
-            {
-                let cfg_target = if let Some(target) = visited.get_option(vass_edge.target()) {
+            for vass_edge in self.outgoing_edge_indices(vass_state) {
+                let vass_target = self.edge_target_unchecked(vass_edge);
+                let cfg_target = if let Some(target) = visited.get_option(vass_target) {
                     *target
                 } else {
-                    let target = cfg.add_node(self.state_to_cfg_state(vass_edge.target()));
-                    stack.push((vass_edge.target(), target));
+                    let target = cfg.add_node(self.state_to_cfg_state(vass_target));
+                    stack.push((vass_target, target));
                     target
                 };
 
-                let vass_label = &vass_edge.weight().update;
+                let vass_label = &self.get_edge_unchecked(vass_edge).update;
                 let marking_vec = utils::vass_update_to_cfg_updates(vass_label);
 
                 if marking_vec.is_empty() {

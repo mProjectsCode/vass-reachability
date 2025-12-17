@@ -8,7 +8,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen,
+    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen, ModifiableAutomaton,
+    NodeAutomaton,
     vass::counter::{VASSCounterUpdate, VASSCounterValuation},
 };
 
@@ -81,15 +82,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> VASS<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NodeAutomaton for VASS<N, E> {
     type NIndex = NodeIndex;
-    type EIndex = EdgeIndex;
     type N = N;
-    type E = VASSEdge<E>;
-
-    fn edge_count(&self) -> usize {
-        self.graph.edge_count()
-    }
 
     fn node_count(&self) -> usize {
         self.graph.node_count()
@@ -99,12 +94,22 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
         self.graph.node_weight(index)
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&VASSEdge<E>> {
-        self.graph.edge_weight(index)
-    }
-
     fn get_node_unchecked(&self, index: Self::NIndex) -> &N {
         &self.graph[index]
+    }
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
+    type EIndex = EdgeIndex;
+
+    type E = VASSEdge<E>;
+
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
+    fn get_edge(&self, index: Self::EIndex) -> Option<&VASSEdge<E>> {
+        self.graph.edge_weight(index)
     }
 
     fn get_edge_unchecked(&self, index: Self::EIndex) -> &VASSEdge<E> {
@@ -138,7 +143,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
     ) -> impl Iterator<Item = Self::EIndex> {
         self.graph.edges_connecting(from, to).map(|edge| edge.id())
     }
+}
 
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for VASS<N, E> {
     fn add_node(&mut self, data: N) -> Self::NIndex {
         self.graph.add_node(data)
     }

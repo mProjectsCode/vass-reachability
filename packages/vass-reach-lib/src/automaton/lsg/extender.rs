@@ -184,7 +184,7 @@ impl<C: CFG> NodeChooser<C> for RandomNodeChooser {
                 continue;
             }
 
-            let neighbors: Vec<_> = lsg.cfg.undirected_neighbor_indices(node);
+            let neighbors: Vec<_> = lsg.cfg.undirected_neighbors(node);
 
             let selected = neighbors
                 .iter()
