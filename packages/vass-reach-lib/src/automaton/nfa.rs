@@ -160,58 +160,6 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
     pub fn node_data_set(&self, nodes: &[NodeIndex]) -> Vec<N> {
         nodes.iter().map(|&x| self.node_data(x).clone()).collect()
     }
-
-    // pub fn to_graphviz(&self, edges: Option<impl EdgeIndexList>) -> String {
-    //     let mut dot = String::new();
-    //     dot.push_str("digraph finite_state_machine {\n");
-    //     dot.push_str("fontname=\"Helvetica,Arial,sans-serif\"\n");
-    //     dot.push_str("node [fontname=\"Helvetica,Arial,sans-serif\"]\n");
-    //     dot.push_str("edge [fontname=\"Helvetica,Arial,sans-serif\"]\n");
-    //     dot.push_str("rankdir=LR;\n");
-    //     dot.push_str("node [shape=point,label=\"\"]START\n");
-
-    //     let accepting_states = self
-    //         .graph
-    //         .node_indices()
-    //         .filter(|node| self.graph[*node].accepting)
-    //         .collect::<Vec<_>>();
-
-    //     dot.push_str(&format!(
-    //         "node [shape = doublecircle]; {};\n",
-    //         accepting_states
-    //             .iter()
-    //             .map(|node| node.index().to_string())
-    //             .join(" ")
-    //     ));
-    //     dot.push_str("node [shape = circle];\n");
-
-    //     if let Some(start) = self.start {
-    //         dot.push_str(&format!("START -> {:?};\n", start.index()));
-    //     }
-
-    //     for edge in self.graph.edge_references() {
-    //         let mut attrs = vec![(
-    //             "label",
-    //             format!("\"{:?} ({})\"", edge.weight(), edge.id().index()),
-    //         )];
-
-    //         if let Some(edges) = &edges
-    //             && edges.has_edge(edge.id())
-    //         {
-    //             attrs.push(("color", "red".to_string()));
-    //         }
-    //         dot.push_str(&format!(
-    //             "{:?} -> {:?} [ {} ];\n",
-    //             edge.source().index(),
-    //             edge.target().index(),
-    //             attrs.iter().map(|(k, v)| format!("{}={}", k, v)).join(" ")
-    //         ));
-    //     }
-
-    //     dot.push_str("}\n");
-
-    //     dot
-    // }
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
