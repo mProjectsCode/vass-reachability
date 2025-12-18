@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::automaton::{
-    Automaton,
+    ModifiableAutomaton,
     petri_net::{
         PetriNet,
         spec::{PetriNetSpec, ToSpecFormat},

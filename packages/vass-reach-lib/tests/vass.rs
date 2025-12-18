@@ -1,7 +1,7 @@
 use std::vec;
 
 use vass_reach_lib::automaton::{
-    Automaton, Language,
+    Language, ModifiableAutomaton,
     vass::{VASS, VASSEdge},
 };
 

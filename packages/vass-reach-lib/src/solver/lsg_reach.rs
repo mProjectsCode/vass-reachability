@@ -11,14 +11,14 @@ use z3::{
 
 use crate::{
     automaton::{
-        Automaton,
-        cfg::CFG,
+        Automaton, ExplicitEdgeAutomaton,
+        cfg::{CFG, update::CFGCounterUpdate},
         index_map::OptionIndexMap,
         lsg::{
             LinearSubGraph,
             part::{LSGGraph, LSGPart, LSGPath},
         },
-        path::{Path, parikh_image::ParikhImage, path_like::EdgeIndexList},
+        path::{Path, parikh_image::ParikhImage},
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
         vass::counter::VASSCounterValuation,
     },
@@ -96,7 +96,7 @@ impl LSGSolution {
         &self,
         lsg: &LinearSubGraph<'a, C>,
         n_run: bool,
-    ) -> Option<Path<C::NIndex, C::EIndex>> {
+    ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
         // the parikh image already determines the initial and final valuations when
         // entering and leaving subgraphs so we can simply build the runs for
         // each part independently and concatenate them
@@ -124,7 +124,7 @@ impl LSGSolution {
 
                     // now the node and edge indices in the path are for the subgraph, so we
                     // need to map them back to the cfg
-                    let mapped_path = subgraph.map_path_to_cfg(&sub_path, lsg.cfg);
+                    let mapped_path = subgraph.map_path_to_cfg(&sub_path);
 
                     cfg_path.concatenate(mapped_path);
                 }
@@ -132,12 +132,8 @@ impl LSGSolution {
                     let path = lsg_part.unwrap_path();
 
                     // we need to update the current valuation for possible following subgraphs
-                    let update = cfg_updates_to_counter_update(
-                        path.path
-                            .iter_edges()
-                            .map(|edge| *lsg.cfg.get_edge(edge).expect("edge not in cfg")),
-                        dimension,
-                    );
+                    let update =
+                        cfg_updates_to_counter_update(path.path.iter_letters().cloned(), dimension);
 
                     current_valuation.apply_update(&update);
 
@@ -379,15 +375,13 @@ impl<'l, 'g, C: CFG> LSGReachSolver<'l, 'g, C> {
 
     fn build_path_constraints<'c>(
         &self,
-        path: &LSGPath<C::NIndex, C::EIndex>,
+        path: &LSGPath<C::NIndex>,
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,
     ) {
-        let path_updates = cfg_updates_to_counter_updates(
-            path.path.iter_cfg_updates(self.lsg.cfg),
-            self.lsg.dimension,
-        );
+        let path_updates =
+            cfg_updates_to_counter_updates(path.path.iter_letters().cloned(), self.lsg.dimension);
 
         // first subtract the minimums
         for (update, sum) in path_updates.0.iter().zip(sums.iter_mut()) {
@@ -412,7 +406,7 @@ impl<'l, 'g, C: CFG> LSGReachSolver<'l, 'g, C> {
     fn build_subgraph_constraints<'c>(
         &self,
         part_index: usize,
-        subgraph: &LSGGraph<C::NIndex, C::EIndex>,
+        subgraph: &LSGGraph<C::NIndex>,
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use vass_reach_lib::{
     automaton::{
-        Automaton,
+        ModifiableAutomaton,
         dfa::minimization::Minimizable,
         petri_net::{PetriNet, initialized::InitializedPetriNet},
         vass::{VASS, VASSEdge},

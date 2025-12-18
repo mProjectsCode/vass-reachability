@@ -5,7 +5,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 use crate::{
     automaton::{
         GIndex,
-        cfg::{CFG, vasscfg::VASSCFG},
+        cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
         implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
         lsg::LinearSubGraph,
         path::Path,
@@ -44,7 +44,7 @@ pub struct LSGExtender<'a, C: CFG, Chooser: NodeChooser<C>> {
 
 impl<'a, C: CFG, Chooser: NodeChooser<C>> LSGExtender<'a, C, Chooser> {
     pub fn new(
-        path: Path<C::NIndex, C::EIndex>,
+        path: Path<C::NIndex, CFGCounterUpdate>,
         cfg: &'a C,
         dimension: usize,
         node_chooser: Chooser,

@@ -6,22 +6,22 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Automaton, Frozen, GIndex, InitializedAutomaton, Language, SingleFinalStateAutomaton,
+    Alphabet, Automaton, ExplicitEdgeAutomaton, Frozen, GIndex, InitializedAutomaton, Language,
+    ModifiableAutomaton, SingleFinalStateAutomaton,
     cfg::{CFG, update::CFGCounterUpdate},
-    path::{Path, path_like::IndexPath},
+    path::Path,
 };
 
 #[derive(Debug, Clone)]
-pub struct LSGGraph<NIndex: GIndex, EIndex: GIndex> {
+pub struct LSGGraph<NIndex: GIndex> {
     pub graph: DiGraph<NIndex, CFGCounterUpdate>,
     // start index in the graph, this index refers to the node in the StableDiGraph, not the CFG
     pub start: NodeIndex,
     // end index in the graph, this index refers to the node in the StableDiGraph, not the CFG
     pub end: NodeIndex,
-    __marker: std::marker::PhantomData<EIndex>,
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> LSGGraph<NIndex, EIndex> {
+impl<NIndex: GIndex> LSGGraph<NIndex> {
     pub fn new(graph: DiGraph<NIndex, CFGCounterUpdate>, start: NodeIndex, end: NodeIndex) -> Self {
         assert!(
             start.index() < graph.node_count(),
@@ -34,12 +34,7 @@ impl<NIndex: GIndex, EIndex: GIndex> LSGGraph<NIndex, EIndex> {
             end
         );
 
-        LSGGraph {
-            graph,
-            start,
-            end,
-            __marker: std::marker::PhantomData,
-        }
+        LSGGraph { graph, start, end }
     }
 
     pub fn cfg_start(&self) -> NIndex {
@@ -53,15 +48,13 @@ impl<NIndex: GIndex, EIndex: GIndex> LSGGraph<NIndex, EIndex> {
     /// Maps a path in the LSG back to a path in the CFG.
     pub fn map_path_to_cfg(
         &self,
-        path: &Path<NodeIndex, EdgeIndex>,
-        cfg: &impl CFG<NIndex = NIndex, EIndex = EIndex>,
-    ) -> Path<NIndex, EIndex> {
+        path: &Path<NodeIndex, CFGCounterUpdate>,
+    ) -> Path<NIndex, CFGCounterUpdate> {
         let mut mapped_path = Path::new(self.map_node_to_cfg(path.start()));
 
-        for (edge, node) in path.iter() {
-            let mapped_edge = self.map_edge_to_cfg(*edge, cfg);
+        for (update, node) in path.iter() {
             let mapped_node = self.map_node_to_cfg(*node);
-            mapped_path.add(mapped_edge, mapped_node);
+            mapped_path.add(*update, mapped_node);
         }
 
         mapped_path
@@ -71,11 +64,7 @@ impl<NIndex: GIndex, EIndex: GIndex> LSGGraph<NIndex, EIndex> {
         self.graph[node]
     }
 
-    pub fn map_edge_to_cfg(
-        &self,
-        edge: EdgeIndex,
-        cfg: &impl CFG<NIndex = NIndex, EIndex = EIndex>,
-    ) -> EIndex {
+    pub fn map_edge_to_cfg<C: CFG<NIndex = NIndex>>(&self, edge: EdgeIndex, cfg: &C) -> C::EIndex {
         let (src, dst) = self
             .graph
             .edge_endpoints(edge)
@@ -101,15 +90,17 @@ impl<NIndex: GIndex, EIndex: GIndex> LSGGraph<NIndex, EIndex> {
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> Automaton for LSGGraph<NIndex, EIndex> {
-    type NIndex = NodeIndex;
-    type EIndex = EdgeIndex;
-    type N = NIndex;
-    type E = CFGCounterUpdate;
+impl<NIndex: GIndex> Alphabet for LSGGraph<NIndex> {
+    type Letter = CFGCounterUpdate;
 
-    fn edge_count(&self) -> usize {
-        self.graph.edge_count()
+    fn alphabet(&self) -> &[CFGCounterUpdate] {
+        todo!()
     }
+}
+
+impl<NIndex: GIndex> Automaton for LSGGraph<NIndex> {
+    type NIndex = NodeIndex;
+    type N = NIndex;
 
     fn node_count(&self) -> usize {
         self.graph.node_count()
@@ -119,12 +110,21 @@ impl<NIndex: GIndex, EIndex: GIndex> Automaton for LSGGraph<NIndex, EIndex> {
         self.graph.node_weight(index)
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&CFGCounterUpdate> {
-        self.graph.edge_weight(index)
-    }
-
     fn get_node_unchecked(&self, index: Self::NIndex) -> &NIndex {
         &self.graph[index]
+    }
+}
+
+impl<NIndex: GIndex> ExplicitEdgeAutomaton for LSGGraph<NIndex> {
+    type EIndex = EdgeIndex;
+    type E = CFGCounterUpdate;
+
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
+    fn get_edge(&self, index: Self::EIndex) -> Option<&CFGCounterUpdate> {
+        self.graph.edge_weight(index)
     }
 
     fn get_edge_unchecked(&self, index: Self::EIndex) -> &CFGCounterUpdate {
@@ -158,7 +158,9 @@ impl<NIndex: GIndex, EIndex: GIndex> Automaton for LSGGraph<NIndex, EIndex> {
     ) -> impl Iterator<Item = Self::EIndex> {
         self.graph.edges_connecting(from, to).map(|edge| edge.id())
     }
+}
 
+impl<NIndex: GIndex> ModifiableAutomaton for LSGGraph<NIndex> {
     fn add_node(&mut self, data: NIndex) -> Self::NIndex {
         self.graph.add_node(data)
     }
@@ -206,7 +208,7 @@ impl<NIndex: GIndex, EIndex: GIndex> Automaton for LSGGraph<NIndex, EIndex> {
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> InitializedAutomaton for LSGGraph<NIndex, EIndex> {
+impl<NIndex: GIndex> InitializedAutomaton for LSGGraph<NIndex> {
     fn get_initial(&self) -> Self::NIndex {
         self.start
     }
@@ -220,7 +222,7 @@ impl<NIndex: GIndex, EIndex: GIndex> InitializedAutomaton for LSGGraph<NIndex, E
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> SingleFinalStateAutomaton for LSGGraph<NIndex, EIndex> {
+impl<NIndex: GIndex> SingleFinalStateAutomaton for LSGGraph<NIndex> {
     fn get_final(&self) -> Self::NIndex {
         self.end
     }
@@ -230,47 +232,41 @@ impl<NIndex: GIndex, EIndex: GIndex> SingleFinalStateAutomaton for LSGGraph<NInd
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> Language for LSGGraph<NIndex, EIndex> {
-    type Letter = CFGCounterUpdate;
-
+impl<NIndex: GIndex> Language for LSGGraph<NIndex> {
     fn accepts<'a>(&self, _input: impl IntoIterator<Item = &'a CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'a,
     {
         todo!()
     }
-
-    fn alphabet(&self) -> &[CFGCounterUpdate] {
-        todo!()
-    }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> CFG for LSGGraph<NIndex, EIndex> {}
+impl<NIndex: GIndex> CFG for LSGGraph<NIndex> {}
 
 #[derive(Debug, Clone)]
-pub struct LSGPath<NIndex: GIndex, EIndex: GIndex> {
-    pub path: Path<NIndex, EIndex>,
+pub struct LSGPath<NIndex: GIndex> {
+    pub path: Path<NIndex, CFGCounterUpdate>,
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> LSGPath<NIndex, EIndex> {
-    pub fn new(path: Path<NIndex, EIndex>) -> Self {
+impl<NIndex: GIndex> LSGPath<NIndex> {
+    pub fn new(path: Path<NIndex, CFGCounterUpdate>) -> Self {
         LSGPath { path }
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> From<Path<NIndex, EIndex>> for LSGPath<NIndex, EIndex> {
-    fn from(path: Path<NIndex, EIndex>) -> Self {
+impl<NIndex: GIndex> From<Path<NIndex, CFGCounterUpdate>> for LSGPath<NIndex> {
+    fn from(path: Path<NIndex, CFGCounterUpdate>) -> Self {
         LSGPath::new(path)
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum LSGPart<NIndex: GIndex, EIndex: GIndex> {
-    SubGraph(LSGGraph<NIndex, EIndex>),
-    Path(LSGPath<NIndex, EIndex>),
+pub enum LSGPart<NIndex: GIndex> {
+    SubGraph(LSGGraph<NIndex>),
+    Path(LSGPath<NIndex>),
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> LSGPart<NIndex, EIndex> {
+impl<NIndex: GIndex> LSGPart<NIndex> {
     /// Checks if the part contains the given node.
     /// The node index is in the context of the CFG, not the part itself.
     pub fn contains_node(&self, node: NIndex) -> bool {
@@ -325,14 +321,14 @@ impl<NIndex: GIndex, EIndex: GIndex> LSGPart<NIndex, EIndex> {
         matches!(self, LSGPart::SubGraph(_))
     }
 
-    pub fn unwrap_path(&self) -> &LSGPath<NIndex, EIndex> {
+    pub fn unwrap_path(&self) -> &LSGPath<NIndex> {
         match self {
             LSGPart::Path(path) => path,
             LSGPart::SubGraph(_) => panic!("Called unwrap_path on a SubGraph part"),
         }
     }
 
-    pub fn unwrap_subgraph(&self) -> &LSGGraph<NIndex, EIndex> {
+    pub fn unwrap_subgraph(&self) -> &LSGGraph<NIndex> {
         match self {
             LSGPart::SubGraph(subgraph) => subgraph,
             LSGPart::Path(_) => panic!("Called unwrap_subgraph on a Path part"),

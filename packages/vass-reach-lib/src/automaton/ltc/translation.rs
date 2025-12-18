@@ -1,50 +1,39 @@
 use std::vec;
 
 use itertools::Itertools;
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::graph::NodeIndex;
 
 use crate::automaton::{
-    Automaton, GIndex,
-    cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
+    GIndex, ModifiableAutomaton,
+    cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
     ltc::{LTC, LTCElement},
     nfa::{NFA, NFAEdge},
-    path::{
-        Path,
-        path_like::{EdgeIndexList, IndexPath},
-        transition_sequence::TransitionSequence,
-    },
+    path::{Path, transition_sequence::TransitionSequence},
     utils::cfg_updates_to_counter_updates,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LTCTranslationElement<NIndex: GIndex, EIndex: GIndex> {
-    Loops(Vec<TransitionSequence<NIndex, EIndex>>),
-    Path(TransitionSequence<NIndex, EIndex>),
+pub enum LTCTranslationElement<NIndex: GIndex> {
+    Loops(Vec<TransitionSequence<NIndex, CFGCounterUpdate>>),
+    Path(TransitionSequence<NIndex, CFGCounterUpdate>),
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> LTCTranslationElement<NIndex, EIndex> {
-    pub fn to_ltc_element(
-        &self,
-        cfg: &impl CFG<NIndex = NIndex, EIndex = EIndex>,
-        dimension: usize,
-    ) -> LTCElement {
+impl<NIndex: GIndex> LTCTranslationElement<NIndex> {
+    pub fn to_ltc_element(&self, dimension: usize) -> LTCElement {
         match self {
             LTCTranslationElement::Path(path) => {
-                let edge_weights = path.iter_edges().map(|edge| *cfg.get_edge_unchecked(edge));
                 let (min_counters, counters) =
-                    cfg_updates_to_counter_updates(edge_weights, dimension);
+                    cfg_updates_to_counter_updates(path.iter_letters().cloned(), dimension);
                 LTCElement::Transition((min_counters, counters))
             }
             LTCTranslationElement::Loops(loops) => {
                 let element = loops
                     .iter()
                     .map(|ts| {
-                        let edge_weights =
-                            ts.iter_edges().map(|edge| *cfg.get_edge_unchecked(edge));
                         let (min_counters, counters) =
-                            cfg_updates_to_counter_updates(edge_weights, dimension);
+                            cfg_updates_to_counter_updates(ts.iter_letters().cloned(), dimension);
                         (min_counters, counters)
                     })
                     .collect_vec();
@@ -53,17 +42,17 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslationElement<NIndex, EIndex> {
         }
     }
 
-    pub fn to_fancy_string(&self, get_edge_string: impl Fn(EIndex) -> String + Clone) -> String {
+    pub fn to_fancy_string(&self) -> String {
         match self {
             LTCTranslationElement::Path(edges) => {
-                format!("Path: {}", edges.to_fancy_string(get_edge_string))
+                format!("Path: {}", edges.to_fancy_string())
             }
             LTCTranslationElement::Loops(loops) => {
                 format!(
                     "Loop: {}",
                     loops
                         .iter()
-                        .map(|x| x.to_fancy_string(get_edge_string.clone()))
+                        .map(|x| x.to_fancy_string())
                         .collect_vec()
                         .join(", ")
                 )
@@ -71,14 +60,14 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslationElement<NIndex, EIndex> {
         }
     }
 
-    pub fn unwrap_path(self) -> TransitionSequence<NIndex, EIndex> {
+    pub fn unwrap_path(self) -> TransitionSequence<NIndex, CFGCounterUpdate> {
         match self {
             LTCTranslationElement::Path(path) => path,
             _ => panic!("Expected Path, found {:?}", self),
         }
     }
 
-    pub fn unwrap_loops(self) -> Vec<TransitionSequence<NIndex, EIndex>> {
+    pub fn unwrap_loops(self) -> Vec<TransitionSequence<NIndex, CFGCounterUpdate>> {
         match self {
             LTCTranslationElement::Loops(loops) => loops,
             _ => panic!("Expected Loops, found {:?}", self),
@@ -87,11 +76,11 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslationElement<NIndex, EIndex> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LTCTranslation<NIndex: GIndex, EIndex: GIndex> {
-    elements: Vec<LTCTranslationElement<NIndex, EIndex>>,
+pub struct LTCTranslation<NIndex: GIndex> {
+    elements: Vec<LTCTranslationElement<NIndex>>,
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> LTCTranslation<NIndex, EIndex> {
+impl<NIndex: GIndex> LTCTranslation<NIndex> {
     pub fn new() -> Self {
         LTCTranslation { elements: vec![] }
     }
@@ -133,12 +122,7 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslation<NIndex, EIndex> {
     //     }
     // }
 
-    pub fn to_dfa(
-        &self,
-        cfg: &impl CFG<NIndex = NIndex, EIndex = EIndex>,
-        dimension: usize,
-        relaxed: bool,
-    ) -> VASSCFG<()> {
+    pub fn to_dfa(&self, dimension: usize, relaxed: bool) -> VASSCFG<()> {
         let mut nfa = NFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
 
         let start = nfa.add_node(DfaNode::default());
@@ -147,14 +131,10 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslation<NIndex, EIndex> {
 
         for translation in &self.elements {
             match translation {
-                LTCTranslationElement::Path(edges) => {
-                    for edge in edges {
+                LTCTranslationElement::Path(elements) => {
+                    for (update, _) in elements {
                         let new = nfa.add_node(DfaNode::default());
-                        nfa.add_edge(
-                            current_end,
-                            new,
-                            NFAEdge::Symbol(*cfg.get_edge_unchecked(edge.0)),
-                        );
+                        nfa.add_edge(current_end, new, NFAEdge::Symbol(*update));
                         current_end = new;
                     }
                 }
@@ -174,22 +154,14 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslation<NIndex, EIndex> {
                             loop_start
                         };
 
-                        for edge in ts.iter_edges().take(ts.len() - 1) {
+                        for letter in ts.iter_letters().take(ts.len() - 1) {
                             let new = nfa.add_node(DfaNode::default());
-                            nfa.add_edge(
-                                current_end,
-                                new,
-                                NFAEdge::Symbol(*cfg.get_edge_unchecked(edge)),
-                            );
+                            nfa.add_edge(current_end, new, NFAEdge::Symbol(*letter));
                             current_end = new;
                         }
 
                         let last_ts_entry = ts.last().unwrap();
-                        nfa.add_edge(
-                            current_end,
-                            loop_start,
-                            NFAEdge::Symbol(*cfg.get_edge_unchecked(last_ts_entry.0)),
-                        );
+                        nfa.add_edge(current_end, loop_start, NFAEdge::Symbol(last_ts_entry.0));
 
                         current_end = loop_start;
                     }
@@ -208,44 +180,38 @@ impl<NIndex: GIndex, EIndex: GIndex> LTCTranslation<NIndex, EIndex> {
         dfa
     }
 
-    pub fn to_ltc(
-        &self,
-        cfg: &impl CFG<NIndex = NIndex, EIndex = EIndex>,
-        dimension: usize,
-    ) -> LTC {
+    pub fn to_ltc(&self, dimension: usize) -> LTC {
         let mut ltc = LTC::new(dimension);
 
         for translation in &self.elements {
-            ltc.add(translation.to_ltc_element(cfg, dimension));
+            ltc.add(translation.to_ltc_element(dimension));
         }
 
         ltc
     }
 
-    pub fn to_fancy_string(&self, get_edge_string: impl Fn(EIndex) -> String) -> String {
+    pub fn to_fancy_string(&self) -> String {
         self.elements
             .iter()
-            .map(|x| x.to_fancy_string(&get_edge_string))
+            .map(|x| x.to_fancy_string())
             .collect::<Vec<_>>()
             .join("\n")
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> From<&Path<NIndex, EIndex>>
-    for LTCTranslation<NIndex, EIndex>
-{
-    fn from(path: &Path<NIndex, EIndex>) -> Self {
+impl<NIndex: GIndex> From<&Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NIndex> {
+    fn from(path: &Path<NIndex, CFGCounterUpdate>) -> Self {
         let mut stack = TransitionSequence::new();
         // This is used to track the node where the transition sequence in the `stack`
         // started
         let mut stack_start_node: Option<NIndex> = Some(path.start());
         let mut ltc_translation = vec![];
 
-        for (edge_index, node_index) in path.iter() {
+        for (update, node_index) in path.iter() {
             if let Some(last_node) = stack_start_node
                 && *node_index == last_node
             {
-                stack.add(*edge_index, *node_index);
+                stack.add(*update, *node_index);
 
                 // We don't need to update the `stack_start_node` here, because we just did
                 // a full loop
@@ -266,7 +232,7 @@ impl<NIndex: GIndex, EIndex: GIndex> From<&Path<NIndex, EIndex>>
 
             let existing_pos = stack.iter().position(|x| x.1 == *node_index);
 
-            stack.add(*edge_index, *node_index);
+            stack.add(*update, *node_index);
 
             if let Some(pos) = existing_pos {
                 let transition_loop = stack.split_off(pos + 1);
@@ -314,19 +280,19 @@ impl<NIndex: GIndex, EIndex: GIndex> From<&Path<NIndex, EIndex>>
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> From<Path<NIndex, EIndex>> for LTCTranslation<NIndex, EIndex> {
-    fn from(path: Path<NIndex, EIndex>) -> Self {
+impl<NIndex: GIndex> From<Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NIndex> {
+    fn from(path: Path<NIndex, CFGCounterUpdate>) -> Self {
         (&path).into()
     }
 }
 
-impl LTCTranslation<NodeIndex, EdgeIndex> {
+impl LTCTranslation<NodeIndex> {
     pub fn from_multi_graph_path(state: &ImplicitCFGProduct, path: &MultiGraphPath) -> Self {
         path.to_path(&state.cfg).into()
     }
 }
 
-impl<NIndex: GIndex, EIndex: GIndex> Default for LTCTranslation<NIndex, EIndex> {
+impl<NIndex: GIndex> Default for LTCTranslation<NIndex> {
     fn default() -> Self {
         Self::new()
     }

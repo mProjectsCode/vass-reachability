@@ -1,6 +1,6 @@
 use vass_reach_lib::{
     automaton::{
-        Automaton,
+        ModifiableAutomaton,
         dfa::node::DfaNode,
         nfa::{NFA, NFAEdge},
     },

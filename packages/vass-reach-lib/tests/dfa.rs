@@ -1,9 +1,9 @@
 use itertools::Itertools;
 use vass_reach_lib::{
     automaton::{
-        Automaton, InitializedAutomaton, Language,
+        Automaton, InitializedAutomaton, Language, ModifiableAutomaton,
         dfa::{DFA, minimization::Minimizable, node::DfaNode},
-        path::{Path, path_like::IndexPath},
+        path::Path,
     },
     validation::same_language::{assert_inverse_language, assert_same_language, same_language},
 };

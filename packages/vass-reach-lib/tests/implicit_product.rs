@@ -1,6 +1,6 @@
 use vass_reach_lib::{
     automaton::{
-        Automaton, InitializedAutomaton,
+        InitializedAutomaton, ModifiableAutomaton,
         cfg::{
             update::CFGCounterUpdate,
             vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},

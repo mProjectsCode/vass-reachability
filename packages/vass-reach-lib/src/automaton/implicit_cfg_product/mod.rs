@@ -2,7 +2,7 @@ use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 
 use crate::automaton::{
-    InitializedAutomaton, Language,
+    Alphabet, InitializedAutomaton,
     cfg::{
         update::CFGCounterUpdatable,
         vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},

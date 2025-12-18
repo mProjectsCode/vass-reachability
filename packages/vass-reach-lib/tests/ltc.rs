@@ -80,7 +80,7 @@ fn ltc_language_1() {
 
     let translation = LTCTranslation::from(&path);
     let non_expanded_dfa = translation
-        .to_dfa(&cfg, initialized_vass.dimension(), false)
+        .to_dfa(initialized_vass.dimension(), false)
         .invert();
     // let expanded_translation = translation.expand(&cfg);
     // let expanded_dfa = expanded_translation
@@ -109,7 +109,7 @@ fn ltc_language_2() {
 
     let translation = LTCTranslation::from(&path);
     let non_expanded_dfa = translation
-        .to_dfa(&cfg, initialized_vass.dimension(), false)
+        .to_dfa(initialized_vass.dimension(), false)
         .invert();
 
     // let expanded_translation = translation.expand(&cfg);

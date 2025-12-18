@@ -1,6 +1,6 @@
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use vass_reach_lib::automaton::{
-    Automaton,
+    ModifiableAutomaton,
     vass::{VASS, VASSEdge, counter::VASSCounterValuation, initialized::InitializedVASS},
 };
 

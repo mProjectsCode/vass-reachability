@@ -1,7 +1,7 @@
 use petgraph::graph::NodeIndex;
 use vass_reach_lib::{
     automaton::{
-        Automaton, InitializedAutomaton, Language,
+        InitializedAutomaton, Language, ModifiableAutomaton,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
         lsg::LinearSubGraph,
@@ -21,12 +21,12 @@ fn lgs_1() {
     let s2 = cfg.add_node(DfaNode::non_accepting(()));
     let s3 = cfg.add_node(DfaNode::accepting(()));
 
-    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let _e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
     let _e2 = cfg.add_edge(s1, s2, cfg_inc!(0));
     let _e3 = cfg.add_edge(s2, s1, cfg_dec!(0));
-    let e4 = cfg.add_edge(s1, s3, cfg_dec!(0));
+    let _e4 = cfg.add_edge(s1, s3, cfg_dec!(0));
 
-    let path = Path::from_edges(s0, &[e1, e4], &cfg);
+    let path = Path::from_word(s0, &[cfg_inc!(0), cfg_dec!(0)], &cfg).unwrap();
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
@@ -91,13 +91,13 @@ fn lgs_2() {
     let s4 = cfg.add_node(DfaNode::accepting(()));
 
     // direct path "s0 -> s1 -> s4" with a loop in s1 "s1 -> s2 -> s3 -> s1"
-    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
-    let e2 = cfg.add_edge(s1, s4, cfg_dec!(0));
+    let _e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let _e2 = cfg.add_edge(s1, s4, cfg_dec!(0));
     let _e3 = cfg.add_edge(s1, s2, cfg_inc!(0));
     let _e4 = cfg.add_edge(s2, s3, cfg_inc!(0));
     let _e5 = cfg.add_edge(s3, s1, cfg_dec!(0));
 
-    let path = Path::from_edges(s0, &[e1, e2], &cfg);
+    let path = Path::from_word(s0, &[cfg_inc!(0), cfg_dec!(0)], &cfg).unwrap();
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     // Initial path should have one part
@@ -194,7 +194,7 @@ fn lsg_3() {
 
     let cfg = initialized.to_cfg();
     let word = CFGCounterUpdate::from_str_to_vec("+c0 +c0 +c0 +c0 +c0 +c0 +c0 +c0 +c0 +c0 +c1 +c0 +c1 +c0 +c1 +c0 +c1 -c0 -c1 -c0 -c1 -c0 -c1 -c1").unwrap();
-    let path = Path::from_word(&word, &cfg).unwrap();
+    let path = Path::from_word(cfg.get_initial(), &word, &cfg).unwrap();
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 2);
 
@@ -215,12 +215,12 @@ fn lsg_reach() {
 
     cfg.set_initial(s0);
 
-    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let _e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
     let _e2 = cfg.add_edge(s1, s2, cfg_inc!(0));
     let _e3 = cfg.add_edge(s2, s1, cfg_dec!(0));
-    let e4 = cfg.add_edge(s1, s3, cfg_dec!(0));
+    let _e4 = cfg.add_edge(s1, s3, cfg_dec!(0));
 
-    let path = Path::from_edges(s0, &[e1, e4], &cfg);
+    let path = Path::from_word(s0, &[cfg_inc!(0), cfg_dec!(0)], &cfg).unwrap();
 
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
@@ -265,13 +265,13 @@ fn lsg_reach2() {
     cfg.set_initial(s0);
 
     // direct path "s0 -> s1 -> s4" with a loop in s1 "s1 -> s2 -> s3 -> s1"
-    let e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
-    let e2 = cfg.add_edge(s1, s4, cfg_dec!(0));
+    let _e1 = cfg.add_edge(s0, s1, cfg_inc!(0));
+    let _e2 = cfg.add_edge(s1, s4, cfg_dec!(0));
     let _e3 = cfg.add_edge(s1, s2, cfg_inc!(0));
     let _e4 = cfg.add_edge(s2, s3, cfg_inc!(0));
     let _e5 = cfg.add_edge(s3, s1, cfg_dec!(0));
 
-    let path = Path::from_edges(s0, &[e1, e2], &cfg);
+    let path = Path::from_word(s0, &[cfg_inc!(0), cfg_dec!(0)], &cfg).unwrap();
     let lsg = LinearSubGraph::from_path(path, &cfg, 1);
 
     let res = LSGReachSolverOptions::default()

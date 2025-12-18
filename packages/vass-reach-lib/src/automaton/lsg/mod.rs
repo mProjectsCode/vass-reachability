@@ -6,12 +6,12 @@ use petgraph::{graph::DiGraph, visit::EdgeRef};
 
 use super::nfa::NFAEdge;
 use crate::automaton::{
-    Automaton, Language,
+    Alphabet, GIndex, Language, ModifiableAutomaton,
     cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     lsg::part::{LSGGraph, LSGPart, LSGPath},
     nfa::NFA,
-    path::{Path, path_like::IndexPath},
+    path::Path,
 };
 
 pub mod extender;
@@ -19,13 +19,17 @@ pub mod part;
 
 #[derive(Debug, Clone)]
 pub struct LinearSubGraph<'a, C: CFG> {
-    pub parts: Vec<LSGPart<C::NIndex, C::EIndex>>,
+    pub parts: Vec<LSGPart<C::NIndex>>,
     pub cfg: &'a C,
     pub dimension: usize,
 }
 
 impl<'a, C: CFG> LinearSubGraph<'a, C> {
-    pub fn from_path(path: Path<C::NIndex, C::EIndex>, cfg: &'a C, dimension: usize) -> Self {
+    pub fn from_path(
+        path: Path<C::NIndex, CFGCounterUpdate>,
+        cfg: &'a C,
+        dimension: usize,
+    ) -> Self {
         LinearSubGraph {
             parts: vec![LSGPart::Path(path.into())],
             cfg,
@@ -212,11 +216,10 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
         for part in &self.parts {
             match part {
                 LSGPart::Path(path) => {
-                    for (edge_index, _) in path.path.iter() {
+                    for (update, _) in path.path.iter() {
                         let next_state = nfa.add_node(DfaNode::non_accepting(()));
-                        let edge_weight = *self.cfg.get_edge_unchecked(*edge_index);
 
-                        nfa.add_edge(prev_state, next_state, NFAEdge::Symbol(edge_weight));
+                        nfa.add_edge(prev_state, next_state, NFAEdge::Symbol(*update));
                         prev_state = next_state;
                     }
 
@@ -268,24 +271,18 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
         nfa.determinize()
     }
 
-    pub fn iter_parts<'b>(
-        &'b self,
-    ) -> impl Iterator<Item = &'b LSGPart<C::NIndex, C::EIndex>> + 'b {
+    pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart<C::NIndex>> + 'b {
         self.parts.iter()
     }
 
-    pub fn iter_path_parts<'b>(
-        &'b self,
-    ) -> impl Iterator<Item = &'b LSGPath<C::NIndex, C::EIndex>> + 'b {
+    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPath<C::NIndex>> + 'b {
         self.parts.iter().filter_map(|part| match part {
             LSGPart::Path(path) => Some(path),
             LSGPart::SubGraph(_) => None,
         })
     }
 
-    pub fn iter_subgraph_parts<'b>(
-        &'b self,
-    ) -> impl Iterator<Item = &'b LSGGraph<C::NIndex, C::EIndex>> + 'b {
+    pub fn iter_subgraph_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGGraph<C::NIndex>> + 'b {
         self.parts.iter().filter_map(|part| match part {
             LSGPart::SubGraph(subgraph) => Some(subgraph),
             LSGPart::Path(_) => None,
@@ -293,9 +290,8 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
     }
 }
 
-fn partial_accept_path<'a, C: CFG>(
-    path: &LSGPath<C::NIndex, C::EIndex>,
-    cfg: &C,
+fn partial_accept_path<'a>(
+    path: &LSGPath<impl GIndex>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut index = 0;
@@ -305,8 +301,7 @@ fn partial_accept_path<'a, C: CFG>(
     }
 
     while let Some(symbol) = input.peek() {
-        let (edge, _) = path.path.get(index);
-        let update = cfg.get_edge(edge).expect("edge must exist in CFG");
+        let (update, _) = path.path.get(index);
 
         if update == *symbol {
             index += 1;
@@ -323,8 +318,8 @@ fn partial_accept_path<'a, C: CFG>(
     index == path.path.len()
 }
 
-fn partial_accept_subgraph<'a, C: CFG>(
-    subgraph: &LSGGraph<C::NIndex, C::EIndex>,
+fn partial_accept_subgraph<'a>(
+    subgraph: &LSGGraph<impl GIndex>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut current_state = subgraph.start;
@@ -351,9 +346,15 @@ fn partial_accept_subgraph<'a, C: CFG>(
     current_state == subgraph.end
 }
 
-impl<'a, C: CFG> Language for LinearSubGraph<'a, C> {
+impl<'a, C: CFG> Alphabet for LinearSubGraph<'a, C> {
     type Letter = CFGCounterUpdate;
 
+    fn alphabet(&self) -> &[CFGCounterUpdate] {
+        self.cfg.alphabet()
+    }
+}
+
+impl<'a, C: CFG> Language for LinearSubGraph<'a, C> {
     fn accepts<'b>(&self, input: impl IntoIterator<Item = &'b CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'b,
@@ -361,8 +362,8 @@ impl<'a, C: CFG> Language for LinearSubGraph<'a, C> {
         let mut input = input.into_iter().peekable();
         for part in self.parts.iter() {
             let success = match part {
-                LSGPart::Path(path) => partial_accept_path::<C>(path, self.cfg, &mut input),
-                LSGPart::SubGraph(subgraph) => partial_accept_subgraph::<C>(subgraph, &mut input),
+                LSGPart::Path(path) => partial_accept_path(path, &mut input),
+                LSGPart::SubGraph(subgraph) => partial_accept_subgraph(subgraph, &mut input),
             };
 
             if !success {
@@ -372,9 +373,5 @@ impl<'a, C: CFG> Language for LinearSubGraph<'a, C> {
 
         // lastly we need to check that we are at the end of the input
         input.next().is_none()
-    }
-
-    fn alphabet(&self) -> &[CFGCounterUpdate] {
-        self.cfg.alphabet()
     }
 }

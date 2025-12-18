@@ -1,17 +1,13 @@
-use petgraph::{
-    Direction,
-    graph::{EdgeIndex, NodeIndex},
-    visit::EdgeRef,
-};
+use petgraph::{Direction, graph::NodeIndex, visit::EdgeRef};
 
 use crate::automaton::{
-    Automaton, AutomatonNode, InitializedAutomaton,
+    Automaton, AutomatonNode, InitializedAutomaton, ModifiableAutomaton,
     cfg::{
         CFG,
         update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
     dfa::{DFA, node::DfaNode},
-    path::{Path, path_like::IndexPath},
+    path::Path,
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
@@ -31,7 +27,7 @@ impl<N: AutomatonNode> VASSCFG<N> {
         mu: i32,
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
-    ) -> Option<Path<NodeIndex, EdgeIndex>> {
+    ) -> Option<Path<NodeIndex, CFGCounterUpdate>> {
         // For every node, we track which counter valuations we already visited.
         let mut visited = vec![std::collections::HashSet::new(); self.node_count()];
         let mut queue = std::collections::VecDeque::new();
@@ -62,7 +58,7 @@ impl<N: AutomatonNode> VASSCFG<N> {
 
                 if visited[target.index()].insert(new_valuation.clone()) {
                     let mut new_path = path.clone();
-                    new_path.add(edge.id(), target);
+                    new_path.add(*update, target);
 
                     if self.graph[target].accepting && new_valuation == mod_final_valuation {
                         // paths.push(new_path);

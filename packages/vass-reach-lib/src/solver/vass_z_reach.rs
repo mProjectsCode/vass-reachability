@@ -7,7 +7,7 @@ use z3::{
 use crate::{
     automaton::{
         GIndex,
-        cfg::CFG,
+        cfg::{CFG, update::CFGCounterUpdate},
         index_map::OptionIndexMap,
         path::{Path, parikh_image::ParikhImage},
         vass::counter::VASSCounterValuation,
@@ -59,7 +59,7 @@ impl<EIndex: GIndex> VASSZReachSolverResult<EIndex> {
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
         n_run: bool,
-    ) -> Option<Path<C::NIndex, EIndex>> {
+    ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
         let Some(parikh_image) = self.get_parikh_image() else {
             return None;
         };

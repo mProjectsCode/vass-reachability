@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use crate::automaton::{GIndex, InitializedAutomaton, index_map::IndexSet};
+use crate::automaton::{ExplicitEdgeAutomaton, GIndex, InitializedAutomaton, index_map::IndexSet};
 
 pub trait AutomatonAlgorithms: InitializedAutomaton {
     /// Find the SCC surrounding a given node. Returns a vector of all the nodes
@@ -21,9 +21,7 @@ pub trait AutomatonAlgorithms: InitializedAutomaton {
             }
 
             let mut found_unvisited = false;
-            for edge in self.outgoing_edge_indices(current) {
-                let successor = self.edge_target_unchecked(edge);
-
+            for successor in self.successors(current) {
                 if !visited.contains(successor) {
                     stack.push(successor);
                     current_path.push(successor);
@@ -46,7 +44,11 @@ pub trait AutomatonAlgorithms: InitializedAutomaton {
 
         scc.to_vec()
     }
+}
 
+impl<T: InitializedAutomaton> AutomatonAlgorithms for T {}
+
+pub trait EdgeAutomatonAlgorithms: ExplicitEdgeAutomaton + InitializedAutomaton {
     fn to_graphviz(
         &self,
         nodes: Option<Vec<Self::NIndex>>,
@@ -109,4 +111,4 @@ pub trait AutomatonAlgorithms: InitializedAutomaton {
     }
 }
 
-impl<T: InitializedAutomaton> AutomatonAlgorithms for T {}
+impl<T: ExplicitEdgeAutomaton + InitializedAutomaton> EdgeAutomatonAlgorithms for T {}

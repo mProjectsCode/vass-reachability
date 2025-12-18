@@ -4,8 +4,8 @@ use itertools::Itertools;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
 use crate::automaton::{
-    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen, InitializedAutomaton, Language,
-    SingleFinalStateAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
+    InitializedAutomaton, Language, ModifiableAutomaton, SingleFinalStateAutomaton,
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     index_map::IndexMap,
@@ -199,30 +199,44 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
     }
 }
 
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for InitializedVASS<N, E> {
+    type Letter = <VASSEdge<E> as AutomatonEdge>::Letter;
+
+    fn alphabet(&self) -> &[E::Letter] {
+        &self.vass.alphabet
+    }
+}
+
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for InitializedVASS<N, E> {
     type NIndex = <VASS<N, E> as Automaton>::NIndex;
-    type EIndex = <VASS<N, E> as Automaton>::EIndex;
     type N = N;
-    type E = VASSEdge<E>;
 
     fn node_count(&self) -> usize {
         self.vass.node_count()
-    }
-
-    fn edge_count(&self) -> usize {
-        self.vass.edge_count()
     }
 
     fn get_node(&self, index: Self::NIndex) -> Option<&N> {
         self.vass.get_node(index)
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&VASSEdge<E>> {
-        self.vass.get_edge(index)
-    }
-
     fn get_node_unchecked(&self, index: Self::NIndex) -> &N {
         self.vass.get_node_unchecked(index)
+    }
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton
+    for InitializedVASS<N, E>
+{
+    type EIndex = <VASS<N, E> as ExplicitEdgeAutomaton>::EIndex;
+
+    type E = VASSEdge<E>;
+
+    fn edge_count(&self) -> usize {
+        self.vass.edge_count()
+    }
+
+    fn get_edge(&self, index: Self::EIndex) -> Option<&VASSEdge<E>> {
+        self.vass.get_edge(index)
     }
 
     fn get_edge_unchecked(&self, index: Self::EIndex) -> &VASSEdge<E> {
@@ -252,7 +266,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for InitializedV
     ) -> impl Iterator<Item = Self::EIndex> {
         self.vass.connecting_edge_indices(from, to)
     }
+}
 
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton
+    for InitializedVASS<N, E>
+{
     fn add_node(&mut self, data: N) -> Self::NIndex {
         self.vass.add_node(data)
     }
@@ -315,8 +333,6 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> SingleFinalStateAutomaton
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for InitializedVASS<N, E> {
-    type Letter = <VASSEdge<E> as AutomatonEdge>::Letter;
-
     fn accepts<'a>(&self, input: impl IntoIterator<Item = &'a E::Letter>) -> bool
     where
         E::Letter: 'a,
@@ -350,9 +366,5 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for InitializedVA
             Some(state) => state == self.final_node && current_valuation == self.final_valuation,
             None => false,
         }
-    }
-
-    fn alphabet(&self) -> &[E::Letter] {
-        &self.vass.alphabet
     }
 }

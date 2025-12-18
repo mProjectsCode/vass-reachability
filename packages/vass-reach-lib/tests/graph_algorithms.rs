@@ -1,6 +1,6 @@
 use petgraph::graph::NodeIndex;
 use vass_reach_lib::automaton::{
-    Automaton,
+    ModifiableAutomaton,
     algorithms::AutomatonAlgorithms,
     vass::{VASS, VASSEdge},
 };

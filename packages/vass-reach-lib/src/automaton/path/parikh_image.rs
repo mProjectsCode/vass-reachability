@@ -3,9 +3,12 @@ use hashbrown::HashSet;
 use crate::{
     automaton::{
         GIndex,
-        cfg::{CFG, update::CFGCounterUpdatable},
+        cfg::{
+            CFG,
+            update::{CFGCounterUpdatable, CFGCounterUpdate},
+        },
         index_map::{IndexMap, IndexSet},
-        path::{Path, path_like::IndexPath, transition_sequence::TransitionSequence},
+        path::{Path, transition_sequence::TransitionSequence},
         vass::counter::{VASSCounterUpdate, VASSCounterValuation},
     },
     logger::{LogLevel, Logger},
@@ -194,7 +197,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         initial_valuation: &VASSCounterValuation,
         final_valuation: &VASSCounterValuation,
         n_run: bool,
-    ) -> Option<Path<C::NIndex, C::EIndex>> {
+    ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
         let valuation = initial_valuation.clone();
 
         let ts = rec_build_run(
@@ -266,7 +269,7 @@ fn rec_build_run<C: CFG>(
     valuation: VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
     n_run: bool,
-) -> Option<TransitionSequence<C::NIndex, C::EIndex>> {
+) -> Option<TransitionSequence<C::NIndex, CFGCounterUpdate>> {
     // if the parikh image is empty, we have reached the end of the path, which also
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {
@@ -305,7 +308,7 @@ fn rec_build_run<C: CFG>(
 
         match res {
             Some(mut seq) => {
-                seq.add(edge, target);
+                seq.add(*update, target);
                 return Some(seq);
             }
             None => {

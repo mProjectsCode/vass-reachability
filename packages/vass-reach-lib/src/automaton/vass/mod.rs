@@ -8,8 +8,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen, ModifiableAutomaton,
-    NodeAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
+    ModifiableAutomaton,
     vass::counter::{VASSCounterUpdate, VASSCounterValuation},
 };
 
@@ -82,7 +82,15 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> VASS<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NodeAutomaton for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for VASS<N, E> {
+    type Letter = E::Letter;
+
+    fn alphabet(&self) -> &[Self::Letter] {
+        &self.alphabet
+    }
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
     type NIndex = NodeIndex;
     type N = N;
 
@@ -99,7 +107,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NodeAutomaton for VASS<N, 
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for VASS<N, E> {
     type EIndex = EdgeIndex;
 
     type E = VASSEdge<E>;

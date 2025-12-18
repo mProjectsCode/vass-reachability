@@ -6,7 +6,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen, InitializedAutomaton, Language,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
+    InitializedAutomaton, Language, ModifiableAutomaton,
     dfa::{DFA, node::DfaNode},
 };
 
@@ -162,15 +163,17 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
     }
 }
 
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for NFA<N, E> {
+    type Letter = E::Letter;
+
+    fn alphabet(&self) -> &[E::Letter] {
+        self.alphabet.as_slice()
+    }
+}
+
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
     type NIndex = NodeIndex;
-    type EIndex = EdgeIndex;
     type N = DfaNode<N>;
-    type E = NFAEdge<E>;
-
-    fn edge_count(&self) -> usize {
-        self.graph.edge_count()
-    }
 
     fn node_count(&self) -> usize {
         self.graph.node_count()
@@ -180,12 +183,22 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
         self.graph.node_weight(index)
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&NFAEdge<E>> {
-        self.graph.edge_weight(index)
-    }
-
     fn get_node_unchecked(&self, index: Self::NIndex) -> &DfaNode<N> {
         &self.graph[index]
+    }
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for NFA<N, E> {
+    type EIndex = EdgeIndex;
+
+    type E = NFAEdge<E>;
+
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
+    fn get_edge(&self, index: Self::EIndex) -> Option<&NFAEdge<E>> {
+        self.graph.edge_weight(index)
     }
 
     fn get_edge_unchecked(&self, index: Self::EIndex) -> &NFAEdge<E> {
@@ -219,7 +232,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
     ) -> impl Iterator<Item = Self::EIndex> {
         self.graph.edges_connecting(from, to).map(|edge| edge.id())
     }
+}
 
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for NFA<N, E> {
     fn add_node(&mut self, data: DfaNode<N>) -> Self::NIndex {
         self.graph.add_node(data)
     }
@@ -270,8 +285,6 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton for N
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for NFA<N, E> {
-    type Letter = E::Letter;
-
     fn accepts<'a>(&self, input: impl IntoIterator<Item = &'a E::Letter>) -> bool
     where
         E::Letter: 'a + Eq,
@@ -300,9 +313,5 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for NFA<N, E> {
         }
 
         self.is_accepting_set(&current_states)
-    }
-
-    fn alphabet(&self) -> &[E::Letter] {
-        self.alphabet.as_slice()
     }
 }

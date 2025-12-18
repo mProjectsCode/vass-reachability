@@ -10,10 +10,11 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Automaton, AutomatonEdge, AutomatonNode, FromLetter, Frozen, InitializedAutomaton, Language,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
+    InitializedAutomaton, Language, ModifiableAutomaton,
     index_map::IndexMap,
     nfa::{NFA, NFAEdge},
-    path::{Path, path_like::IndexPath},
+    path::Path,
 };
 
 pub mod minimization;
@@ -484,69 +485,19 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
 
         loops
     }
+}
 
-    // pub fn to_graphviz(&self, edges: Option<impl EdgeIndexList>) -> String {
-    //     let mut dot = String::new();
-    //     dot.push_str("digraph finite_state_machine {\n");
-    //     dot.push_str("fontname=\"Helvetica,Arial,sans-serif\"\n");
-    //     dot.push_str("node [fontname=\"Helvetica,Arial,sans-serif\"]\n");
-    //     dot.push_str("edge [fontname=\"Helvetica,Arial,sans-serif\"]\n");
-    //     dot.push_str("rankdir=LR;\n");
-    //     dot.push_str("node [shape=point,label=\"\"]START\n");
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for DFA<N, E> {
+    type Letter = E::Letter;
 
-    //     let accepting_states = self
-    //         .graph
-    //         .node_indices()
-    //         .filter(|node| self.graph[*node].accepting)
-    //         .collect::<Vec<_>>();
-
-    //     dot.push_str(&format!(
-    //         "node [shape = doublecircle]; {};\n",
-    //         accepting_states
-    //             .iter()
-    //             .map(|node| node.index().to_string())
-    //             .join(" ")
-    //     ));
-    //     dot.push_str("node [shape = circle];\n");
-
-    //     if let Some(start) = self.start {
-    //         dot.push_str(&format!("START -> {:?};\n", start.index()));
-    //     }
-
-    //     for edge in self.graph.edge_references() {
-    //         let mut attrs = vec![(
-    //             "label",
-    //             format!("\"{:?} ({})\"", edge.weight(), edge.id().index()),
-    //         )];
-
-    //         if let Some(edges) = &edges
-    //             && edges.has_edge(edge.id())
-    //         {
-    //             attrs.push(("color", "red".to_string()));
-    //         }
-    //         dot.push_str(&format!(
-    //             "{:?} -> {:?} [ {} ];\n",
-    //             edge.source().index(),
-    //             edge.target().index(),
-    //             attrs.iter().map(|(k, v)| format!("{}={}", k, v)).join(" ")
-    //         ));
-    //     }
-
-    //     dot.push_str("}\n");
-
-    //     dot
-    // }
+    fn alphabet(&self) -> &[Self::Letter] {
+        &self.alphabet
+    }
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for DFA<N, E> {
     type NIndex = NodeIndex;
-    type EIndex = EdgeIndex;
     type N = DfaNode<N>;
-    type E = E;
-
-    fn edge_count(&self) -> usize {
-        self.graph.edge_count()
-    }
 
     fn node_count(&self) -> usize {
         self.graph.node_count()
@@ -556,12 +507,21 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for DFA<N, E> {
         self.graph.node_weight(index)
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&E> {
-        self.graph.edge_weight(index)
-    }
-
     fn get_node_unchecked(&self, index: Self::NIndex) -> &DfaNode<N> {
         &self.graph[index]
+    }
+}
+
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for DFA<N, E> {
+    type EIndex = EdgeIndex;
+    type E = E;
+
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
+    fn get_edge(&self, index: Self::EIndex) -> Option<&E> {
+        self.graph.edge_weight(index)
     }
 
     fn get_edge_unchecked(&self, index: Self::EIndex) -> &E {
@@ -595,7 +555,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for DFA<N, E> {
     ) -> impl Iterator<Item = Self::EIndex> {
         self.graph.edges_connecting(from, to).map(|edge| edge.id())
     }
+}
 
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for DFA<N, E> {
     fn add_node(&mut self, data: DfaNode<N>) -> Self::NIndex {
         self.graph.add_node(data)
     }
@@ -653,8 +615,6 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton for D
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for DFA<N, E> {
-    type Letter = E::Letter;
-
     fn accepts<'a>(&self, input: impl IntoIterator<Item = &'a Self::Letter>) -> bool
     where
         Self::Letter: 'a,
@@ -685,10 +645,6 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Language for DFA<N, E> {
             Some(data) => data.accepting,
             None => false,
         }
-    }
-
-    fn alphabet(&self) -> &[Self::Letter] {
-        &self.alphabet
     }
 }
 

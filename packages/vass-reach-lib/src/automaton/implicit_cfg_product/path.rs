@@ -1,11 +1,10 @@
 use crate::automaton::{
-    AutomatonEdge,
     cfg::{
         CFG,
         update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
     index_map::IndexMap,
-    path::{Path, path_like::IndexPath},
+    path::Path,
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
@@ -20,17 +19,16 @@ impl MultiGraphPath {
         MultiGraphPath { updates: vec![] }
     }
 
-    pub fn to_path<C: CFG>(&self, cfg: &C) -> Path<C::NIndex, C::EIndex> {
+    pub fn to_path<C: CFG>(&self, cfg: &C) -> Path<C::NIndex, CFGCounterUpdate> {
         let start = cfg.get_initial();
         let mut path = Path::new(start);
 
         for update in &self.updates {
-            let edge = cfg
-                .outgoing_edge_indices(path.end())
-                .find(|e| cfg.get_edge_unchecked(*e).matches(update))
-                .expect("Path should be valid");
+            let target = cfg
+                .successor(path.end(), update)
+                .expect("path to be valid with in CFG");
 
-            path.add(edge, cfg.edge_target_unchecked(edge));
+            path.add(*update, target);
         }
 
         path

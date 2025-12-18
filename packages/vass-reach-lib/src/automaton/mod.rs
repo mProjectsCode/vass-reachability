@@ -235,7 +235,17 @@ impl<'a, G> From<&'a mut G> for Frozen<'a, G> {
     }
 }
 
-pub trait NodeAutomaton: Sized {
+pub trait Letter: Debug + Clone + PartialEq + Eq + Hash + Ord {}
+
+impl<T: Debug + Clone + PartialEq + Eq + Hash + Ord> Letter for T {}
+
+pub trait Alphabet {
+    type Letter: Letter;
+
+    fn alphabet(&self) -> &[Self::Letter];
+}
+
+pub trait Automaton: Sized + Alphabet {
     /// The index type used to identify nodes.
     type NIndex: GIndex;
     /// The data type associated with nodes.
@@ -269,7 +279,9 @@ pub trait NodeAutomaton: Sized {
     }
 }
 
-pub trait NodeSuccessorAutomaton: NodeAutomaton {
+pub trait TransitionSystem: Automaton {
+    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex>;
+
     fn successors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex>;
     fn predecessors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex>;
 
@@ -284,7 +296,13 @@ pub trait NodeSuccessorAutomaton: NodeAutomaton {
     }
 }
 
-impl<T: Automaton> NodeSuccessorAutomaton for T {
+impl<T: ExplicitEdgeAutomaton> TransitionSystem for T {
+    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
+        self.outgoing_edge_indices(node)
+            .find(|e| self.get_edge_unchecked(*e).matches(letter))
+            .map(|e| self.edge_target_unchecked(e))
+    }
+
     fn successors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex> {
         self.outgoing_edge_indices(node)
             .map(|e| self.edge_target_unchecked(e))
@@ -300,7 +318,9 @@ impl<T: Automaton> NodeSuccessorAutomaton for T {
 /// An automaton consists of nodes and edges, each identified by an index type.
 /// We assert that the index types are continuous from 0 to n-1, where n is the
 /// number of nodes/edges.
-pub trait Automaton: NodeAutomaton {
+pub trait ExplicitEdgeAutomaton:
+    Automaton<Letter = <<Self as ExplicitEdgeAutomaton>::E as AutomatonEdge>::Letter>
+{
     /// The index type used to identify edges.
     type EIndex: GIndex;
     /// The data type associated with edges.
@@ -381,7 +401,7 @@ pub trait Automaton: NodeAutomaton {
     ) -> impl Iterator<Item = Self::EIndex>;
 }
 
-pub trait ModifiableAutomaton: Automaton {
+pub trait ModifiableAutomaton: ExplicitEdgeAutomaton {
     /// Adds a new node with the given data to the automaton.
     /// Returns the index of the newly added node.
     fn add_node(&mut self, data: Self::N) -> Self::NIndex;
@@ -402,7 +422,7 @@ pub trait ModifiableAutomaton: Automaton {
         F: Fn(Frozen<Self>, Self::NIndex) -> bool;
 }
 
-pub trait InitializedAutomaton: NodeSuccessorAutomaton {
+pub trait InitializedAutomaton: TransitionSystem {
     /// Returns the start node of the automaton, panicking if no start node is
     /// set.
     fn get_initial(&self) -> Self::NIndex;
@@ -427,11 +447,8 @@ pub trait SingleFinalStateAutomaton: InitializedAutomaton {
 }
 
 /// The basic trait for anything that defines a language over a set alphabet.
-pub trait Language {
-    type Letter: Debug + Clone + PartialEq + Eq + Hash + Ord;
-
+pub trait Language: Alphabet {
     fn accepts<'a>(&self, input: impl IntoIterator<Item = &'a Self::Letter>) -> bool
     where
         Self::Letter: 'a;
-    fn alphabet(&self) -> &[Self::Letter];
 }

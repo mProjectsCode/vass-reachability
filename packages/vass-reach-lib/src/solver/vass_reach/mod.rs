@@ -1,4 +1,4 @@
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::graph::NodeIndex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -383,7 +383,7 @@ impl<'l> VASSReachSolver<'l> {
     /// Builds and checks the LTC automaton for the given path.
     fn ltc(&self, path: &MultiGraphPath) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let translation = LTCTranslation::from_multi_graph_path(&self.state, &path);
-        let ltc = translation.to_ltc(&self.state.cfg, self.state.dimension);
+        let ltc = translation.to_ltc(self.state.dimension);
 
         if *self.options.get_lts().get_relaxed_enabled() {
             self.ltc_relaxed(ltc, translation)
@@ -395,7 +395,7 @@ impl<'l> VASSReachSolver<'l> {
     fn ltc_relaxed(
         &self,
         ltc: LTC,
-        translation: LTCTranslation<NodeIndex, EdgeIndex>,
+        translation: LTCTranslation<NodeIndex>,
     ) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let result_relaxed =
             ltc.reach_n_relaxed(&self.state.initial_valuation, &self.state.final_valuation);
@@ -411,14 +411,14 @@ impl<'l> VASSReachSolver<'l> {
                 l.debug("LTC is not relaxed reachable");
             }
 
-            Ok(translation.to_dfa(&self.state.cfg, self.state.dimension, true))
+            Ok(translation.to_dfa(self.state.dimension, true))
         }
     }
 
     fn ltc_strict(
         &self,
         ltc: LTC,
-        translation: LTCTranslation<NodeIndex, EdgeIndex>,
+        translation: LTCTranslation<NodeIndex>,
     ) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let result_strict = ltc.reach_n(&self.state.initial_valuation, &self.state.final_valuation);
 
@@ -433,7 +433,7 @@ impl<'l> VASSReachSolver<'l> {
                 l.debug("LTC is not N-reachable");
             }
 
-            Ok(translation.to_dfa(&self.state.cfg, self.state.dimension, false))
+            Ok(translation.to_dfa(self.state.dimension, false))
         }
     }
 

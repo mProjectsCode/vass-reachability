@@ -1,7 +1,7 @@
 use petgraph::{Direction, graph::NodeIndex, visit::EdgeRef};
 
 use crate::automaton::{
-    Automaton, AutomatonEdge, AutomatonNode, FromLetter, InitializedAutomaton,
+    Automaton, AutomatonEdge, AutomatonNode, FromLetter, InitializedAutomaton, ModifiableAutomaton,
     dfa::{DFA, node::DfaNode},
     index_map::{IndexMap, IndexSet},
 };
