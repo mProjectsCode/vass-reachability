@@ -1,11 +1,17 @@
-use hashbrown::{HashMap, HashSet};
+use std::cell::{Ref, RefCell};
+
+use hashbrown::HashSet;
 use itertools::Itertools;
+use petgraph::graph::NodeIndex;
 
 use crate::automaton::{
-    Alphabet, InitializedAutomaton,
+    Alphabet, Automaton, Deterministic, InitializedAutomaton, TransitionSystem,
     cfg::{
-        update::CFGCounterUpdatable,
-        vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
+        update::CFGCounterUpdate,
+        vasscfg::{
+            VASSCFG, build_bounded_counting_cfg, build_modulo_counting_cfg,
+            build_rev_bounded_counting_cfg,
+        },
     },
     implicit_cfg_product::{path::MultiGraphPath, state::MultiGraphState},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
@@ -19,12 +25,11 @@ pub struct ImplicitCFGProduct {
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
-    pub cfg: VASSCFG<()>,
-    /// mu for modulo counting, one per counter
     pub mu: Box<[i32]>,
-    pub forward_bound: Box<[BoundedCFGCache]>,
-    pub backward_bound: Box<[BoundedCFGCache]>,
-    pub other_cfg: Vec<VASSCFG<()>>,
+    pub forward_bound: Box<[u32]>,
+    pub backward_bound: Box<[u32]>,
+    pub cfgs: Vec<VASSCFG<()>>,
+    explicit: RefCell<Option<VASSCFG<()>>>,
 }
 
 impl ImplicitCFGProduct {
@@ -34,40 +39,92 @@ impl ImplicitCFGProduct {
         final_valuation: VASSCounterValuation,
         cfg: VASSCFG<()>,
     ) -> Self {
-        let mu = vec![2; dimension].into_boxed_slice();
-        let forward_bound = BoundedCFGCache::build_initial(
-            BoundedCFGDirection::Forward,
-            dimension,
-            &initial_valuation,
-            &final_valuation,
-        );
-        let backward_bound = BoundedCFGCache::build_initial(
-            BoundedCFGDirection::Backward,
-            dimension,
-            &initial_valuation,
-            &final_valuation,
-        );
-        let other_cfg = vec![];
+        let mu = vec![2; dimension];
+        let forward_bound = vec![2; dimension];
+        let backward_bound = vec![2; dimension];
+
+        let mut cfgs = Vec::new();
+        cfgs.reserve(dimension * 3 + 1);
+        cfgs.push(cfg);
+
+        for i in 0..dimension {
+            cfgs.push(build_modulo_counting_cfg(
+                dimension,
+                VASSCounterIndex::new(i as u32),
+                mu[i],
+                initial_valuation[i],
+                final_valuation[i],
+            ));
+        }
+
+        for i in 0..dimension {
+            cfgs.push(build_counting_automaton(
+                BoundedCFGDirection::Forward,
+                forward_bound[i],
+                VASSCounterIndex::new(i as u32),
+                dimension,
+                initial_valuation[i],
+                final_valuation[i],
+            ));
+        }
+        for i in 0..dimension {
+            cfgs.push(build_counting_automaton(
+                BoundedCFGDirection::Backward,
+                backward_bound[i],
+                VASSCounterIndex::new(i as u32),
+                dimension,
+                initial_valuation[i],
+                final_valuation[i],
+            ));
+        }
 
         ImplicitCFGProduct {
             dimension,
             initial_valuation,
             final_valuation,
-            cfg,
-            mu,
-            forward_bound,
-            backward_bound,
-            other_cfg,
+            mu: mu.into_boxed_slice(),
+            forward_bound: forward_bound.into_boxed_slice(),
+            backward_bound: backward_bound.into_boxed_slice(),
+            cfgs,
+            explicit: RefCell::new(None),
         }
+    }
+
+    pub fn main_cfg(&self) -> &VASSCFG<()> {
+        &self.cfgs[0]
+    }
+
+    fn get_modulo_cfg_index(&self, counter: VASSCounterIndex) -> usize {
+        1 + counter.to_usize()
+    }
+
+    fn get_forward_bound_cfg_index(&self, counter: VASSCounterIndex) -> usize {
+        1 + self.dimension + counter.to_usize()
+    }
+
+    fn get_backward_bound_cfg_index(&self, counter: VASSCounterIndex) -> usize {
+        1 + self.dimension * 2 + counter.to_usize()
     }
 
     pub fn set_mu(&mut self, counter: VASSCounterIndex, mu: i32) {
         assert!(mu > 0);
+
+        self.reset_explicit();
+
         self.mu[counter.to_usize()] = mu;
+        let index = self.get_modulo_cfg_index(counter);
+        self.cfgs[index] = build_modulo_counting_cfg(
+            self.dimension,
+            counter,
+            mu,
+            self.initial_valuation[counter],
+            self.final_valuation[counter],
+        );
     }
 
     pub fn increment_mu(&mut self, counter: VASSCounterIndex) {
-        self.mu[counter.to_usize()] += 1;
+        let new_mu = self.get_mu(counter) + 1;
+        self.set_mu(counter, new_mu);
     }
 
     pub fn get_mu(&self, counter: VASSCounterIndex) -> i32 {
@@ -75,84 +132,82 @@ impl ImplicitCFGProduct {
     }
 
     pub fn set_forward_bound(&mut self, counter: VASSCounterIndex, bound: u32) {
-        self.forward_bound[counter.to_usize()].rebuild(
+        self.forward_bound[counter.to_usize()] = bound;
+
+        self.reset_explicit();
+
+        let index = self.get_forward_bound_cfg_index(counter);
+        self.cfgs[index] = build_counting_automaton(
+            BoundedCFGDirection::Forward,
             bound,
             counter,
             self.dimension,
             self.initial_valuation[counter],
             self.final_valuation[counter],
-        )
+        );
     }
 
     pub fn set_backward_bound(&mut self, counter: VASSCounterIndex, bound: u32) {
-        self.backward_bound[counter.to_usize()].rebuild(
+        self.backward_bound[counter.to_usize()] = bound;
+
+        self.reset_explicit();
+
+        let index = self.get_backward_bound_cfg_index(counter);
+        self.cfgs[index] = build_counting_automaton(
+            BoundedCFGDirection::Backward,
             bound,
             counter,
             self.dimension,
             self.initial_valuation[counter],
             self.final_valuation[counter],
-        )
+        );
     }
 
     pub fn get_forward_bound(&self, counter: VASSCounterIndex) -> u32 {
-        self.forward_bound[counter.to_usize()].bound
+        self.forward_bound[counter.to_usize()]
     }
 
     pub fn get_forward_bounds(&self) -> Box<[u32]> {
-        self.forward_bound.iter().map(|cache| cache.bound).collect()
+        self.forward_bound.clone()
     }
 
     pub fn get_backward_bound(&self, counter: VASSCounterIndex) -> u32 {
-        self.backward_bound[counter.to_usize()].bound
+        self.backward_bound[counter.to_usize()]
     }
 
     pub fn get_backward_bounds(&self) -> Box<[u32]> {
-        self.backward_bound
-            .iter()
-            .map(|cache| cache.bound)
-            .collect()
+        self.backward_bound.clone()
     }
 
     pub fn add_cfg(&mut self, other: VASSCFG<()>) {
         assert!(
-            other.alphabet() == self.cfg.alphabet(),
+            other.alphabet() == self.cfgs[0].alphabet(),
             "CFGs must have the same alphabet"
         );
         assert!(other.is_complete(), "CFG must be complete");
 
-        self.other_cfg.push(other);
+        self.reset_explicit();
+
+        self.cfgs.push(other);
     }
 
     pub fn reach(&self) -> Option<MultiGraphPath> {
-        let graphs = self.iter_all_graphs().collect_vec();
-
         // For every node, we track which counter valuations we already visited.
-        let mut visited = HashMap::<MultiGraphState, HashSet<VASSCounterValuation>>::new();
+        let mut visited = HashSet::<MultiGraphState>::new();
         let mut queue = std::collections::VecDeque::new();
-        let mut mod_initial_valuation: VASSCounterValuation = self.initial_valuation.clone();
-        let mut mod_final_valuation: VASSCounterValuation = self.final_valuation.clone();
-        mod_initial_valuation.mod_euclid_slice_mut(&self.mu);
-        mod_final_valuation.mod_euclid_slice_mut(&self.mu);
 
         let start = self.get_start_multi_state();
         let initial_path = MultiGraphPath::new();
-        if self.multi_state_accepting(&start) && mod_initial_valuation == mod_final_valuation {
+        if self.multi_state_accepting(&start) {
             return Some(initial_path);
         }
 
-        queue.push_back(MultiGraphTraversalState::new(
-            initial_path,
-            start.clone(),
-            mod_initial_valuation.clone(),
-        ));
-        visited
-            .entry(start)
-            .or_default()
-            .insert(mod_initial_valuation);
+        queue.push_back(MultiGraphTraversalState::new(initial_path, start.clone()));
+        visited.insert(start);
 
         while let Some(state) = queue.pop_front() {
-            for letter in self.cfg.alphabet() {
-                let target = state.last_state.take_letter(&graphs, letter);
+            for letter in self.cfgs[0].alphabet() {
+                let target = state.last_state.take_letter(&self.cfgs, letter);
                 let Some(target) = target else {
                     continue;
                 };
@@ -163,28 +218,19 @@ impl ImplicitCFGProduct {
                     continue;
                 }
 
-                let mut new_valuation = state.mod_valuation.clone();
-                new_valuation.apply_cfg_update_mod_slice(*letter, &self.mu);
-
-                let entry = visited.entry(target.clone()).or_default();
-
-                if !entry.contains(&new_valuation) {
-                    entry.insert(new_valuation.clone());
+                if !visited.contains(&target) {
+                    visited.insert(target.clone());
 
                     let mut new_path = state.path.clone();
                     new_path.add(*letter);
 
-                    if self.multi_state_accepting(&target) && new_valuation == mod_final_valuation {
+                    if self.multi_state_accepting(&target) {
                         // paths.push(new_path);
                         // Optimization: we only search for the shortest path, so we can stop when
                         // we find one
                         return Some(new_path);
                     } else {
-                        queue.push_back(MultiGraphTraversalState::new(
-                            new_path,
-                            target,
-                            new_valuation,
-                        ));
+                        queue.push_back(MultiGraphTraversalState::new(new_path, target));
                     }
                 }
             }
@@ -194,9 +240,9 @@ impl ImplicitCFGProduct {
     }
 
     fn multi_state_accepting(&self, state: &MultiGraphState) -> bool {
-        for (i, cfg) in self.iter_all_graphs().enumerate() {
+        for (i, cfg) in self.iter().enumerate() {
             // we are accepting if all graphs are in an accepting state
-            if !cfg.graph[state.states[i]].accepting {
+            if !cfg.is_accepting(state[i]) {
                 return false;
             }
         }
@@ -205,9 +251,9 @@ impl ImplicitCFGProduct {
     }
 
     fn multi_state_trap(&self, state: &MultiGraphState) -> bool {
-        for (i, cfg) in self.iter_all_graphs().enumerate() {
+        for (i, cfg) in self.iter().enumerate() {
             // we are in a trap if any graph is in a trap state
-            if cfg.graph[state.states[i]].trap {
+            if cfg.is_trap(state[i]) {
                 return true;
             }
         }
@@ -217,7 +263,7 @@ impl ImplicitCFGProduct {
 
     fn get_start_multi_state(&self) -> MultiGraphState {
         let start_states = self
-            .iter_all_graphs()
+            .iter()
             .map(|cfg| cfg.get_initial())
             .collect_vec()
             .into_boxed_slice();
@@ -227,11 +273,71 @@ impl ImplicitCFGProduct {
         }
     }
 
-    pub fn iter_all_graphs(&self) -> impl Iterator<Item = &VASSCFG<()>> {
-        std::iter::once(&self.cfg)
-            .chain(self.forward_bound.iter().map(|cache| &cache.automaton))
-            .chain(self.backward_bound.iter().map(|cache| &cache.automaton))
-            .chain(self.other_cfg.iter())
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a VASSCFG<()>> {
+        self.cfgs.iter()
+    }
+
+    /// If not already done, constructs and returns a ref to the explicit
+    /// product CFG.
+    pub fn explicit(&self) -> Ref<'_, VASSCFG<()>> {
+        if self.explicit.borrow().is_none() {
+            let mut explicit_cfg = self.cfgs[0].clone();
+
+            for cfg in self.cfgs.iter().skip(1) {
+                explicit_cfg = explicit_cfg.intersect(cfg);
+            }
+
+            *self.explicit.borrow_mut() = Some(explicit_cfg);
+        }
+
+        Ref::map(self.explicit.borrow(), |opt| opt.as_ref().unwrap())
+    }
+
+    pub fn reset_explicit(&self) {
+        *self.explicit.borrow_mut() = None;
+    }
+}
+
+impl Alphabet for ImplicitCFGProduct {
+    type Letter = CFGCounterUpdate;
+
+    fn alphabet(&self) -> &[Self::Letter] {
+        self.cfgs[0].alphabet()
+    }
+}
+
+impl Automaton<Deterministic> for ImplicitCFGProduct {
+    type NIndex = NodeIndex;
+
+    type N = ();
+
+    /// We don't actually know the exact number of nodes without constructing
+    /// the full product. For now we return the upper bound, the product of
+    /// all cfg node counts, but that could be huge.
+    fn node_count(&self) -> usize {
+        self.cfgs.iter().map(|cfg| cfg.node_count()).product()
+    }
+
+    fn get_node(&self, _index: Self::NIndex) -> Option<&()> {
+        Some(&())
+    }
+
+    fn get_node_unchecked(&self, _index: Self::NIndex) -> &() {
+        &()
+    }
+}
+
+impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
+    fn successor(&self, _node: Self::NIndex, _letter: &Self::Letter) -> Option<Self::NIndex> {
+        todo!()
+    }
+
+    fn successors(&self, _node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        todo!()
+    }
+
+    fn predecessors(&self, _node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        todo!()
     }
 }
 
@@ -271,93 +377,13 @@ fn build_counting_automaton(
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct BoundedCFGCache {
-    pub direction: BoundedCFGDirection,
-    pub bound: u32,
-    pub automaton: VASSCFG<()>,
-}
-
-impl BoundedCFGCache {
-    pub fn new(
-        direction: BoundedCFGDirection,
-        bound: u32,
-        counter: VASSCounterIndex,
-        dimension: usize,
-        initial_valuation: i32,
-        final_valuation: i32,
-    ) -> Self {
-        BoundedCFGCache {
-            direction,
-            bound,
-            automaton: build_counting_automaton(
-                direction,
-                bound,
-                counter,
-                dimension,
-                initial_valuation,
-                final_valuation,
-            ),
-        }
-    }
-
-    pub fn rebuild(
-        &mut self,
-        bound: u32,
-        counter: VASSCounterIndex,
-        dimension: usize,
-        initial_valuation: i32,
-        final_valuation: i32,
-    ) {
-        self.bound = bound;
-        self.automaton = build_counting_automaton(
-            self.direction,
-            bound,
-            counter,
-            dimension,
-            initial_valuation,
-            final_valuation,
-        );
-    }
-
-    pub fn build_initial(
-        direction: BoundedCFGDirection,
-        dimension: usize,
-        initial_valuation: &VASSCounterValuation,
-        final_valuation: &VASSCounterValuation,
-    ) -> Box<[BoundedCFGCache]> {
-        VASSCounterIndex::iter_counters(dimension)
-            .map(|i| {
-                BoundedCFGCache::new(
-                    direction,
-                    2,
-                    i,
-                    dimension,
-                    initial_valuation[i],
-                    final_valuation[i],
-                )
-            })
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
-    }
-}
-
 pub struct MultiGraphTraversalState {
     pub path: MultiGraphPath,
     pub last_state: MultiGraphState,
-    pub mod_valuation: VASSCounterValuation,
 }
 
 impl MultiGraphTraversalState {
-    pub fn new(
-        path: MultiGraphPath,
-        last_state: MultiGraphState,
-        mod_valuation: VASSCounterValuation,
-    ) -> Self {
-        Self {
-            path,
-            last_state,
-            mod_valuation,
-        }
+    pub fn new(path: MultiGraphPath, last_state: MultiGraphState) -> Self {
+        Self { path, last_state }
     }
 }

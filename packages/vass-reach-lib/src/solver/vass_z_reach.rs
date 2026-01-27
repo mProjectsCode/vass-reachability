@@ -1,3 +1,4 @@
+use petgraph::graph::EdgeIndex;
 use serde::{Deserialize, Serialize};
 use z3::{
     Config, Context, Solver,
@@ -6,8 +7,7 @@ use z3::{
 
 use crate::{
     automaton::{
-        GIndex,
-        cfg::{CFG, update::CFGCounterUpdate},
+        cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate},
         index_map::OptionIndexMap,
         path::{Path, parikh_image::ParikhImage},
         vass::counter::VASSCounterValuation,
@@ -39,21 +39,20 @@ impl VASSZReachSolverStatistics {
     }
 }
 
-pub type VASSZReachSolverStatus<EIndex> =
-    SolverStatus<ParikhImage<EIndex>, (), VASSZReachSolverError>;
+pub type VASSZReachSolverStatus = SolverStatus<ParikhImage<EdgeIndex>, (), VASSZReachSolverError>;
 
-pub type VASSZReachSolverResult<EIndex> =
-    SolverResult<ParikhImage<EIndex>, (), VASSZReachSolverError, VASSZReachSolverStatistics>;
+pub type VASSZReachSolverResult =
+    SolverResult<ParikhImage<EdgeIndex>, (), VASSZReachSolverError, VASSZReachSolverStatistics>;
 
-impl<EIndex: GIndex> VASSZReachSolverResult<EIndex> {
-    pub fn get_parikh_image(&self) -> Option<&ParikhImage<EIndex>> {
+impl VASSZReachSolverResult {
+    pub fn get_parikh_image(&self) -> Option<&ParikhImage<EdgeIndex>> {
         match &self.status {
             SolverStatus::True(parikh_image) => Some(parikh_image),
             _ => None,
         }
     }
 
-    pub fn build_run<C: CFG<EIndex = EIndex>>(
+    pub fn build_run<C: ExplicitEdgeCFG>(
         &self,
         cfg: &C,
         initial_valuation: &VASSCounterValuation,
@@ -94,7 +93,7 @@ impl<EIndex: GIndex> VASSZReachSolverResult<EIndex> {
 ///
 /// Since this constraint act's on sets of nodes and there are only a limited
 /// number of subsets of nodes, the solver terminates.
-pub struct VASSZReachSolver<'l, 'c, C: CFG> {
+pub struct VASSZReachSolver<'l, 'c, C: ExplicitEdgeCFG> {
     cfg: &'c C,
     initial_valuation: VASSCounterValuation,
     final_valuation: VASSCounterValuation,
@@ -104,7 +103,7 @@ pub struct VASSZReachSolver<'l, 'c, C: CFG> {
     solver_start_time: Option<std::time::Instant>,
 }
 
-impl<'l, 'c, C: CFG> VASSZReachSolver<'l, 'c, C> {
+impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
     pub fn new(
         cfg: &'c C,
         initial_valuation: VASSCounterValuation,
@@ -123,7 +122,7 @@ impl<'l, 'c, C: CFG> VASSZReachSolver<'l, 'c, C> {
         }
     }
 
-    pub fn solve(&mut self) -> VASSZReachSolverResult<C::EIndex> {
+    pub fn solve(&mut self) -> VASSZReachSolverResult {
         self.solver_start_time = Some(std::time::Instant::now());
 
         let mut config = Config::new();
@@ -134,7 +133,7 @@ impl<'l, 'c, C: CFG> VASSZReachSolver<'l, 'c, C> {
         self.solve_inner(&ctx, &solver)
     }
 
-    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult<C::EIndex> {
+    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult {
         // a map that allows us to access the edge variables by their edge id
         let mut edge_map = OptionIndexMap::new(self.cfg.edge_count());
 
@@ -280,14 +279,14 @@ impl<'l, 'c, C: CFG> VASSZReachSolver<'l, 'c, C> {
         }
     }
 
-    fn max_iterations_reached_result(&self) -> VASSZReachSolverResult<C::EIndex> {
+    fn max_iterations_reached_result(&self) -> VASSZReachSolverResult {
         VASSZReachSolverResult::new(
             SolverStatus::Unknown(VASSZReachSolverError::MaxIterationsReached),
             self.get_solver_statistics(),
         )
     }
 
-    fn max_time_reached_result(&self) -> VASSZReachSolverResult<C::EIndex> {
+    fn max_time_reached_result(&self) -> VASSZReachSolverResult {
         VASSZReachSolverResult::new(
             SolverStatus::Unknown(VASSZReachSolverError::Timeout),
             self.get_solver_statistics(),
@@ -298,10 +297,7 @@ impl<'l, 'c, C: CFG> VASSZReachSolver<'l, 'c, C> {
         VASSZReachSolverStatistics::new(self.step_count, self.get_solver_time().unwrap_or_default())
     }
 
-    fn get_solver_result(
-        &self,
-        status: VASSZReachSolverStatus<C::EIndex>,
-    ) -> VASSZReachSolverResult<C::EIndex> {
+    fn get_solver_result(&self, status: VASSZReachSolverStatus) -> VASSZReachSolverResult {
         VASSZReachSolverResult::new(status, self.get_solver_statistics())
     }
 

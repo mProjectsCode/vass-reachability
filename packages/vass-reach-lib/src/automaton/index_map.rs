@@ -50,6 +50,12 @@ impl<T: IndexType> IndexMapData for EdgeIndex<T> {
     }
 }
 
+impl IndexMapData for () {
+    fn empty() -> Self {
+        ()
+    }
+}
+
 /// A vector based map from keys of type K to values of type V.
 /// The maximum key index must be known at map creation time.
 /// Attempts to access keys out of range will in most cases panic.

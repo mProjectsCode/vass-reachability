@@ -14,7 +14,7 @@ fn test_nfa_to_dfa() {
     let q1 = nfa.add_node(DfaNode::non_accepting(1));
     let q2 = nfa.add_node(DfaNode::accepting(2));
 
-    nfa.set_start(q0);
+    nfa.set_initial(q0);
 
     nfa.add_edge(q0, q0, NFAEdge::Symbol('a'));
     nfa.add_edge(q0, q1, NFAEdge::Symbol('b'));
@@ -42,7 +42,7 @@ fn test_nfa_to_dfa_2() {
     let q1 = nfa.add_node(DfaNode::non_accepting(1));
     let q2 = nfa.add_node(DfaNode::accepting(2));
 
-    nfa.set_start(q0);
+    nfa.set_initial(q0);
 
     nfa.add_edge(q0, q0, NFAEdge::Symbol('a'));
     nfa.add_edge(q0, q0, NFAEdge::Symbol('b'));
@@ -67,7 +67,7 @@ fn test_nfa_to_dfa_3() {
     let q3 = nfa.add_node(DfaNode::non_accepting(3));
     let q4 = nfa.add_node(DfaNode::accepting(4));
 
-    nfa.set_start(q0);
+    nfa.set_initial(q0);
 
     nfa.add_edge(q0, q1, NFAEdge::Symbol('a'));
     nfa.add_edge(q0, q2, NFAEdge::Epsilon);

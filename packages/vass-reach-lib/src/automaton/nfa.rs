@@ -7,7 +7,7 @@ use petgraph::{
 
 use crate::automaton::{
     Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
-    InitializedAutomaton, Language, ModifiableAutomaton,
+    InitializedAutomaton, Language, ModifiableAutomaton, NonDeterministic,
     dfa::{DFA, node::DfaNode},
 };
 
@@ -50,8 +50,8 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
         }
     }
 
-    pub fn set_start(&mut self, start: NodeIndex) {
-        self.start = Some(start);
+    pub fn set_initial(&mut self, node: NodeIndex) {
+        self.start = Some(node);
     }
 
     pub fn set_accepting(&mut self, state: NodeIndex) {
@@ -171,7 +171,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for NFA<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<NonDeterministic> for NFA<N, E> {
     type NIndex = NodeIndex;
     type N = DfaNode<N>;
 
@@ -188,7 +188,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for NFA<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<NonDeterministic>
+    for NFA<N, E>
+{
     type EIndex = EdgeIndex;
 
     type E = NFAEdge<E>;
@@ -234,7 +236,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for 
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<NonDeterministic>
+    for NFA<N, E>
+{
     fn add_node(&mut self, data: DfaNode<N>) -> Self::NIndex {
         self.graph.add_node(data)
     }
@@ -268,13 +272,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for NF
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton for NFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton<NonDeterministic>
+    for NFA<N, E>
+{
     fn get_initial(&self) -> Self::NIndex {
         self.start.expect("Self must have a start state")
-    }
-
-    fn set_initial(&mut self, node: Self::NIndex) {
-        self.start = Some(node);
     }
 
     fn is_accepting(&self, node: Self::NIndex) -> bool {

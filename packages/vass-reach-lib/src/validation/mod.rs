@@ -1,12 +1,12 @@
 use crate::automaton::{
-    cfg::CFG, path::parikh_image::ParikhImage, vass::counter::VASSCounterValuation,
+    cfg::ExplicitEdgeCFG, path::parikh_image::ParikhImage, vass::counter::VASSCounterValuation,
 };
 
 pub mod same_language;
 
 /// Tests that a given Parikh image is arrives at the final valuation in a VASS
 /// CFG.
-pub fn test_parikh_image<C: CFG>(
+pub fn test_parikh_image<C: ExplicitEdgeCFG>(
     parikh_image: &ParikhImage<C::EIndex>,
     cfg: &C,
     initial_valuation: &VASSCounterValuation,

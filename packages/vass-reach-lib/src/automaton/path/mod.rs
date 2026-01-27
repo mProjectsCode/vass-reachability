@@ -1,7 +1,7 @@
 use std::{fmt::Display, vec::IntoIter};
 
 use crate::automaton::{
-    GIndex, Letter, TransitionSystem, path::transition_sequence::TransitionSequence,
+    Deterministic, GIndex, Letter, TransitionSystem, path::transition_sequence::TransitionSequence,
 };
 
 pub mod parikh_image;
@@ -34,7 +34,7 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
     pub fn from_word<'a>(
         start_index: NIndex,
         word: impl IntoIterator<Item = &'a L>,
-        graph: &impl TransitionSystem<NIndex = NIndex, Letter = L>,
+        graph: &impl TransitionSystem<Deterministic, NIndex = NIndex, Letter = L>,
     ) -> anyhow::Result<Self>
     where
         L: 'a,
@@ -55,7 +55,7 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
     pub fn take_edge(
         &mut self,
         letter: L,
-        graph: &impl TransitionSystem<NIndex = NIndex, Letter = L>,
+        graph: &impl TransitionSystem<Deterministic, NIndex = NIndex, Letter = L>,
     ) -> anyhow::Result<()> {
         let successor = graph.successor(self.end(), &letter).ok_or_else(|| {
             anyhow::anyhow!(format!(

@@ -2,12 +2,16 @@ use std::iter::Peekable;
 
 use hashbrown::HashMap;
 use itertools::Itertools;
-use petgraph::{graph::DiGraph, visit::EdgeRef};
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+};
 
 use super::nfa::NFAEdge;
 use crate::automaton::{
-    Alphabet, GIndex, Language, ModifiableAutomaton,
-    cfg::{CFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
+    Alphabet, Language, ModifiableAutomaton,
+    algorithms::AutomatonAlgorithms,
+    cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     lsg::part::{LSGGraph, LSGPart, LSGPath},
     nfa::NFA,
@@ -18,15 +22,15 @@ pub mod extender;
 pub mod part;
 
 #[derive(Debug, Clone)]
-pub struct LinearSubGraph<'a, C: CFG> {
-    pub parts: Vec<LSGPart<C::NIndex>>,
+pub struct LinearSubGraph<'a, C: ExplicitEdgeCFG> {
+    pub parts: Vec<LSGPart>,
     pub cfg: &'a C,
     pub dimension: usize,
 }
 
-impl<'a, C: CFG> LinearSubGraph<'a, C> {
+impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
     pub fn from_path(
-        path: Path<C::NIndex, CFGCounterUpdate>,
+        path: Path<NodeIndex, CFGCounterUpdate>,
         cfg: &'a C,
         dimension: usize,
     ) -> Self {
@@ -42,7 +46,7 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
     /// This function will also add all existing connections between the new
     /// node and the existing LSG nodes. This may quickly lead to large
     /// subgraphs and little path like structure.
-    pub fn add_node(&self, node: C::NIndex) -> Self {
+    pub fn add_node(&self, node: NodeIndex) -> Self {
         // first we need to find all parts that contain a neighbor of the node
         // then we build a new subgraph containing everything between the first and last
         // neighbor then we replace all those parts with the new subgraph.
@@ -73,6 +77,8 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
             .collect_vec();
 
         // then we find all parts that contain a neighbor of the node
+        // the second boolean in the tuple indicates whether the neighbor is at the
+        // start or end of the part (true) or inside the part (false)
         let mut neighbor_parts_indices = vec![];
 
         for (i, part) in new_parts.iter().enumerate() {
@@ -169,7 +175,12 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
             .expect("End node must be in the new subgraph");
 
         // lastly we create the new LSGGraph and insert it into the parts
-        let graph = LSGGraph::new(new_subgraph, new_start_node, new_end_node);
+        let graph = LSGGraph::new(
+            new_subgraph,
+            new_start_node,
+            new_end_node,
+            self.cfg.alphabet().to_vec(),
+        );
 
         new_parts.insert(first_part_index, LSGPart::SubGraph(graph));
 
@@ -189,7 +200,44 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
             "Cannot add SCC around node that is not in the LSG"
         );
 
-        unimplemented!()
+        let scc_nodes = self.cfg.find_scc_surrounding(node);
+        let scc = LSGGraph::from_subset(self.cfg, &scc_nodes, node, node);
+
+        // first we split all paths at the given node
+        let split_parts = self
+            .parts
+            .iter()
+            .flat_map(|part| match part {
+                LSGPart::Path(path) => path
+                    .path
+                    .clone()
+                    .split_at_node(node)
+                    .into_iter()
+                    .map(|p| LSGPart::Path(p.into()))
+                    .collect_vec(),
+                LSGPart::SubGraph(_) => vec![part.clone()],
+            })
+            .collect_vec();
+
+        let mut new_parts = vec![];
+        new_parts.reserve(split_parts.len());
+
+        for part in split_parts {
+            let ends_at_node = part.end() == node;
+            new_parts.push(part);
+
+            if ends_at_node {
+                // we found a part that ends at node, so now we need to insert the SCC before
+                // continuing with the rest
+                new_parts.push(LSGPart::SubGraph(scc.clone()));
+            }
+        }
+
+        LinearSubGraph {
+            parts: new_parts,
+            cfg: self.cfg,
+            dimension: self.dimension,
+        }
     }
 
     /// Checks if the LSG contains the given node from the CFG.
@@ -208,7 +256,7 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
         let mut nfa: NFA<(), CFGCounterUpdate> =
             NFA::new(CFGCounterUpdate::alphabet(self.dimension));
         let start_state = nfa.add_node(DfaNode::non_accepting(()));
-        nfa.set_start(start_state);
+        nfa.set_initial(start_state);
 
         let mut state_offset = 0;
         let mut prev_state = start_state;
@@ -271,18 +319,18 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
         nfa.determinize()
     }
 
-    pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart<C::NIndex>> + 'b {
+    pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPart> + 'b {
         self.parts.iter()
     }
 
-    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPath<C::NIndex>> + 'b {
+    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPath> + 'b {
         self.parts.iter().filter_map(|part| match part {
             LSGPart::Path(path) => Some(path),
             LSGPart::SubGraph(_) => None,
         })
     }
 
-    pub fn iter_subgraph_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGGraph<C::NIndex>> + 'b {
+    pub fn iter_subgraph_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGGraph> + 'b {
         self.parts.iter().filter_map(|part| match part {
             LSGPart::SubGraph(subgraph) => Some(subgraph),
             LSGPart::Path(_) => None,
@@ -291,7 +339,7 @@ impl<'a, C: CFG> LinearSubGraph<'a, C> {
 }
 
 fn partial_accept_path<'a>(
-    path: &LSGPath<impl GIndex>,
+    path: &LSGPath,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut index = 0;
@@ -319,7 +367,7 @@ fn partial_accept_path<'a>(
 }
 
 fn partial_accept_subgraph<'a>(
-    subgraph: &LSGGraph<impl GIndex>,
+    subgraph: &LSGGraph,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut current_state = subgraph.start;
@@ -346,7 +394,7 @@ fn partial_accept_subgraph<'a>(
     current_state == subgraph.end
 }
 
-impl<'a, C: CFG> Alphabet for LinearSubGraph<'a, C> {
+impl<'a, C: ExplicitEdgeCFG> Alphabet for LinearSubGraph<'a, C> {
     type Letter = CFGCounterUpdate;
 
     fn alphabet(&self) -> &[CFGCounterUpdate] {
@@ -354,7 +402,7 @@ impl<'a, C: CFG> Alphabet for LinearSubGraph<'a, C> {
     }
 }
 
-impl<'a, C: CFG> Language for LinearSubGraph<'a, C> {
+impl<'a, C: ExplicitEdgeCFG> Language for LinearSubGraph<'a, C> {
     fn accepts<'b>(&self, input: impl IntoIterator<Item = &'b CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'b,

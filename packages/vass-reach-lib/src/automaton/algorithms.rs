@@ -1,8 +1,13 @@
 use itertools::Itertools;
 
-use crate::automaton::{ExplicitEdgeAutomaton, GIndex, InitializedAutomaton, index_map::IndexSet};
+use crate::automaton::{
+    Deterministic, ExplicitEdgeAutomaton, GIndex, InitializedAutomaton, TransitionSystemType,
+    index_map::IndexSet,
+};
 
-pub trait AutomatonAlgorithms: InitializedAutomaton {
+pub trait AutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
+    InitializedAutomaton<Type>
+{
     /// Find the SCC surrounding a given node. Returns a vector of all the nodes
     /// that are part of the SCC.
     fn find_scc_surrounding(&self, node: Self::NIndex) -> Vec<Self::NIndex> {
@@ -46,9 +51,11 @@ pub trait AutomatonAlgorithms: InitializedAutomaton {
     }
 }
 
-impl<T: InitializedAutomaton> AutomatonAlgorithms for T {}
+impl<T: InitializedAutomaton<Deterministic>> AutomatonAlgorithms<Deterministic> for T {}
 
-pub trait EdgeAutomatonAlgorithms: ExplicitEdgeAutomaton + InitializedAutomaton {
+pub trait EdgeAutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
+    ExplicitEdgeAutomaton<Type> + InitializedAutomaton<Type>
+{
     fn to_graphviz(
         &self,
         nodes: Option<Vec<Self::NIndex>>,
@@ -111,4 +118,9 @@ pub trait EdgeAutomatonAlgorithms: ExplicitEdgeAutomaton + InitializedAutomaton 
     }
 }
 
-impl<T: ExplicitEdgeAutomaton + InitializedAutomaton> EdgeAutomatonAlgorithms for T {}
+impl<
+    Type: TransitionSystemType<Self::NIndex>,
+    T: ExplicitEdgeAutomaton<Type> + InitializedAutomaton<Type>,
+> EdgeAutomatonAlgorithms<Type> for T
+{
+}

@@ -10,8 +10,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
-    InitializedAutomaton, Language, ModifiableAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, Deterministic, ExplicitEdgeAutomaton,
+    FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton,
     index_map::IndexMap,
     nfa::{NFA, NFAEdge},
     path::Path,
@@ -38,6 +38,14 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
             graph,
             complete: false,
         }
+    }
+
+    pub fn set_initial(&mut self, node: NodeIndex) {
+        self.start = Some(node);
+    }
+
+    pub fn is_trap(&self, node: NodeIndex) -> bool {
+        self.graph[node].trap
     }
 
     pub fn is_complete(&self) -> bool {
@@ -217,7 +225,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
 
         let mut reversed = NFA::<(), E>::new(self.alphabet.clone());
         let start = reversed.add_node(DfaNode::default());
-        reversed.set_start(start);
+        reversed.set_initial(start);
 
         let mut node_hash = IndexMap::new(self.node_count());
 
@@ -485,6 +493,40 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
 
         loops
     }
+
+    pub fn subgraph(&self, nodes: &[NodeIndex]) -> DFA<N, E>
+    where
+        N: Clone,
+        E: Clone,
+    {
+        let mut sub_dfa = DFA::new(self.alphabet.clone());
+        // We could use an index map here, but we map from self to the new DFA, where
+        // the new DFA might be a lot smaller, so an index map might be wasteful.
+        let mut node_map = HashMap::new();
+
+        for &node in nodes {
+            let new_node = sub_dfa.add_node(self.graph[node].clone());
+            node_map.insert(node, new_node);
+        }
+
+        for &node in nodes {
+            for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+                if nodes.contains(&edge.target()) {
+                    let from = node_map[&node];
+                    let to = node_map[&edge.target()];
+                    sub_dfa.add_edge(from, to, edge.weight().clone());
+                }
+            }
+        }
+
+        if let Some(start) = self.start {
+            if nodes.contains(&start) {
+                sub_dfa.set_initial(node_map[&start]);
+            }
+        }
+
+        sub_dfa
+    }
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for DFA<N, E> {
@@ -495,7 +537,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for DFA<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<Deterministic> for DFA<N, E> {
     type NIndex = NodeIndex;
     type N = DfaNode<N>;
 
@@ -512,7 +554,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for DFA<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<Deterministic>
+    for DFA<N, E>
+{
     type EIndex = EdgeIndex;
     type E = E;
 
@@ -557,7 +601,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for 
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Deterministic>
+    for DFA<N, E>
+{
     fn add_node(&mut self, data: DfaNode<N>) -> Self::NIndex {
         self.graph.add_node(data)
     }
@@ -600,13 +646,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for DF
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton for DFA<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton<Deterministic>
+    for DFA<N, E>
+{
     fn get_initial(&self) -> Self::NIndex {
         self.start.expect("Self must have a start state")
-    }
-
-    fn set_initial(&mut self, node: Self::NIndex) {
-        self.start = Some(node);
     }
 
     fn is_accepting(&self, node: Self::NIndex) -> bool {

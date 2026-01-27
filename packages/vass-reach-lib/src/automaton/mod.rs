@@ -235,6 +235,8 @@ impl<'a, G> From<&'a mut G> for Frozen<'a, G> {
     }
 }
 
+// MARK: Alphabet
+
 pub trait Letter: Debug + Clone + PartialEq + Eq + Hash + Ord {}
 
 impl<T: Debug + Clone + PartialEq + Eq + Hash + Ord> Letter for T {}
@@ -245,7 +247,9 @@ pub trait Alphabet {
     fn alphabet(&self) -> &[Self::Letter];
 }
 
-pub trait Automaton: Sized + Alphabet {
+// MARK: Automaton
+
+pub trait Automaton<Type: TransitionSystemType<Self::NIndex>>: Alphabet {
     /// The index type used to identify nodes.
     type NIndex: GIndex;
     /// The data type associated with nodes.
@@ -279,11 +283,31 @@ pub trait Automaton: Sized + Alphabet {
     }
 }
 
-pub trait TransitionSystem: Automaton {
-    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex>;
+// MARK: Transition System Types
 
-    fn successors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex>;
-    fn predecessors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex>;
+pub trait TransitionSystemType<NIndex: GIndex> {
+    type SuccessorType;
+}
+
+pub struct Deterministic {}
+
+impl<NIndex: GIndex> TransitionSystemType<NIndex> for Deterministic {
+    type SuccessorType = Option<NIndex>;
+}
+
+pub struct NonDeterministic {}
+
+impl<NIndex: GIndex> TransitionSystemType<NIndex> for NonDeterministic {
+    type SuccessorType = Vec<NIndex>;
+}
+
+// MARK: Transition System
+
+pub trait TransitionSystem<Type: TransitionSystemType<Self::NIndex>>: Automaton<Type> {
+    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Type::SuccessorType;
+
+    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
+    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
 
     fn undirected_neighbors(&self, node: Self::NIndex) -> Vec<Self::NIndex> {
         let mut neighbors = self
@@ -296,30 +320,59 @@ pub trait TransitionSystem: Automaton {
     }
 }
 
-impl<T: ExplicitEdgeAutomaton> TransitionSystem for T {
+impl<T: ExplicitEdgeAutomaton<Deterministic>> TransitionSystem<Deterministic> for T {
     fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
         self.outgoing_edge_indices(node)
             .find(|e| self.get_edge_unchecked(*e).matches(letter))
             .map(|e| self.edge_target_unchecked(e))
     }
 
-    fn successors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex> {
-        self.outgoing_edge_indices(node)
-            .map(|e| self.edge_target_unchecked(e))
+    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        Box::new(
+            self.outgoing_edge_indices(node)
+                .map(|e| self.edge_target_unchecked(e)),
+        )
     }
 
-    fn predecessors(&self, node: Self::NIndex) -> impl Iterator<Item = Self::NIndex> {
-        self.incoming_edge_indices(node)
-            .map(|e| self.edge_source_unchecked(e))
+    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        Box::new(
+            self.incoming_edge_indices(node)
+                .map(|e| self.edge_source_unchecked(e)),
+        )
     }
 }
+
+impl<T: ExplicitEdgeAutomaton<NonDeterministic>> TransitionSystem<NonDeterministic> for T {
+    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Vec<Self::NIndex> {
+        self.outgoing_edge_indices(node)
+            .filter(|e| self.get_edge_unchecked(*e).matches(letter))
+            .map(|e| self.edge_target_unchecked(e))
+            .collect()
+    }
+
+    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        Box::new(
+            self.outgoing_edge_indices(node)
+                .map(|e| self.edge_target_unchecked(e)),
+        )
+    }
+
+    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        Box::new(
+            self.incoming_edge_indices(node)
+                .map(|e| self.edge_source_unchecked(e)),
+        )
+    }
+}
+
+// MARK: Explicit Edge Automaton
 
 /// The base trait for automata.
 /// An automaton consists of nodes and edges, each identified by an index type.
 /// We assert that the index types are continuous from 0 to n-1, where n is the
 /// number of nodes/edges.
-pub trait ExplicitEdgeAutomaton:
-    Automaton<Letter = <<Self as ExplicitEdgeAutomaton>::E as AutomatonEdge>::Letter>
+pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
+    Automaton<Type, Letter = <<Self as ExplicitEdgeAutomaton<Type>>::E as AutomatonEdge>::Letter>
 {
     /// The index type used to identify edges.
     type EIndex: GIndex;
@@ -401,7 +454,11 @@ pub trait ExplicitEdgeAutomaton:
     ) -> impl Iterator<Item = Self::EIndex>;
 }
 
-pub trait ModifiableAutomaton: ExplicitEdgeAutomaton {
+// MARK: Other Automaton Traits
+
+pub trait ModifiableAutomaton<Type: TransitionSystemType<Self::NIndex>>:
+    ExplicitEdgeAutomaton<Type>
+{
     /// Adds a new node with the given data to the automaton.
     /// Returns the index of the newly added node.
     fn add_node(&mut self, data: Self::N) -> Self::NIndex;
@@ -422,29 +479,29 @@ pub trait ModifiableAutomaton: ExplicitEdgeAutomaton {
         F: Fn(Frozen<Self>, Self::NIndex) -> bool;
 }
 
-pub trait InitializedAutomaton: TransitionSystem {
+pub trait InitializedAutomaton<Type: TransitionSystemType<Self::NIndex>>:
+    TransitionSystem<Type>
+{
     /// Returns the start node of the automaton, panicking if no start node is
     /// set.
     fn get_initial(&self) -> Self::NIndex;
-    /// Sets the start node of the automaton.
-    fn set_initial(&mut self, node: Self::NIndex);
 
     /// Returns true if the passed in node is accepting / a final node. Returns
     /// false otherwise.
     fn is_accepting(&self, node: Self::NIndex) -> bool;
 }
 
-pub trait SingleFinalStateAutomaton: InitializedAutomaton {
+pub trait SingleFinalStateAutomaton<Type: TransitionSystemType<Self::NIndex>>:
+    InitializedAutomaton<Type>
+{
     /// Returns the final node of the automaton, panicking if no final node is
     /// set.
     fn get_final(&self) -> Self::NIndex;
     /// Sets the final node of the automaton.
     fn set_final(&mut self, node: Self::NIndex);
-
-    fn is_accepting(&self, node: Self::NIndex) -> bool {
-        node == self.get_final()
-    }
 }
+
+// MARK: Language
 
 /// The basic trait for anything that defines a language over a set alphabet.
 pub trait Language: Alphabet {

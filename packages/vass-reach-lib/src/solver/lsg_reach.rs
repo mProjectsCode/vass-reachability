@@ -12,7 +12,7 @@ use z3::{
 use crate::{
     automaton::{
         Automaton, ExplicitEdgeAutomaton,
-        cfg::{CFG, update::CFGCounterUpdate},
+        cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate},
         index_map::OptionIndexMap,
         lsg::{
             LinearSubGraph,
@@ -68,7 +68,7 @@ impl<'l> LSGReachSolverOptions<'l> {
         self
     }
 
-    pub fn to_solver<'g, C: CFG>(
+    pub fn to_solver<'g, C: ExplicitEdgeCFG>(
         self,
         lsg: &'g LinearSubGraph<'g, C>,
         initial_valuation: &'g VASSCounterValuation,
@@ -92,7 +92,7 @@ pub struct LSGSolution {
 }
 
 impl LSGSolution {
-    pub fn build_run<'a, C: CFG>(
+    pub fn build_run<'a, C: ExplicitEdgeCFG>(
         &self,
         lsg: &LinearSubGraph<'a, C>,
         n_run: bool,
@@ -185,7 +185,7 @@ impl LSGReachSolverResult {
     }
 }
 
-pub struct LSGReachSolver<'l, 'g, C: CFG> {
+pub struct LSGReachSolver<'l, 'g, C: ExplicitEdgeCFG> {
     lsg: &'g LinearSubGraph<'g, C>,
     initial_valuation: &'g VASSCounterValuation,
     final_valuation: &'g VASSCounterValuation,
@@ -195,7 +195,7 @@ pub struct LSGReachSolver<'l, 'g, C: CFG> {
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'l, 'g, C: CFG> LSGReachSolver<'l, 'g, C> {
+impl<'l, 'g, C: ExplicitEdgeCFG> LSGReachSolver<'l, 'g, C> {
     pub fn new(
         lsg: &'g LinearSubGraph<'g, C>,
         initial_valuation: &'g VASSCounterValuation,
@@ -375,7 +375,7 @@ impl<'l, 'g, C: CFG> LSGReachSolver<'l, 'g, C> {
 
     fn build_path_constraints<'c>(
         &self,
-        path: &LSGPath<C::NIndex>,
+        path: &LSGPath,
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,
@@ -406,7 +406,7 @@ impl<'l, 'g, C: CFG> LSGReachSolver<'l, 'g, C> {
     fn build_subgraph_constraints<'c>(
         &self,
         part_index: usize,
-        subgraph: &LSGGraph<C::NIndex>,
+        subgraph: &LSGGraph,
         ctx: &'c Context,
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,

@@ -126,7 +126,7 @@ impl<NIndex: GIndex> LTCTranslation<NIndex> {
         let mut nfa = NFA::<(), CFGCounterUpdate>::new(CFGCounterUpdate::alphabet(dimension));
 
         let start = nfa.add_node(DfaNode::default());
-        nfa.set_start(start);
+        nfa.set_initial(start);
         let mut current_end = start;
 
         for translation in &self.elements {
@@ -288,7 +288,7 @@ impl<NIndex: GIndex> From<Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NIn
 
 impl LTCTranslation<NodeIndex> {
     pub fn from_multi_graph_path(state: &ImplicitCFGProduct, path: &MultiGraphPath) -> Self {
-        path.to_path(&state.cfg).into()
+        path.to_path(state.main_cfg()).into()
     }
 }
 

@@ -1,6 +1,11 @@
+use std::ops::Index;
+
 use petgraph::graph::NodeIndex;
 
-use crate::automaton::cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG};
+use crate::automaton::{
+    TransitionSystem,
+    cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+};
 
 /// A state in the product of multiple graphs, storing the individual states in
 /// each graph.
@@ -18,22 +23,14 @@ impl MultiGraphState {
     /// MultiGraphState.
     pub fn take_letter(
         &self,
-        graphs: &[&VASSCFG<()>],
+        graphs: &[VASSCFG<()>],
         letter: &CFGCounterUpdate,
     ) -> Option<MultiGraphState> {
         let mut new_states = vec![];
 
         for (i, cfg) in graphs.iter().enumerate() {
             let current_state = self.states[i];
-            if let Some(target) = cfg
-                .graph
-                .neighbors_directed(current_state, petgraph::Direction::Outgoing)
-                .find(|n| {
-                    cfg.graph
-                        .edges_connecting(current_state, *n)
-                        .any(|e| e.weight() == letter)
-                })
-            {
+            if let Some(target) = cfg.successor(current_state, letter) {
                 new_states.push(target);
             } else {
                 return None;
@@ -43,5 +40,13 @@ impl MultiGraphState {
         Some(MultiGraphState {
             states: new_states.into_boxed_slice(),
         })
+    }
+}
+
+impl Index<usize> for MultiGraphState {
+    type Output = NodeIndex;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.states[index]
     }
 }

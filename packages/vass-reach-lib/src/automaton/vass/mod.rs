@@ -8,8 +8,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
-    ModifiableAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, Deterministic, ExplicitEdgeAutomaton,
+    FromLetter, Frozen, ModifiableAutomaton,
     vass::counter::{VASSCounterUpdate, VASSCounterValuation},
 };
 
@@ -90,7 +90,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for VASS<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<Deterministic> for VASS<N, E> {
     type NIndex = NodeIndex;
     type N = N;
 
@@ -107,7 +107,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for VASS<N, E> {
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<Deterministic>
+    for VASS<N, E>
+{
     type EIndex = EdgeIndex;
 
     type E = VASSEdge<E>;
@@ -153,7 +155,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton for 
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton for VASS<N, E> {
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Deterministic>
+    for VASS<N, E>
+{
     fn add_node(&mut self, data: N) -> Self::NIndex {
         self.graph.add_node(data)
     }

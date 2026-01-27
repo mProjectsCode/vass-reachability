@@ -1,6 +1,8 @@
+use hashbrown::HashMap;
+
 use crate::automaton::{
     cfg::{
-        CFG,
+        CFG, ExplicitEdgeCFG,
         update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
     index_map::IndexMap,
@@ -124,7 +126,7 @@ impl MultiGraphPath {
 
     /// Checks if the path visits a cfg note more than a certain number of
     /// times.
-    pub fn visits_node_multiple_times(&self, cfg: &impl CFG, limit: u32) -> bool {
+    pub fn visits_node_multiple_times(&self, cfg: &impl ExplicitEdgeCFG, limit: u32) -> bool {
         let start = cfg.get_initial();
         let mut last_node = start;
         let mut visited = IndexMap::new(cfg.node_count());
@@ -141,6 +143,90 @@ impl MultiGraphPath {
             *value += 1;
             if *value > limit {
                 return true;
+            }
+        }
+
+        false
+    }
+
+    /// Checks if the path visits a cfg node more than a certain number of times
+    /// while also having increasing counter valuations.
+    pub fn is_counter_forwards_pumped(
+        &self,
+        cfg: &impl ExplicitEdgeCFG,
+        dimension: usize,
+        counter: VASSCounterIndex,
+        limit: u32,
+    ) -> bool {
+        let start = cfg.get_initial();
+        let mut last_node = start;
+        let mut visited = HashMap::new();
+        let mut counters = VASSCounterValuation::zero(dimension);
+        visited.insert(last_node, (1, counters.clone()));
+
+        for update in &self.updates {
+            let edge_ref = cfg
+                .outgoing_edge_indices(last_node)
+                .find(|e| cfg.get_edge_unchecked(*e) == update)
+                .expect("Path should be valid");
+
+            last_node = cfg.edge_endpoints_unchecked(edge_ref).1;
+            counters.apply_cfg_update(*update);
+
+            let entry = visited
+                .entry(last_node)
+                .or_insert((0, VASSCounterValuation::zero(dimension)));
+
+            // check that we have pumped and that we pumped the counter we care about
+            if counters >= entry.1 && counters[counter] > entry.1[counter] {
+                entry.0 += 1;
+                entry.1 = counters.clone();
+                if entry.0 > limit {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Checks if the path visits a cfg node more than a certain number of times
+    /// while also having decreasing counter valuations.
+    pub fn is_counter_backwards_pumped(
+        &self,
+        cfg: &impl ExplicitEdgeCFG,
+        dimension: usize,
+        counter: VASSCounterIndex,
+        limit: u32,
+    ) -> bool {
+        let start = cfg.get_initial();
+        let mut last_node = start;
+        let mut visited = HashMap::new();
+        let mut counters = VASSCounterValuation::zero(dimension);
+        visited.insert(last_node, (1, counters.clone()));
+
+        // iterate in reverse order
+        for update in self.updates.iter().rev() {
+            let edge_ref = cfg
+                .outgoing_edge_indices(last_node)
+                .find(|e| cfg.get_edge_unchecked(*e) == update)
+                .expect("Path should be valid");
+
+            last_node = cfg.edge_endpoints_unchecked(edge_ref).1;
+            // apply the reverse update since we are going backwards
+            counters.apply_cfg_update(update.reverse());
+
+            let entry = visited
+                .entry(last_node)
+                .or_insert((0, VASSCounterValuation::zero(dimension)));
+
+            // check that we have pumped and that we pumped the counter we care about
+            if counters >= entry.1 && counters[counter] > entry.1[counter] {
+                entry.0 += 1;
+                entry.1 = counters.clone();
+                if entry.0 > limit {
+                    return true;
+                }
             }
         }
 

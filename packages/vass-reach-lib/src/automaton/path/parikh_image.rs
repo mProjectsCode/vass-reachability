@@ -1,10 +1,11 @@
 use hashbrown::HashSet;
+use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::{
     automaton::{
         GIndex,
         cfg::{
-            CFG,
+            ExplicitEdgeCFG,
             update::{CFGCounterUpdatable, CFGCounterUpdate},
         },
         index_map::{IndexMap, IndexSet},
@@ -68,13 +69,40 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         self.image.iter().all(|(_, v)| *v == 0)
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (EIndex, u32)> + use<'_, EIndex> {
+        self.image
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .map(|(edge, count)| (edge, *count))
+    }
+
+    pub fn iter_edges(&self) -> impl Iterator<Item = EIndex> + use<'_, EIndex> {
+        self.image
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .map(|(edge, _)| edge)
+    }
+
+    pub fn from_path<NIndex: GIndex>(path: &Path<NIndex, EIndex>, edge_count: usize) -> Self {
+        let mut map = IndexMap::new(edge_count);
+
+        for (edge, _) in &path.transitions {
+            let entry = map.get_mut(*edge);
+            *entry += 1;
+        }
+
+        ParikhImage::new(map)
+    }
+}
+
+impl ParikhImage<EdgeIndex> {
     /// Split the Parikh Image into possibly multiple connected components.
     /// The main connected component is the one that contains the start node.
     /// The connected components are determined by a depth-first search.
-    pub fn split_into_connected_components<C: CFG<EIndex = EIndex>>(
+    pub fn split_into_connected_components<C: ExplicitEdgeCFG>(
         mut self,
         cfg: &C,
-    ) -> (ParikhImage<EIndex>, Vec<ParikhImage<EIndex>>) {
+    ) -> (Self, Vec<Self>) {
         let mut components = vec![];
         let mut visited = IndexSet::new(cfg.node_count());
 
@@ -100,12 +128,12 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
     ///
     /// Edges that are part of the connected component are removed from the
     /// original Parikh Image.
-    fn split_connected_component<C: CFG<EIndex = EIndex>>(
+    fn split_connected_component<C: ExplicitEdgeCFG>(
         &mut self,
         cfg: &C,
         start: C::NIndex,
         visited: &mut IndexSet<C::NIndex>,
-    ) -> ParikhImage<EIndex> {
+    ) -> Self {
         let mut stack = vec![start];
         let mut component = ParikhImage::empty(self.image.size());
 
@@ -138,7 +166,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
     /// Get the edges that go from the connected components, formed by this
     /// parikh image, to the outside. So from a node that is connected to by
     /// one edge of the parikh image to a node that is not connected.
-    pub fn get_outgoing_edges<C: CFG<EIndex = EIndex>>(&self, cfg: &C) -> HashSet<EIndex> {
+    pub fn get_outgoing_edges<C: ExplicitEdgeCFG>(&self, cfg: &C) -> HashSet<EdgeIndex> {
         let connected_nodes = self.get_connected_nodes(cfg);
 
         let mut edges = HashSet::new();
@@ -156,7 +184,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         edges
     }
 
-    pub fn get_incoming_edges<C: CFG<EIndex = EIndex>>(&self, cfg: &C) -> HashSet<EIndex> {
+    pub fn get_incoming_edges<C: ExplicitEdgeCFG>(&self, cfg: &C) -> HashSet<EdgeIndex> {
         let connected_nodes = self.get_connected_nodes(cfg);
 
         let mut edges = HashSet::new();
@@ -174,7 +202,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         edges
     }
 
-    pub fn get_connected_nodes<C: CFG<EIndex = EIndex>>(&self, cfg: &C) -> HashSet<C::NIndex> {
+    pub fn get_connected_nodes<C: ExplicitEdgeCFG>(&self, cfg: &C) -> HashSet<C::NIndex> {
         let mut connected_nodes = HashSet::new();
 
         for edge in cfg.iter_edge_indices() {
@@ -191,7 +219,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         connected_nodes
     }
 
-    pub fn build_run<C: CFG<EIndex = EIndex>>(
+    pub fn build_run<C: ExplicitEdgeCFG>(
         &self,
         cfg: &C,
         initial_valuation: &VASSCounterValuation,
@@ -220,7 +248,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         }
     }
 
-    pub fn get_total_counter_effect<C: CFG<EIndex = EIndex>>(
+    pub fn get_total_counter_effect<C: ExplicitEdgeCFG>(
         &self,
         cfg: &C,
         dimension: usize,
@@ -235,41 +263,16 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
 
         total_effect
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = (EIndex, u32)> + use<'_, EIndex> {
-        self.image
-            .iter()
-            .filter(|(_, count)| **count > 0)
-            .map(|(edge, count)| (edge, *count))
-    }
-
-    pub fn iter_edges(&self) -> impl Iterator<Item = EIndex> + use<'_, EIndex> {
-        self.image
-            .iter()
-            .filter(|(_, count)| **count > 0)
-            .map(|(edge, _)| edge)
-    }
-
-    pub fn from_path<NIndex: GIndex>(path: &Path<NIndex, EIndex>, edge_count: usize) -> Self {
-        let mut map = IndexMap::new(edge_count);
-
-        for (edge, _) in &path.transitions {
-            let entry = map.get_mut(*edge);
-            *entry += 1;
-        }
-
-        ParikhImage::new(map)
-    }
 }
 
-fn rec_build_run<C: CFG>(
-    parikh_image: ParikhImage<C::EIndex>,
+fn rec_build_run<C: ExplicitEdgeCFG>(
+    parikh_image: ParikhImage<EdgeIndex>,
     cfg: &C,
-    node_index: C::NIndex,
+    node_index: NodeIndex,
     valuation: VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
     n_run: bool,
-) -> Option<TransitionSequence<C::NIndex, CFGCounterUpdate>> {
+) -> Option<TransitionSequence<NodeIndex, CFGCounterUpdate>> {
     // if the parikh image is empty, we have reached the end of the path, which also
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {

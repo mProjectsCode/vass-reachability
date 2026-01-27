@@ -4,8 +4,9 @@ use itertools::Itertools;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
-    InitializedAutomaton, Language, ModifiableAutomaton, SingleFinalStateAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonNode, Deterministic, ExplicitEdgeAutomaton,
+    FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton,
+    SingleFinalStateAutomaton,
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     index_map::IndexMap,
@@ -28,11 +29,15 @@ pub struct InitializedVASS<N: AutomatonNode, E: AutomatonEdge + FromLetter> {
 }
 
 impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
+    pub fn set_initial(&mut self, node: NodeIndex) {
+        self.initial_node = node;
+    }
+
     pub fn to_cfg(&self) -> VASSCFG<()> {
         let mut cfg = NFA::new(CFGCounterUpdate::alphabet(self.vass.dimension));
 
         let cfg_start = cfg.add_node(self.state_to_cfg_state(self.initial_node));
-        cfg.set_start(cfg_start);
+        cfg.set_initial(cfg_start);
 
         let mut visited = IndexMap::new(self.vass.state_count());
         let mut stack = vec![(self.initial_node, cfg_start)];
@@ -207,8 +212,10 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Alphabet for InitializedVA
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for InitializedVASS<N, E> {
-    type NIndex = <VASS<N, E> as Automaton>::NIndex;
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<Deterministic>
+    for InitializedVASS<N, E>
+{
+    type NIndex = <VASS<N, E> as Automaton<Deterministic>>::NIndex;
     type N = N;
 
     fn node_count(&self) -> usize {
@@ -224,10 +231,10 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton for InitializedV
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<Deterministic>
     for InitializedVASS<N, E>
 {
-    type EIndex = <VASS<N, E> as ExplicitEdgeAutomaton>::EIndex;
+    type EIndex = <VASS<N, E> as ExplicitEdgeAutomaton<Deterministic>>::EIndex;
 
     type E = VASSEdge<E>;
 
@@ -268,7 +275,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Deterministic>
     for InitializedVASS<N, E>
 {
     fn add_node(&mut self, data: N) -> Self::NIndex {
@@ -304,15 +311,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton<Deterministic>
     for InitializedVASS<N, E>
 {
     fn get_initial(&self) -> Self::NIndex {
         self.initial_node
-    }
-
-    fn set_initial(&mut self, node: Self::NIndex) {
-        self.initial_node = node;
     }
 
     fn is_accepting(&self, node: Self::NIndex) -> bool {
@@ -320,7 +323,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton
     }
 }
 
-impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> SingleFinalStateAutomaton
+impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> SingleFinalStateAutomaton<Deterministic>
     for InitializedVASS<N, E>
 {
     fn get_final(&self) -> Self::NIndex {

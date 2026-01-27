@@ -118,6 +118,8 @@ pub fn build_bounded_counting_cfg(
         cfg.add_edge(current, prev, counter_down);
         cfg.add_edge(current, next, counter_up);
 
+        // if we see some symbol that is not our counter updates, we stay in the same
+        // state
         for c in CFGCounterUpdate::alphabet(dimension) {
             if c != counter_up && c != counter_down {
                 cfg.add_edge(current, current, c);
@@ -148,6 +150,54 @@ pub fn build_rev_bounded_counting_cfg(
 
     let mut cfg = cfg.reverse();
     cfg.reverse_counter_updates();
+
+    cfg
+}
+
+pub fn build_modulo_counting_cfg(
+    dimension: usize,
+    counter: VASSCounterIndex,
+    mu: i32,
+    start: i32,
+    end: i32,
+) -> DFA<(), CFGCounterUpdate> {
+    let start = start.rem_euclid(mu);
+    let end = end.rem_euclid(mu);
+
+    let counter_up = CFGCounterUpdate::positive(counter);
+    let counter_down = CFGCounterUpdate::negative(counter);
+
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(dimension));
+
+    let mut states = vec![];
+    states.extend((0..mu).map(|i| cfg.add_node(DfaNode::new(i == end, false, ()))));
+
+    for i in 0..states.len() {
+        let current = states[i];
+
+        let up_index = (i as i32 + 1).rem_euclid(mu);
+        let down_index = (i as i32 - 1).rem_euclid(mu);
+        let up = states[up_index as usize];
+        let down = states[down_index as usize];
+
+        cfg.add_edge(current, up, counter_up);
+        cfg.add_edge(current, down, counter_down);
+
+        // if we see some symbol that is not our counter updates, we stay in the same
+        // state
+        for c in CFGCounterUpdate::alphabet(dimension) {
+            if c != counter_up && c != counter_down {
+                cfg.add_edge(current, current, c);
+            }
+        }
+    }
+
+    cfg.set_initial(states[start as usize]);
+
+    #[cfg(debug_assertions)]
+    cfg.assert_complete();
+
+    cfg.set_complete_unchecked();
 
     cfg
 }

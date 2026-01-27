@@ -193,6 +193,31 @@ impl VASSCounterValuation {
     }
 }
 
+/// Implements a partial order on counter valuations where
+/// `a <= b` if for all counters `a[i] <= b[i]`.
+///
+/// If the dimensions of the two valuations differ, the two valuations
+/// are considered incomparable.
+impl PartialOrd for VASSCounterValuation {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.dimension() != other.dimension() {
+            return None;
+        }
+
+        if self == other {
+            return Some(std::cmp::Ordering::Equal);
+        }
+
+        if self.iter().zip(other.iter()).all(|(a, b)| a <= b) {
+            Some(std::cmp::Ordering::Less)
+        } else if self.iter().zip(other.iter()).all(|(a, b)| a >= b) {
+            Some(std::cmp::Ordering::Greater)
+        } else {
+            None
+        }
+    }
+}
+
 impl From<Box<[i32]>> for VASSCounterValuation {
     fn from(values: Box<[i32]>) -> Self {
         VASSCounterValuation::new(values)

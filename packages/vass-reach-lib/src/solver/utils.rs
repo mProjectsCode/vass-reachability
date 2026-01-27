@@ -5,7 +5,7 @@ use z3::{
 };
 
 use crate::automaton::{
-    GIndex, cfg::CFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage,
+    GIndex, cfg::ExplicitEdgeCFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage,
 };
 
 pub fn parikh_image_from_edge_map<'a, EIndex: GIndex>(
@@ -17,7 +17,7 @@ pub fn parikh_image_from_edge_map<'a, EIndex: GIndex>(
     )
 }
 
-pub fn forbid_parikh_image<'a, C: CFG>(
+pub fn forbid_parikh_image<'a, C: ExplicitEdgeCFG>(
     parikh_image: &ParikhImage<C::EIndex>,
     cfg: &C,
     edge_map: &OptionIndexMap<C::EIndex, Int<'a>>,
