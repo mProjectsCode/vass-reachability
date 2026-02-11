@@ -5,10 +5,10 @@ use z3::{
 };
 
 use crate::automaton::{
-    GIndex, cfg::ExplicitEdgeCFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage,
+    CompactGIndex, cfg::ExplicitEdgeCFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage,
 };
 
-pub fn parikh_image_from_edge_map<'a, EIndex: GIndex>(
+pub fn parikh_image_from_edge_map<'a, EIndex: CompactGIndex>(
     edge_map: &OptionIndexMap<EIndex, Int<'a>>,
     model: &Model<'a>,
 ) -> ParikhImage<EIndex> {

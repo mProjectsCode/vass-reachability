@@ -4,8 +4,8 @@ use itertools::Itertools;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonEdge, AutomatonNode, Deterministic, ExplicitEdgeAutomaton,
-    FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonIterators, AutomatonNode, Deterministic,
+    ExplicitEdgeAutomaton, FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton,
     SingleFinalStateAutomaton,
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
@@ -45,8 +45,8 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
         while let Some((vass_state, cfg_state)) = stack.pop() {
             visited.insert(vass_state, cfg_state);
 
-            for vass_edge in self.outgoing_edge_indices(vass_state) {
-                let vass_target = self.edge_target_unchecked(vass_edge);
+            for vass_edge in self.outgoing_edge_indices(&vass_state) {
+                let vass_target = self.edge_target_unchecked(&vass_edge);
                 let cfg_target = if let Some(target) = visited.get_option(vass_target) {
                     *target
                 } else {
@@ -55,22 +55,22 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
                     target
                 };
 
-                let vass_label = &self.get_edge_unchecked(vass_edge).update;
+                let vass_label = &self.get_edge_unchecked(&vass_edge).update;
                 let marking_vec = utils::vass_update_to_cfg_updates(vass_label);
 
                 if marking_vec.is_empty() {
-                    cfg.add_edge(cfg_state, cfg_target, NFAEdge::Epsilon);
+                    cfg.add_edge(&cfg_state, &cfg_target, NFAEdge::Epsilon);
                 } else {
                     let mut cfg_source = cfg_state;
 
                     for label in marking_vec.iter().take(marking_vec.len() - 1) {
                         let target = cfg.add_node(DfaNode::default());
-                        cfg.add_edge(cfg_source, target, NFAEdge::Symbol(*label));
+                        cfg.add_edge(&cfg_source, &target, NFAEdge::Symbol(*label));
                         cfg_source = target;
                     }
 
                     let label = marking_vec[marking_vec.len() - 1];
-                    cfg.add_edge(cfg_source, cfg_target, NFAEdge::Symbol(label));
+                    cfg.add_edge(&cfg_source, &cfg_target, NFAEdge::Symbol(label));
                 }
             }
         }
@@ -100,8 +100,8 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
             let (other_a, other_b) = self.vas_translation_ab((self.state_count() - i - 1) as i32);
 
             vas.add_edge(
-                node,
-                node,
+                &node,
+                &node,
                 VASSEdge::new(
                     self.vass.alphabet.len() + i * 2,
                     VASSCounterUpdate::new(
@@ -114,8 +114,8 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
             );
 
             vas.add_edge(
-                node,
-                node,
+                &node,
+                &node,
                 VASSEdge::new(
                     self.vass.alphabet.len() + i * 2,
                     VASSCounterUpdate::new(
@@ -145,8 +145,8 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
                 .expect("edge index to be present");
 
             vas.add_edge(
-                node,
-                node,
+                &node,
+                &node,
                 VASSEdge::new(
                     e.index(),
                     edge.update.extend([to_a - from_b, to_b, -from_a]),
@@ -222,11 +222,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<Deterministic>
         self.vass.node_count()
     }
 
-    fn get_node(&self, index: Self::NIndex) -> Option<&N> {
+    fn get_node(&self, index: &Self::NIndex) -> Option<&N> {
         self.vass.get_node(index)
     }
 
-    fn get_node_unchecked(&self, index: Self::NIndex) -> &N {
+    fn get_node_unchecked(&self, index: &Self::NIndex) -> &N {
         self.vass.get_node_unchecked(index)
     }
 }
@@ -242,34 +242,34 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<Dete
         self.vass.edge_count()
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&VASSEdge<E>> {
+    fn get_edge(&self, index: &Self::EIndex) -> Option<&VASSEdge<E>> {
         self.vass.get_edge(index)
     }
 
-    fn get_edge_unchecked(&self, index: Self::EIndex) -> &VASSEdge<E> {
+    fn get_edge_unchecked(&self, index: &Self::EIndex) -> &VASSEdge<E> {
         self.vass.get_edge_unchecked(index)
     }
 
-    fn edge_endpoints(&self, edge: Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
+    fn edge_endpoints(&self, edge: &Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
         self.vass.edge_endpoints(edge)
     }
 
-    fn edge_endpoints_unchecked(&self, edge: Self::EIndex) -> (Self::NIndex, Self::NIndex) {
+    fn edge_endpoints_unchecked(&self, edge: &Self::EIndex) -> (Self::NIndex, Self::NIndex) {
         self.vass.edge_endpoints_unchecked(edge)
     }
 
-    fn outgoing_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.vass.outgoing_edge_indices(node)
     }
 
-    fn incoming_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.vass.incoming_edge_indices(node)
     }
 
     fn connecting_edge_indices(
         &self,
-        from: Self::NIndex,
-        to: Self::NIndex,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
     ) -> impl Iterator<Item = Self::EIndex> {
         self.vass.connecting_edge_indices(from, to)
     }
@@ -284,18 +284,18 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Determ
 
     fn add_edge(
         &mut self,
-        from: Self::NIndex,
-        to: Self::NIndex,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
         label: VASSEdge<E>,
     ) -> Self::EIndex {
         self.vass.add_edge(from, to, label)
     }
 
-    fn remove_node(&mut self, node: Self::NIndex) {
+    fn remove_node(&mut self, node: &Self::NIndex) {
         self.vass.remove_node(node);
     }
 
-    fn remove_edge(&mut self, edge: Self::EIndex) {
+    fn remove_edge(&mut self, edge: &Self::EIndex) {
         self.vass.remove_edge(edge);
     }
 
@@ -305,7 +305,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Determ
     {
         for index in self.iter_node_indices().rev() {
             if !f(Frozen::from(&mut *self), index) {
-                self.remove_node(index);
+                self.remove_node(&index);
             }
         }
     }
@@ -318,8 +318,8 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton<Deter
         self.initial_node
     }
 
-    fn is_accepting(&self, node: Self::NIndex) -> bool {
-        node == self.final_node
+    fn is_accepting(&self, node: &Self::NIndex) -> bool {
+        node == &self.final_node
     }
 }
 

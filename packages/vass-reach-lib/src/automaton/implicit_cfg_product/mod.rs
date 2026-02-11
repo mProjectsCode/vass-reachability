@@ -2,10 +2,10 @@ use std::cell::{Ref, RefCell};
 
 use hashbrown::HashSet;
 use itertools::Itertools;
-use petgraph::graph::NodeIndex;
 
 use crate::automaton::{
-    Alphabet, Automaton, Deterministic, InitializedAutomaton, TransitionSystem,
+    Alphabet, Automaton, AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, InitializedAutomaton,
+    TransitionSystem,
     cfg::{
         update::CFGCounterUpdate,
         vasscfg::{
@@ -90,19 +90,50 @@ impl ImplicitCFGProduct {
         }
     }
 
+    /// Use with care, only intended for testing. Constructs the product without
+    /// the counting CFGs, which means that methods may randomly panic if they
+    /// try to access the counting CFGs.
+    pub fn new_without_counting_cfgs(
+        dimension: usize,
+        initial_valuation: VASSCounterValuation,
+        final_valuation: VASSCounterValuation,
+        cfg: VASSCFG<()>,
+    ) -> Self {
+        let mu = vec![2; dimension];
+        let forward_bound = vec![2; dimension];
+        let backward_bound = vec![2; dimension];
+
+        let cfgs = vec![cfg];
+
+        ImplicitCFGProduct {
+            dimension,
+            initial_valuation,
+            final_valuation,
+            mu: mu.into_boxed_slice(),
+            forward_bound: forward_bound.into_boxed_slice(),
+            backward_bound: backward_bound.into_boxed_slice(),
+            cfgs,
+            explicit: RefCell::new(None),
+        }
+    }
+
     pub fn main_cfg(&self) -> &VASSCFG<()> {
         &self.cfgs[0]
     }
 
-    fn get_modulo_cfg_index(&self, counter: VASSCounterIndex) -> usize {
+    pub fn main_cfg_index(&self) -> usize {
+        0
+    }
+
+    pub fn get_modulo_cfg_index(&self, counter: VASSCounterIndex) -> usize {
         1 + counter.to_usize()
     }
 
-    fn get_forward_bound_cfg_index(&self, counter: VASSCounterIndex) -> usize {
+    pub fn get_forward_bound_cfg_index(&self, counter: VASSCounterIndex) -> usize {
         1 + self.dimension + counter.to_usize()
     }
 
-    fn get_backward_bound_cfg_index(&self, counter: VASSCounterIndex) -> usize {
+    pub fn get_backward_bound_cfg_index(&self, counter: VASSCounterIndex) -> usize {
         1 + self.dimension * 2 + counter.to_usize()
     }
 
@@ -196,17 +227,16 @@ impl ImplicitCFGProduct {
         let mut visited = HashSet::<MultiGraphState>::new();
         let mut queue = std::collections::VecDeque::new();
 
-        let start = self.get_start_multi_state();
-        let initial_path = MultiGraphPath::new();
-        if self.multi_state_accepting(&start) {
-            return Some(initial_path);
+        let start = self.initial();
+        if self.is_accepting(&start) {
+            return Some(MultiGraphPath::new(start));
         }
 
-        queue.push_back(MultiGraphTraversalState::new(initial_path, start.clone()));
+        queue.push_back(MultiGraphTraversalState::new(vec![], start.clone()));
         visited.insert(start);
 
         while let Some(state) = queue.pop_front() {
-            for letter in self.cfgs[0].alphabet() {
+            for letter in self.alphabet() {
                 let target = state.last_state.take_letter(&self.cfgs, letter);
                 let Some(target) = target else {
                     continue;
@@ -214,23 +244,26 @@ impl ImplicitCFGProduct {
                 // Optimization: if any of the graphs is in a trap state, we can stop this
                 // branch of the search, because we cannot reach an accepting
                 // state from a trap state.
-                if self.multi_state_trap(&target) {
+                if self.is_trap(&target) {
                     continue;
                 }
 
                 if !visited.contains(&target) {
                     visited.insert(target.clone());
 
-                    let mut new_path = state.path.clone();
-                    new_path.add(*letter);
+                    let mut word = state.word.clone();
+                    word.push(*letter);
 
-                    if self.multi_state_accepting(&target) {
+                    let new_state = MultiGraphTraversalState::new(word, target);
+
+                    if self.is_accepting(&new_state.last_state) {
                         // paths.push(new_path);
                         // Optimization: we only search for the shortest path, so we can stop when
                         // we find one
-                        return Some(new_path);
+
+                        return Some(new_state.to_path(self));
                     } else {
-                        queue.push_back(MultiGraphTraversalState::new(new_path, target));
+                        queue.push_back(new_state);
                     }
                 }
             }
@@ -239,10 +272,55 @@ impl ImplicitCFGProduct {
         None
     }
 
-    fn multi_state_accepting(&self, state: &MultiGraphState) -> bool {
+    pub fn find_scc_surrounding(&self, node: MultiGraphState) -> HashSet<MultiGraphState> {
+        let mut stack = vec![];
+        let mut current_path = vec![];
+        let mut scc = HashSet::new();
+        let mut visited = HashSet::new();
+
+        stack.push(node.clone());
+        current_path.push(node.clone());
+        scc.insert(node);
+
+        while let Some(current) = stack.last().cloned() {
+            if !visited.contains(&current) {
+                visited.insert(current.clone());
+            }
+
+            let mut found_unvisited = false;
+            for letter in self.alphabet() {
+                let successor = current.take_letter(&self.cfgs, letter);
+                let Some(successor) = successor else {
+                    continue;
+                };
+
+                if !visited.contains(&successor) {
+                    stack.push(successor.clone());
+                    current_path.push(successor);
+                    found_unvisited = true;
+                    break;
+                } else if scc.contains(&successor) {
+                    for node in &current_path {
+                        scc.insert(node.clone());
+                    }
+                }
+            }
+
+            if !found_unvisited {
+                stack.pop();
+                if !current_path.is_empty() && current_path.last() == Some(&current) {
+                    current_path.pop();
+                }
+            }
+        }
+
+        scc
+    }
+
+    fn is_accepting(&self, state: &MultiGraphState) -> bool {
         for (i, cfg) in self.iter().enumerate() {
             // we are accepting if all graphs are in an accepting state
-            if !cfg.is_accepting(state[i]) {
+            if !cfg.is_accepting(&state[i]) {
                 return false;
             }
         }
@@ -250,7 +328,7 @@ impl ImplicitCFGProduct {
         true
     }
 
-    fn multi_state_trap(&self, state: &MultiGraphState) -> bool {
+    fn is_trap(&self, state: &MultiGraphState) -> bool {
         for (i, cfg) in self.iter().enumerate() {
             // we are in a trap if any graph is in a trap state
             if cfg.is_trap(state[i]) {
@@ -261,7 +339,7 @@ impl ImplicitCFGProduct {
         false
     }
 
-    fn get_start_multi_state(&self) -> MultiGraphState {
+    pub fn initial(&self) -> MultiGraphState {
         let start_states = self
             .iter()
             .map(|cfg| cfg.get_initial())
@@ -281,6 +359,7 @@ impl ImplicitCFGProduct {
     /// product CFG.
     pub fn explicit(&self) -> Ref<'_, VASSCFG<()>> {
         if self.explicit.borrow().is_none() {
+            // TODO: construct the product in one step
             let mut explicit_cfg = self.cfgs[0].clone();
 
             for cfg in self.cfgs.iter().skip(1) {
@@ -307,7 +386,7 @@ impl Alphabet for ImplicitCFGProduct {
 }
 
 impl Automaton<Deterministic> for ImplicitCFGProduct {
-    type NIndex = NodeIndex;
+    type NIndex = MultiGraphState;
 
     type N = ();
 
@@ -318,26 +397,73 @@ impl Automaton<Deterministic> for ImplicitCFGProduct {
         self.cfgs.iter().map(|cfg| cfg.node_count()).product()
     }
 
-    fn get_node(&self, _index: Self::NIndex) -> Option<&()> {
+    fn get_node(&self, _index: &Self::NIndex) -> Option<&()> {
         Some(&())
     }
 
-    fn get_node_unchecked(&self, _index: Self::NIndex) -> &() {
+    fn get_node_unchecked(&self, _index: &Self::NIndex) -> &() {
         &()
     }
 }
 
 impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
-    fn successor(&self, _node: Self::NIndex, _letter: &Self::Letter) -> Option<Self::NIndex> {
-        todo!()
+    fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
+        node.take_letter(&self.cfgs, letter)
     }
 
-    fn successors(&self, _node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
-        todo!()
+    fn successors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        Box::new(
+            self.alphabet()
+                .iter()
+                .filter_map(move |letter| self.successor(node, letter)),
+        )
     }
 
-    fn predecessors(&self, _node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
-        todo!()
+    fn predecessors(&self, node: &Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        // For each letter in the shared alphabet:
+        //  - collect predecessors (sources of incoming edges matching that letter) for
+        //    each component
+        //  - if every component has ≥1 predecessor, emit the Cartesian product of those
+        //    per-component sets
+        //
+        // This avoids constructing the explicit product; it only touches the relevant
+        // incoming edges.
+        let mut result = Vec::new();
+
+        for letter in self.alphabet() {
+            // gather predecessors for each component under `letter`
+            let mut per_comp_preds: Vec<Vec<_>> = Vec::with_capacity(self.cfgs.len());
+            let mut empty = false;
+
+            for (i, cfg) in self.cfgs.iter().enumerate() {
+                let target = node[i];
+                let preds: Vec<_> = cfg
+                    .incoming_edge_indices(&target)
+                    .filter(|e| cfg.get_edge_unchecked(e).matches(letter))
+                    .map(|e| cfg.edge_source_unchecked(&e))
+                    .collect();
+
+                if preds.is_empty() {
+                    empty = true;
+                    break;
+                }
+                per_comp_preds.push(preds);
+            }
+
+            if empty {
+                continue; // this letter cannot produce a predecessor product-state
+            }
+
+            // produce Cartesian product of per-component predecessor lists
+            for combo in per_comp_preds.into_iter().multi_cartesian_product() {
+                result.push(MultiGraphState::from(combo.into_boxed_slice()));
+            }
+        }
+
+        Box::new(result.into_iter())
     }
 }
 
@@ -378,12 +504,23 @@ fn build_counting_automaton(
 }
 
 pub struct MultiGraphTraversalState {
-    pub path: MultiGraphPath,
+    pub word: Vec<CFGCounterUpdate>,
     pub last_state: MultiGraphState,
 }
 
 impl MultiGraphTraversalState {
-    pub fn new(path: MultiGraphPath, last_state: MultiGraphState) -> Self {
-        Self { path, last_state }
+    pub fn new(word: Vec<CFGCounterUpdate>, last_state: MultiGraphState) -> Self {
+        Self { word, last_state }
+    }
+
+    pub fn to_path(&self, product: &ImplicitCFGProduct) -> MultiGraphPath {
+        let mut path = MultiGraphPath::new(self.last_state.clone());
+
+        for update in &self.word {
+            let next_state = path.end().take_letter(&product.cfgs, update).unwrap();
+            path.add(*update, next_state);
+        }
+
+        path
     }
 }

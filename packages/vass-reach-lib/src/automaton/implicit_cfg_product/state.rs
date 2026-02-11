@@ -9,12 +9,16 @@ use crate::automaton::{
 
 /// A state in the product of multiple graphs, storing the individual states in
 /// each graph.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MultiGraphState {
     pub states: Box<[NodeIndex]>,
 }
 
 impl MultiGraphState {
+    pub fn cfg_state(&self, cfg_index: usize) -> NodeIndex {
+        self.states[cfg_index]
+    }
+
     /// Takes a letter in the product of multiple graphs, returning the target
     /// MultiGraphState if it exists. If any graph does not have a
     /// transition for the letter, returns None.
@@ -30,7 +34,7 @@ impl MultiGraphState {
 
         for (i, cfg) in graphs.iter().enumerate() {
             let current_state = self.states[i];
-            if let Some(target) = cfg.successor(current_state, letter) {
+            if let Some(target) = cfg.successor(&current_state, letter) {
                 new_states.push(target);
             } else {
                 return None;
@@ -48,5 +52,27 @@ impl Index<usize> for MultiGraphState {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.states[index]
+    }
+}
+
+impl From<Vec<NodeIndex>> for MultiGraphState {
+    fn from(states: Vec<NodeIndex>) -> Self {
+        MultiGraphState {
+            states: states.into_boxed_slice(),
+        }
+    }
+}
+
+impl From<Box<[NodeIndex]>> for MultiGraphState {
+    fn from(states: Box<[NodeIndex]>) -> Self {
+        MultiGraphState { states }
+    }
+}
+
+impl From<NodeIndex> for MultiGraphState {
+    fn from(state: NodeIndex) -> Self {
+        MultiGraphState {
+            states: vec![state].into_boxed_slice(),
+        }
     }
 }

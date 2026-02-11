@@ -11,9 +11,9 @@ fn test_vass() {
     let q0 = vass.add_node(0);
     let q1 = vass.add_node(1);
 
-    vass.add_edge(q0, q0, VASSEdge::new('a', vec![1, 0].into()));
-    vass.add_edge(q0, q1, VASSEdge::new('b', vec![-1, 0].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('b', vec![-1, 0].into()));
+    vass.add_edge(&q0, &q0, VASSEdge::new('a', vec![1, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('b', vec![-1, 0].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![-1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![2, 0].into(), q0, q1);
 
@@ -33,9 +33,9 @@ fn test_vass_to_cfg() {
     let q0 = vass.add_node(0);
     let q1 = vass.add_node(1);
 
-    vass.add_edge(q0, q0, VASSEdge::new('a', vec![1, 0].into()));
-    vass.add_edge(q0, q1, VASSEdge::new('b', vec![-2, 0].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('b', vec![-1, 0].into()));
+    vass.add_edge(&q0, &q0, VASSEdge::new('a', vec![1, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('b', vec![-2, 0].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![-1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 

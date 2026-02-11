@@ -1,32 +1,34 @@
 use itertools::Itertools;
 
 use crate::automaton::{
-    Deterministic, ExplicitEdgeAutomaton, GIndex, InitializedAutomaton, TransitionSystemType,
-    index_map::IndexSet,
+    AutomatonIterators, CompactGIndex, Deterministic, ExplicitEdgeAutomaton, InitializedAutomaton,
+    TransitionSystemType, index_map::IndexSet,
 };
 
 pub trait AutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
     InitializedAutomaton<Type>
+where
+    Self::NIndex: CompactGIndex,
 {
     /// Find the SCC surrounding a given node. Returns a vector of all the nodes
     /// that are part of the SCC.
     fn find_scc_surrounding(&self, node: Self::NIndex) -> Vec<Self::NIndex> {
         let mut stack = vec![];
         let mut current_path = vec![];
-        let mut scc = IndexSet::new(self.node_count());
-        let mut visited = IndexSet::new(self.node_count());
+        let mut scc = IndexSet::<Self::NIndex>::new(self.node_count());
+        let mut visited = IndexSet::<Self::NIndex>::new(self.node_count());
 
         stack.push(node);
         current_path.push(node);
         scc.insert(node);
 
-        while let Some(&current) = stack.last() {
+        while let Some(current) = stack.last().copied() {
             if !visited.contains(current) {
                 visited.insert(current);
             }
 
             let mut found_unvisited = false;
-            for successor in self.successors(current) {
+            for successor in self.successors(&current) {
                 if !visited.contains(successor) {
                     stack.push(successor);
                     current_path.push(successor);
@@ -51,10 +53,15 @@ pub trait AutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
     }
 }
 
-impl<T: InitializedAutomaton<Deterministic>> AutomatonAlgorithms<Deterministic> for T {}
+impl<T: InitializedAutomaton<Deterministic>> AutomatonAlgorithms<Deterministic> for T where
+    Self::NIndex: CompactGIndex
+{
+}
 
 pub trait EdgeAutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
-    ExplicitEdgeAutomaton<Type> + InitializedAutomaton<Type>
+    ExplicitEdgeAutomaton<Type> + InitializedAutomaton<Type> + AutomatonIterators<Type>
+where
+    Self::NIndex: CompactGIndex,
 {
     fn to_graphviz(
         &self,
@@ -71,7 +78,7 @@ pub trait EdgeAutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
 
         let accepting_states = self
             .iter_node_indices()
-            .filter(|node| self.is_accepting(*node))
+            .filter(|node| self.is_accepting(node))
             .collect::<Vec<_>>();
 
         dot.push_str(&format!(
@@ -101,8 +108,8 @@ pub trait EdgeAutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
                 attrs.push(("color", "red".to_string()));
             }
 
-            let source = self.edge_source_unchecked(edge);
-            let target = self.edge_target_unchecked(edge);
+            let source = self.edge_source_unchecked(&edge);
+            let target = self.edge_target_unchecked(&edge);
 
             dot.push_str(&format!(
                 "{:?} -> {:?} [ {} ];\n",
@@ -120,7 +127,9 @@ pub trait EdgeAutomatonAlgorithms<Type: TransitionSystemType<Self::NIndex>>:
 
 impl<
     Type: TransitionSystemType<Self::NIndex>,
-    T: ExplicitEdgeAutomaton<Type> + InitializedAutomaton<Type>,
+    T: ExplicitEdgeAutomaton<Type> + InitializedAutomaton<Type> + AutomatonIterators<Type>,
 > EdgeAutomatonAlgorithms<Type> for T
+where
+    Self::NIndex: CompactGIndex,
 {
 }

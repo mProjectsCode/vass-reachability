@@ -9,34 +9,33 @@ use petgraph::{
 
 use super::nfa::NFAEdge;
 use crate::automaton::{
-    Alphabet, Language, ModifiableAutomaton,
-    algorithms::AutomatonAlgorithms,
-    cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
+    Alphabet, Language, ModifiableAutomaton, TransitionSystem,
+    cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
+    implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath, state::MultiGraphState},
     lsg::part::{LSGGraph, LSGPart, LSGPath},
     nfa::NFA,
-    path::Path,
 };
 
 pub mod extender;
 pub mod part;
 
 #[derive(Debug, Clone)]
-pub struct LinearSubGraph<'a, C: ExplicitEdgeCFG> {
+pub struct LinearSubGraph<'a> {
     pub parts: Vec<LSGPart>,
-    pub cfg: &'a C,
+    pub product: &'a ImplicitCFGProduct,
     pub dimension: usize,
 }
 
-impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
+impl<'a> LinearSubGraph<'a> {
     pub fn from_path(
-        path: Path<NodeIndex, CFGCounterUpdate>,
-        cfg: &'a C,
+        path: MultiGraphPath,
+        product: &'a ImplicitCFGProduct,
         dimension: usize,
     ) -> Self {
         LinearSubGraph {
             parts: vec![LSGPart::Path(path.into())],
-            cfg,
+            product,
             dimension,
         }
     }
@@ -46,7 +45,7 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
     /// This function will also add all existing connections between the new
     /// node and the existing LSG nodes. This may quickly lead to large
     /// subgraphs and little path like structure.
-    pub fn add_node(&self, node: NodeIndex) -> Self {
+    pub fn add_node(&self, node: MultiGraphState) -> Self {
         // first we need to find all parts that contain a neighbor of the node
         // then we build a new subgraph containing everything between the first and last
         // neighbor then we replace all those parts with the new subgraph.
@@ -58,7 +57,7 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
         // dbg!(&self.parts);
         // dbg!(node);
 
-        let neighbors = self.cfg.undirected_neighbors(node);
+        let neighbors = self.product.undirected_neighbors(&node);
 
         // first we split all paths at the given node
         let mut new_parts = self
@@ -68,7 +67,7 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
                 LSGPart::Path(path) => path
                     .path
                     .clone()
-                    .split_at_nodes(&neighbors)
+                    .split_at(|s| neighbors.contains(&s))
                     .into_iter()
                     .map(|p| LSGPart::Path(p.into()))
                     .collect_vec(),
@@ -85,12 +84,12 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
             for neighbor in &neighbors {
                 match part {
                     LSGPart::SubGraph(_) => {
-                        if part.start() == *neighbor || part.end() == *neighbor {
+                        if part.start() == neighbor || part.end() == neighbor {
                             neighbor_parts_indices.push((i, true));
                             break;
                         }
 
-                        if part.contains_node(*neighbor) {
+                        if part.contains_node(neighbor) {
                             neighbor_parts_indices.push((i, false));
                             break;
                         }
@@ -98,7 +97,7 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
                     LSGPart::Path(_) => {
                         // since we split the paths beforehand, we only need to check the start and
                         // end nodes
-                        if part.start() == *neighbor || part.end() == *neighbor {
+                        if part.start() == neighbor || part.end() == neighbor {
                             neighbor_parts_indices.push((i, true));
                             break;
                         }
@@ -121,8 +120,8 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
         let first_part_index = first_part.0 + usize::from(first_part.1);
         let last_part_index = last_part.0 - usize::from(last_part.1);
 
-        let start_node = new_parts[first_part_index].start();
-        let end_node = new_parts[last_part_index].end();
+        let start_node = new_parts[first_part_index].start().clone();
+        let end_node = new_parts[last_part_index].end().clone();
 
         let mut cut_sequence = new_parts
             .drain(first_part_index..=last_part_index)
@@ -131,38 +130,40 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
         if cut_sequence.is_empty() {
             assert_eq!(start_node, end_node);
 
-            cut_sequence.push(LSGPart::Path(Path::new(start_node).into()));
+            cut_sequence.push(LSGPart::Path(
+                MultiGraphPath::new(start_node.clone()).into(),
+            ));
         }
 
-        let mut new_subgraph = DiGraph::<C::NIndex, CFGCounterUpdate>::new();
+        let mut new_subgraph = DiGraph::<MultiGraphState, CFGCounterUpdate>::new();
         let mut node_map = HashMap::new();
 
         // add all nodes from the cut sequence to the new subgraph
-        for part in cut_sequence {
+        for part in &cut_sequence {
             for node in part.iter_nodes() {
                 // we may have already added this node, because start and end nodes overlap
                 if node_map.contains_key(&node) {
                     continue;
                 }
 
-                let new_node = new_subgraph.add_node(node);
+                let new_node = new_subgraph.add_node(node.clone());
                 node_map.insert(node, new_node);
             }
         }
 
         // add the new node
-        let new_node = new_subgraph.add_node(node);
-        node_map.insert(node, new_node);
+        let new_node = new_subgraph.add_node(node.clone());
+        node_map.insert(&node, new_node);
 
         // now we add all edges between the nodes in the new subgraph
-        for (cfg_node, new_node) in &node_map {
-            for edge in self.cfg.outgoing_edge_indices(*cfg_node) {
-                if let Some(&new_target) = node_map.get(&self.cfg.edge_target_unchecked(edge)) {
-                    new_subgraph.add_edge(
-                        *new_node,
-                        new_target,
-                        *self.cfg.get_edge_unchecked(edge),
-                    );
+        for (product_state, new_node) in &node_map {
+            for letter in self.product.alphabet() {
+                let Some(successor) = self.product.successor(product_state, letter) else {
+                    continue;
+                };
+
+                if let Some(&new_target) = node_map.get(&successor) {
+                    new_subgraph.add_edge(*new_node, new_target, *letter);
                 }
             }
         }
@@ -179,29 +180,30 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
             new_subgraph,
             new_start_node,
             new_end_node,
-            self.cfg.alphabet().to_vec(),
+            self.product.alphabet().to_vec(),
         );
 
         new_parts.insert(first_part_index, LSGPart::SubGraph(graph));
 
         LinearSubGraph {
             parts: new_parts,
-            cfg: self.cfg,
+            product: self.product,
             dimension: self.dimension,
         }
     }
 
-    /// Finds the strongly connected component around the given node and adds it
-    /// as a subgraph part. The node must be contained in the LSG, otherwise
-    /// the function will panic.
-    pub fn add_scc_around_node(&self, node: C::NIndex) -> Self {
+    /// Finds the strongly connected component around the given node in the main
+    /// CFG and adds it as a subgraph part. The node must be contained in
+    /// the LSG, otherwise the function will panic.
+    pub fn add_scc_around_node(&self, state: MultiGraphState) -> Self {
         assert!(
-            self.contains_node(node),
+            self.contains_state(&state),
             "Cannot add SCC around node that is not in the LSG"
         );
 
-        let scc_nodes = self.cfg.find_scc_surrounding(node);
-        let scc = LSGGraph::from_subset(self.cfg, &scc_nodes, node, node);
+        let scc_nodes = self.product.find_scc_surrounding(state.clone());
+        let scc_nodes_vec = scc_nodes.into_iter().collect_vec();
+        let scc = LSGGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
 
         // first we split all paths at the given node
         let split_parts = self
@@ -211,7 +213,7 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
                 LSGPart::Path(path) => path
                     .path
                     .clone()
-                    .split_at_node(node)
+                    .split_at(|s| s == &state)
                     .into_iter()
                     .map(|p| LSGPart::Path(p.into()))
                     .collect_vec(),
@@ -223,7 +225,7 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
         new_parts.reserve(split_parts.len());
 
         for part in split_parts {
-            let ends_at_node = part.end() == node;
+            let ends_at_node = part.end() == &state;
             new_parts.push(part);
 
             if ends_at_node {
@@ -235,15 +237,15 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
 
         LinearSubGraph {
             parts: new_parts,
-            cfg: self.cfg,
+            product: self.product,
             dimension: self.dimension,
         }
     }
 
-    /// Checks if the LSG contains the given node from the CFG.
-    pub fn contains_node(&self, node: C::NIndex) -> bool {
+    /// Checks if the LSG contains the given state from the product.
+    pub fn contains_state(&self, state: &MultiGraphState) -> bool {
         for part in &self.parts {
-            if part.contains_node(node) {
+            if part.contains_node(state) {
                 return true;
             }
         }
@@ -264,10 +266,10 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
         for part in &self.parts {
             match part {
                 LSGPart::Path(path) => {
-                    for (update, _) in path.path.iter() {
+                    for update in path.path.iter() {
                         let next_state = nfa.add_node(DfaNode::non_accepting(()));
 
-                        nfa.add_edge(prev_state, next_state, NFAEdge::Symbol(*update));
+                        nfa.add_edge(&prev_state, &next_state, NFAEdge::Symbol(update));
                         prev_state = next_state;
                     }
 
@@ -283,7 +285,11 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
                     for i in subgraph.graph.node_indices() {
                         if i == subgraph.start {
                             let end_index = (i.index() + state_offset) as u32;
-                            nfa.add_edge(prev_state, end_index.into(), NFAEdge::Epsilon);
+                            nfa.add_edge(
+                                &prev_state,
+                                &NodeIndex::from(end_index),
+                                NFAEdge::Epsilon,
+                            );
                         }
                     }
 
@@ -297,11 +303,13 @@ impl<'a, C: ExplicitEdgeCFG> LinearSubGraph<'a, C> {
 
                     // add all edges
                     for edge_ref in subgraph.graph.edge_references() {
-                        let src = (edge_ref.source().index() + state_offset) as u32;
-                        let dst = (edge_ref.target().index() + state_offset) as u32;
+                        let src =
+                            NodeIndex::from((edge_ref.source().index() + state_offset) as u32);
+                        let dst =
+                            NodeIndex::from((edge_ref.target().index() + state_offset) as u32);
                         let weight = *edge_ref.weight();
 
-                        nfa.add_edge(src.into(), dst.into(), NFAEdge::Symbol(weight));
+                        nfa.add_edge(&src, &dst, NFAEdge::Symbol(weight));
                     }
 
                     state_offset += subgraph.graph.node_count();
@@ -349,9 +357,9 @@ fn partial_accept_path<'a>(
     }
 
     while let Some(symbol) = input.peek() {
-        let (update, _) = path.path.get(index);
+        let update = path.path.updates[index];
 
-        if update == *symbol {
+        if &update == *symbol {
             index += 1;
             input.next();
         } else {
@@ -394,15 +402,15 @@ fn partial_accept_subgraph<'a>(
     current_state == subgraph.end
 }
 
-impl<'a, C: ExplicitEdgeCFG> Alphabet for LinearSubGraph<'a, C> {
+impl<'a> Alphabet for LinearSubGraph<'a> {
     type Letter = CFGCounterUpdate;
 
     fn alphabet(&self) -> &[CFGCounterUpdate] {
-        self.cfg.alphabet()
+        self.product.alphabet()
     }
 }
 
-impl<'a, C: ExplicitEdgeCFG> Language for LinearSubGraph<'a, C> {
+impl<'a> Language for LinearSubGraph<'a> {
     fn accepts<'b>(&self, input: impl IntoIterator<Item = &'b CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'b,

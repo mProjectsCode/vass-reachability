@@ -16,9 +16,9 @@ fn test_vass_n_reach_1() {
     let q0 = vass.add_node(0);
     let q1 = vass.add_node(1);
 
-    vass.add_edge(q0, q0, VASSEdge::new('a', vec![1, 0].into()));
-    vass.add_edge(q0, q1, VASSEdge::new('b', vec![-2, 0].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('b', vec![-1, 0].into()));
+    vass.add_edge(&q0, &q0, VASSEdge::new('a', vec![1, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('b', vec![-2, 0].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![-1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 
@@ -39,9 +39,9 @@ fn test_vass_n_reach_2() {
     let q0 = vass.add_node(0);
     let q1 = vass.add_node(1);
 
-    vass.add_edge(q0, q0, VASSEdge::new('a', vec![1, 0].into()));
-    vass.add_edge(q0, q1, VASSEdge::new('b', vec![0, 1].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('b', vec![-1, 0].into()));
+    vass.add_edge(&q0, &q0, VASSEdge::new('a', vec![1, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('b', vec![0, 1].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![-1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 
@@ -62,8 +62,8 @@ fn test_vass_n_reach_3() {
     let q0 = vass.add_node(0);
     let q1 = vass.add_node(1);
 
-    vass.add_edge(q0, q1, VASSEdge::new('a', vec![-1, 0].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('b', vec![1, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('a', vec![-1, 0].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![1, 0].into()));
 
     let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
 
@@ -93,15 +93,15 @@ fn test_vass_n_reach_4() {
     let q2 = vass.add_node(2);
 
     // we use q1 to initialize the entire system
-    vass.add_edge(q0, q1, VASSEdge::new('e', vec![1, 0, 1, 0, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('e', vec![1, 0, 1, 0, 0].into()));
 
-    vass.add_edge(q1, q1, VASSEdge::new('a', vec![-1, 1, 0, 0, -1].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('b', vec![0, 0, -1, 1, -1].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('c', vec![1, -1, 0, 0, 1].into()));
-    vass.add_edge(q1, q1, VASSEdge::new('d', vec![0, 0, 1, -1, 1].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('a', vec![-1, 1, 0, 0, -1].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![0, 0, -1, 1, -1].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('c', vec![1, -1, 0, 0, 1].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('d', vec![0, 0, 1, -1, 1].into()));
 
     // we can only reach q1 when we are in the critical section on both processes
-    vass.add_edge(q1, q2, VASSEdge::new('e', vec![0, -1, 0, -1, 0].into()));
+    vass.add_edge(&q1, &q2, VASSEdge::new('e', vec![0, -1, 0, -1, 0].into()));
 
     let initialized_vass = vass.init(
         vec![0, 0, 0, 0, 0].into(),

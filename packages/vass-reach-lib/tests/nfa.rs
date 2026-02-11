@@ -16,17 +16,17 @@ fn test_nfa_to_dfa() {
 
     nfa.set_initial(q0);
 
-    nfa.add_edge(q0, q0, NFAEdge::Symbol('a'));
-    nfa.add_edge(q0, q1, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q0, &q0, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q0, &q1, NFAEdge::Symbol('b'));
 
-    nfa.add_edge(q1, q2, NFAEdge::Symbol('a'));
-    nfa.add_edge(q2, q1, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q1, &q2, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q2, &q1, NFAEdge::Symbol('b'));
 
-    nfa.add_edge(q1, q1, NFAEdge::Symbol('a'));
-    nfa.add_edge(q1, q1, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q1, &q1, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q1, &q1, NFAEdge::Symbol('b'));
 
-    nfa.add_edge(q2, q2, NFAEdge::Symbol('a'));
-    nfa.add_edge(q2, q2, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q2, &q2, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q2, &q2, NFAEdge::Symbol('b'));
 
     let dfa = nfa.determinize();
 
@@ -44,11 +44,11 @@ fn test_nfa_to_dfa_2() {
 
     nfa.set_initial(q0);
 
-    nfa.add_edge(q0, q0, NFAEdge::Symbol('a'));
-    nfa.add_edge(q0, q0, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q0, &q0, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q0, &q0, NFAEdge::Symbol('b'));
 
-    nfa.add_edge(q0, q1, NFAEdge::Symbol('a'));
-    nfa.add_edge(q1, q2, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q0, &q1, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q1, &q2, NFAEdge::Symbol('b'));
 
     let dfa = nfa.determinize();
 
@@ -69,15 +69,15 @@ fn test_nfa_to_dfa_3() {
 
     nfa.set_initial(q0);
 
-    nfa.add_edge(q0, q1, NFAEdge::Symbol('a'));
-    nfa.add_edge(q0, q2, NFAEdge::Epsilon);
+    nfa.add_edge(&q0, &q1, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q0, &q2, NFAEdge::Epsilon);
 
-    nfa.add_edge(q1, q2, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q1, &q2, NFAEdge::Symbol('b'));
 
-    nfa.add_edge(q2, q3, NFAEdge::Symbol('a'));
-    nfa.add_edge(q2, q4, NFAEdge::Epsilon);
+    nfa.add_edge(&q2, &q3, NFAEdge::Symbol('a'));
+    nfa.add_edge(&q2, &q4, NFAEdge::Epsilon);
 
-    nfa.add_edge(q3, q2, NFAEdge::Symbol('b'));
+    nfa.add_edge(&q3, &q2, NFAEdge::Symbol('b'));
 
     let dfa = nfa.determinize();
 

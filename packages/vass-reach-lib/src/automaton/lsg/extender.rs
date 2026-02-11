@@ -1,14 +1,13 @@
 use std::fmt::Debug;
 
-use petgraph::graph::NodeIndex;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use crate::{
     automaton::{
-        cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate, vasscfg::VASSCFG},
-        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
+        TransitionSystem,
+        cfg::vasscfg::VASSCFG,
+        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath, state::MultiGraphState},
         lsg::{LinearSubGraph, part::LSGPart},
-        path::Path,
         vass::counter::VASSCounterValuation,
     },
     solver::{
@@ -20,14 +19,14 @@ use crate::{
 /// Struct to iteratively extend a Linear Subgraph (LSG) by adding nodes chosen
 /// by a `NodeChooser`, while keeping the LSG unreachable.
 #[derive(Debug, Clone)]
-pub struct LSGExtender<'a, C: ExplicitEdgeCFG, Strategy: ExtensionStrategy<C>> {
+pub struct LSGExtender<'a, Strategy: ExtensionStrategy> {
     /// The current Linear Subgraph being extended.
-    pub lsg: LinearSubGraph<'a, C>,
+    pub lsg: LinearSubGraph<'a>,
     /// The previous Linear Subgraph before the last extension.
     /// This is used to backtrack if the current LSG becomes reachable.
-    pub old_lsg: Option<LinearSubGraph<'a, C>>,
+    pub old_lsg: Option<LinearSubGraph<'a>>,
     /// Reference to the underlying CFG.
-    pub cfg: &'a C,
+    pub product: &'a ImplicitCFGProduct,
     /// Dimension of the CFG.
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
@@ -38,23 +37,23 @@ pub struct LSGExtender<'a, C: ExplicitEdgeCFG, Strategy: ExtensionStrategy<C>> {
     pub max_refinements: u64,
 }
 
-impl<'a, C: ExplicitEdgeCFG, Strategy: ExtensionStrategy<C>> LSGExtender<'a, C, Strategy> {
+impl<'a, Strategy: ExtensionStrategy> LSGExtender<'a, Strategy> {
     pub fn new(
-        path: Path<NodeIndex, CFGCounterUpdate>,
-        cfg: &'a C,
+        path: MultiGraphPath,
+        product: &'a ImplicitCFGProduct,
         dimension: usize,
         strategy: Strategy,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         max_refinements: u64,
     ) -> Self {
-        let lsg = LinearSubGraph::from_path(path, cfg, dimension);
+        let lsg = LinearSubGraph::from_path(path, product, dimension);
 
         LSGExtender {
             old_lsg: None,
             lsg,
             dimension,
-            cfg,
+            product,
             strategy,
             initial_valuation,
             final_valuation,
@@ -106,18 +105,16 @@ impl<'a, C: ExplicitEdgeCFG, Strategy: ExtensionStrategy<C>> LSGExtender<'a, C, 
     }
 }
 
-impl<'a, Chooser: ExtensionStrategy<VASSCFG<()>>> LSGExtender<'a, VASSCFG<()>, Chooser> {
+impl<'a, Strategy: ExtensionStrategy> LSGExtender<'a, Strategy> {
     pub fn from_cfg_product(
-        path: &MultiGraphPath,
+        path: MultiGraphPath,
         cfg_product: &'a ImplicitCFGProduct,
-        node_chooser: Chooser,
+        node_chooser: Strategy,
         max_refinements: u64,
     ) -> Self {
-        let path = path.to_path(cfg_product.main_cfg()).into();
-
         Self::new(
             path,
-            &cfg_product.main_cfg(),
+            cfg_product,
             cfg_product.dimension,
             node_chooser,
             cfg_product.initial_valuation.clone(),
@@ -127,25 +124,21 @@ impl<'a, Chooser: ExtensionStrategy<VASSCFG<()>>> LSGExtender<'a, VASSCFG<()>, C
     }
 }
 
-pub trait ExtensionStrategy<C: ExplicitEdgeCFG> {
-    fn extend<'a>(
-        &mut self,
-        lsg: &LinearSubGraph<'a, C>,
-        step: u64,
-    ) -> Option<LinearSubGraph<'a, C>>;
+pub trait ExtensionStrategy {
+    fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, step: u64) -> Option<LinearSubGraph<'a>>;
 
     fn on_rollback(&mut self, solution: &LSGSolution);
 }
 
-pub struct RandomNodeStrategy<C: ExplicitEdgeCFG> {
+pub struct RandomNodeStrategy {
     pub max_retries: usize,
     pub seed: u64,
     random: StdRng,
-    pub blacklist: Vec<C::NIndex>,
-    pub last_added: Option<C::NIndex>,
+    pub blacklist: Vec<MultiGraphState>,
+    pub last_added: Option<MultiGraphState>,
 }
 
-impl<C: ExplicitEdgeCFG> RandomNodeStrategy<C> {
+impl RandomNodeStrategy {
     pub fn new(max_retries: usize, seed: u64) -> Self {
         RandomNodeStrategy {
             max_retries,
@@ -157,27 +150,22 @@ impl<C: ExplicitEdgeCFG> RandomNodeStrategy<C> {
     }
 }
 
-impl<C: ExplicitEdgeCFG> ExtensionStrategy<C> for RandomNodeStrategy<C> {
-    fn extend<'a>(
-        &mut self,
-        lsg: &LinearSubGraph<'a, C>,
-        _step: u64,
-    ) -> Option<LinearSubGraph<'a, C>> {
+impl ExtensionStrategy for RandomNodeStrategy {
+    fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, _step: u64) -> Option<LinearSubGraph<'a>> {
         for _ in 0..self.max_retries {
-            let node = C::NIndex::new(self.random.gen_range(0..lsg.cfg.node_count()));
-            if !lsg.contains_node(node) {
-                continue;
-            }
+            let parts_len = lsg.parts.len();
+            let part_index = self.random.gen_range(0..parts_len);
+            let state = lsg.parts[part_index].random_node(&mut self.random);
 
-            let neighbors: Vec<_> = lsg.cfg.undirected_neighbors(node);
+            let neighbors: Vec<_> = lsg.product.undirected_neighbors(&state);
 
             let selected = neighbors
                 .iter()
-                .find(|n| !lsg.contains_node(**n) && !self.blacklist.contains(n));
+                .find(|n| !lsg.contains_state(*n) && !self.blacklist.contains(n));
 
             if let Some(selected) = selected {
-                self.last_added = Some(*selected);
-                return Some(lsg.add_node(*selected));
+                self.last_added = Some(selected.clone());
+                return Some(lsg.add_node(selected.clone()));
             }
         }
 
@@ -185,21 +173,21 @@ impl<C: ExplicitEdgeCFG> ExtensionStrategy<C> for RandomNodeStrategy<C> {
     }
 
     fn on_rollback(&mut self, _solution: &LSGSolution) {
-        if let Some(last_node) = self.last_added {
+        if let Some(last_node) = self.last_added.take() {
             self.blacklist.push(last_node);
         }
     }
 }
 
-pub struct RandomSCCStrategy<C: ExplicitEdgeCFG> {
+pub struct RandomSCCStrategy {
     pub max_retries: usize,
     pub seed: u64,
     random: StdRng,
-    pub blacklist: Vec<C::NIndex>,
-    pub last_added: Vec<C::NIndex>,
+    pub blacklist: Vec<MultiGraphState>,
+    pub last_added: Vec<MultiGraphState>,
 }
 
-impl<C: ExplicitEdgeCFG> RandomSCCStrategy<C> {
+impl RandomSCCStrategy {
     pub fn new(max_retries: usize, seed: u64) -> Self {
         RandomSCCStrategy {
             max_retries,
@@ -211,12 +199,8 @@ impl<C: ExplicitEdgeCFG> RandomSCCStrategy<C> {
     }
 }
 
-impl<C: ExplicitEdgeCFG> ExtensionStrategy<C> for RandomSCCStrategy<C> {
-    fn extend<'a>(
-        &mut self,
-        lsg: &LinearSubGraph<'a, C>,
-        _step: u64,
-    ) -> Option<LinearSubGraph<'a, C>> {
+impl ExtensionStrategy for RandomSCCStrategy {
+    fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, _step: u64) -> Option<LinearSubGraph<'a>> {
         for _ in 0..self.max_retries {
             let paths = lsg
                 .parts
@@ -240,15 +224,15 @@ impl<C: ExplicitEdgeCFG> ExtensionStrategy<C> for RandomSCCStrategy<C> {
                 let path_index = self.random.gen_range(0..paths.len());
                 let path = &paths[path_index];
 
-                let node_index = self.random.gen_range(0..path.path.len());
-                let node = path.path.get_node(node_index);
+                let state_index = self.random.gen_range(0..path.path.state_len());
+                let state = &path.path.states[state_index];
 
-                if self.blacklist.contains(&node) {
+                if self.blacklist.contains(state) {
                     continue;
                 }
 
-                self.last_added.push(node);
-                return Some(lsg.add_scc_around_node(node));
+                self.last_added.push(state.clone());
+                return Some(lsg.add_scc_around_node(state.clone()));
             }
         }
 
@@ -256,9 +240,8 @@ impl<C: ExplicitEdgeCFG> ExtensionStrategy<C> for RandomSCCStrategy<C> {
     }
 
     fn on_rollback(&mut self, _solution: &LSGSolution) {
-        for last_node in &self.last_added {
-            self.blacklist.push(*last_node);
+        for last_node in self.last_added.drain(..) {
+            self.blacklist.push(last_node);
         }
-        self.last_added.clear();
     }
 }

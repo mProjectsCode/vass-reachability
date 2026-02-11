@@ -1,12 +1,13 @@
+use hashbrown::HashSet;
 use vass_reach_lib::{
     automaton::{
-        ModifiableAutomaton,
+        ModifiableAutomaton, TransitionSystem,
         cfg::{
             update::CFGCounterUpdate,
             vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
         },
         dfa::node::DfaNode,
-        implicit_cfg_product::ImplicitCFGProduct,
+        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
         vass::counter::{VASSCounterIndex, VASSCounterValuation},
     },
     cfg_dec, cfg_inc,
@@ -22,10 +23,10 @@ fn implicit_product_test() {
 
     cfg.set_initial(q0);
 
-    cfg.add_edge(q0, q0, cfg_inc!(0));
-    cfg.add_edge(q0, q1, cfg_dec!(0));
-    cfg.add_edge(q1, q2, cfg_dec!(0));
-    cfg.add_edge(q2, q0, cfg_inc!(0));
+    cfg.add_edge(&q0, &q0, cfg_inc!(0));
+    cfg.add_edge(&q0, &q1, cfg_dec!(0));
+    cfg.add_edge(&q1, &q2, cfg_dec!(0));
+    cfg.add_edge(&q2, &q0, cfg_inc!(0));
 
     cfg.make_complete(());
 
@@ -51,4 +52,51 @@ fn implicit_product_test() {
             .is_none()
     );
     assert!(path.is_none());
+}
+
+#[test]
+fn implicit_product_predecessors() {
+    // dimension = 1 => alphabet {+c0, -c0}
+    let mut a = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+    let a0 = a.add_node(DfaNode::new(false, false, ()));
+    let a1 = a.add_node(DfaNode::new(false, false, ()));
+    // +c0: a0 -> a1, a1 -> a1
+    a.add_edge(&a0, &a1, cfg_inc!(0));
+    a.add_edge(&a1, &a1, cfg_inc!(0));
+    // -c0: no edge into a1 (targets go to a0)
+    a.add_edge(&a0, &a0, cfg_dec!(0));
+    a.add_edge(&a1, &a0, cfg_dec!(0));
+    a.set_initial(a0);
+    a.set_complete_unchecked();
+
+    let mut b = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+    let b0 = b.add_node(DfaNode::new(false, false, ()));
+    let b1 = b.add_node(DfaNode::new(false, false, ()));
+    // +c0: b0 -> b0, b1 -> b0  (predecessors of b0 under +c0 are {b0,b1})
+    b.add_edge(&b0, &b0, cfg_inc!(0));
+    b.add_edge(&b1, &b0, cfg_inc!(0));
+    // -c0: edges do not target b0
+    b.add_edge(&b0, &b1, cfg_dec!(0));
+    b.add_edge(&b1, &b1, cfg_dec!(0));
+    b.set_initial(b0);
+    b.set_complete_unchecked();
+
+    let mut prod = ImplicitCFGProduct::new_without_counting_cfgs(
+        1,
+        VASSCounterValuation::from(vec![0]),
+        VASSCounterValuation::from(vec![0]),
+        a,
+    );
+    prod.add_cfg(b);
+
+    let target = MultiGraphState::from(vec![a1, b0]);
+    let predecessors: HashSet<_> = prod.predecessors(&target).collect();
+
+    let mut expected = HashSet::new();
+    expected.insert(MultiGraphState::from(vec![a0, b0]));
+    expected.insert(MultiGraphState::from(vec![a0, b1]));
+    expected.insert(MultiGraphState::from(vec![a1, b0]));
+    expected.insert(MultiGraphState::from(vec![a1, b1]));
+
+    assert_eq!(predecessors, expected);
 }

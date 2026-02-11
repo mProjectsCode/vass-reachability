@@ -11,14 +11,14 @@ use z3::{
 
 use crate::{
     automaton::{
-        Automaton, ExplicitEdgeAutomaton,
-        cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate},
+        AutomatonIterators, ExplicitEdgeAutomaton,
+        implicit_cfg_product::path::MultiGraphPath,
         index_map::OptionIndexMap,
         lsg::{
             LinearSubGraph,
             part::{LSGGraph, LSGPart, LSGPath},
         },
-        path::{Path, parikh_image::ParikhImage},
+        path::parikh_image::ParikhImage,
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
         vass::counter::VASSCounterValuation,
     },
@@ -68,12 +68,12 @@ impl<'l> LSGReachSolverOptions<'l> {
         self
     }
 
-    pub fn to_solver<'g, C: ExplicitEdgeCFG>(
+    pub fn to_solver<'g>(
         self,
-        lsg: &'g LinearSubGraph<'g, C>,
+        lsg: &'g LinearSubGraph<'g>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-    ) -> LSGReachSolver<'l, 'g, C> {
+    ) -> LSGReachSolver<'l, 'g> {
         LSGReachSolver::new(lsg, initial_valuation, final_valuation, self)
     }
 }
@@ -92,18 +92,14 @@ pub struct LSGSolution {
 }
 
 impl LSGSolution {
-    pub fn build_run<'a, C: ExplicitEdgeCFG>(
-        &self,
-        lsg: &LinearSubGraph<'a, C>,
-        n_run: bool,
-    ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
+    pub fn build_run<'a>(&self, lsg: &LinearSubGraph<'a>, n_run: bool) -> Option<MultiGraphPath> {
         // the parikh image already determines the initial and final valuations when
         // entering and leaving subgraphs so we can simply build the runs for
         // each part independently and concatenate them
 
         let dimension = self.initial_valuation.dimension();
 
-        let mut cfg_path = Path::new(lsg.cfg.get_initial());
+        let mut product_path = MultiGraphPath::new(lsg.product.initial());
 
         let mut current_valuation = self.initial_valuation.clone();
 
@@ -124,21 +120,20 @@ impl LSGSolution {
 
                     // now the node and edge indices in the path are for the subgraph, so we
                     // need to map them back to the cfg
-                    let mapped_path = subgraph.map_path_to_cfg(&sub_path);
+                    let mapped_path = subgraph.map_path_to_product(&sub_path);
 
-                    cfg_path.concatenate(mapped_path);
+                    product_path.concat(mapped_path);
                 }
                 LSGSolutionPart::Path() => {
                     let path = lsg_part.unwrap_path();
 
                     // we need to update the current valuation for possible following subgraphs
-                    let update =
-                        cfg_updates_to_counter_update(path.path.iter_letters().cloned(), dimension);
+                    let update = cfg_updates_to_counter_update(path.path.iter(), dimension);
 
                     current_valuation.apply_update(&update);
 
                     // then we can simply add the edges to the path
-                    cfg_path.concatenate(path.path.clone());
+                    product_path.concat(path.path.clone());
                 }
             }
         }
@@ -148,7 +143,7 @@ impl LSGSolution {
             "Final valuation does not match the expected final valuation"
         );
 
-        Some(cfg_path)
+        Some(product_path)
     }
 }
 
@@ -185,8 +180,8 @@ impl LSGReachSolverResult {
     }
 }
 
-pub struct LSGReachSolver<'l, 'g, C: ExplicitEdgeCFG> {
-    lsg: &'g LinearSubGraph<'g, C>,
+pub struct LSGReachSolver<'l, 'g> {
+    lsg: &'g LinearSubGraph<'g>,
     initial_valuation: &'g VASSCounterValuation,
     final_valuation: &'g VASSCounterValuation,
     options: LSGReachSolverOptions<'l>,
@@ -195,9 +190,9 @@ pub struct LSGReachSolver<'l, 'g, C: ExplicitEdgeCFG> {
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'l, 'g, C: ExplicitEdgeCFG> LSGReachSolver<'l, 'g, C> {
+impl<'l, 'g> LSGReachSolver<'l, 'g> {
     pub fn new(
-        lsg: &'g LinearSubGraph<'g, C>,
+        lsg: &'g LinearSubGraph<'g>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
         options: LSGReachSolverOptions<'l>,
@@ -380,8 +375,7 @@ impl<'l, 'g, C: ExplicitEdgeCFG> LSGReachSolver<'l, 'g, C> {
         solver: &Solver,
         sums: &mut Box<[Int<'c>]>,
     ) {
-        let path_updates =
-            cfg_updates_to_counter_updates(path.path.iter_letters().cloned(), self.lsg.dimension);
+        let path_updates = cfg_updates_to_counter_updates(path.path.iter(), self.lsg.dimension);
 
         // first subtract the minimums
         for (update, sum) in path_updates.0.iter().zip(sums.iter_mut()) {
@@ -428,8 +422,8 @@ impl<'l, 'g, C: ExplicitEdgeCFG> LSGReachSolver<'l, 'g, C> {
         }
 
         for node in subgraph.iter_node_indices() {
-            let outgoing = subgraph.outgoing_edge_indices(node);
-            let incoming = subgraph.incoming_edge_indices(node);
+            let outgoing = subgraph.outgoing_edge_indices(&node);
+            let incoming = subgraph.incoming_edge_indices(&node);
 
             // the end node has one additional outgoing connection, this works, because we
             // always have exactly one end node

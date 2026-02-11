@@ -7,7 +7,7 @@ use crate::{
         cfg::vasscfg::VASSCFG,
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
-        lsg::extender::{LSGExtender, RandomNodeStrategy, RandomSCCStrategy},
+        lsg::extender::{LSGExtender, RandomSCCStrategy},
         ltc::{LTC, translation::LTCTranslation},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
@@ -248,7 +248,7 @@ impl<'l> VASSReachSolver<'l> {
                         }
 
                         let mut extender = LSGExtender::from_cfg_product(
-                            &path,
+                            path,
                             &self.state,
                             RandomSCCStrategy::new(10, self.step_count as u64),
                             // RandomNodeStrategy::new(10, self.step_count as u64),
@@ -298,55 +298,25 @@ impl<'l> VASSReachSolver<'l> {
         // we find a counter that turns negative
         if let Some((counter, path_index)) =
             path.find_negative_counter_forward(&self.state.initial_valuation)
-            && !path.is_counter_forwards_pumped(
-                self.state.main_cfg(),
-                self.state.dimension,
-                counter,
-                3,
-            )
+            && !path.is_counter_forwards_pumped(self.state.dimension, counter, 3)
         {
             let segment = path.slice(0..path_index);
             // if the path before wasn't pumped, we increase the bound we count up to, to
             // cover this path
 
-            // TODO: maybe we need a better pumping detection.
-            // We should probably look before and after the position.
-            // TODO: look into the full product, compare valuations to see if they got
-            // bigger
-
             let current_bound = self.state.get_forward_bound(counter);
             let max_value = segment.max_counter_value(&self.state.initial_valuation, counter);
             let max_value = i32::max(1, max_value) as u32;
 
-            // if let Some(l) = self.logger {
-            //     l.debug(&format!("Segment: {}", segment.to_fancy_string()));
-
-            //     l.debug(&format!(
-            //         "Found negative counter: {:?} at {}, max value in segment: {:?},
-            // current bound: {:?}",         counter,
-            //         path_index,
-            //         max_value,
-            //         current_bound
-            //     ));
-            // }
-
             if current_bound < max_value {
                 return VASSReachRefinementAction::IncreaseForwardsBound(counter, max_value);
             }
-
-            // if !segment.visits_node_multiple_times(&self.state.cfg, 2) {
-            // }
         }
 
         // same as above, but from the back of the path
         if let Some((counter, path_index)) =
             path.find_negative_counter_backward(&self.state.final_valuation)
-            && !path.is_counter_backwards_pumped(
-                self.state.main_cfg(),
-                self.state.dimension,
-                counter,
-                3,
-            )
+            && !path.is_counter_backwards_pumped(self.state.dimension, counter, 3)
         {
             let segment = path.slice(path_index..path.len());
 
@@ -357,16 +327,6 @@ impl<'l> VASSReachSolver<'l> {
             if current_bound < max_value {
                 return VASSReachRefinementAction::IncreaseBackwardsBound(counter, max_value);
             }
-
-            // if !segment.visits_node_multiple_times(&self.state.cfg, 2) {
-            // let max_value =
-            // segment.max_counter_value_from_back(&self.state.final_valuation,
-            // counter);
-            // return VASSReachRefinementAction::IncreaseBackwardsBound(
-            //     counter,
-            //     i32::min(1, max_value) as u32,
-            // );
-            // }
         }
 
         if let Some((mismatch, difference)) =

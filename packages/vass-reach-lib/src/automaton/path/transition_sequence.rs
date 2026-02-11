@@ -31,24 +31,24 @@ impl<NIndex: GIndex, L: Letter> TransitionSequence<NIndex, L> {
         let mut visited = vec![];
 
         for (_, node) in &self.0 {
-            if visited.contains(node) {
+            if visited.contains(&node) {
                 return true;
             }
 
-            visited.push(*node);
+            visited.push(node);
         }
 
         false
     }
 
-    pub fn end(&self) -> Option<NIndex> {
-        self.0.last().map(|x| x.1)
+    pub fn end(&self) -> Option<&NIndex> {
+        self.0.last().map(|x| &x.1)
     }
 
     pub fn to_fancy_string(&self) -> String {
         self.0
             .iter()
-            .map(|x| format!("--({:?})-> {:?}", x.0, x.1.index()))
+            .map(|x| format!("--({:?})-> {:?}", x.0, x.1))
             .join(" ")
     }
 
@@ -68,16 +68,16 @@ impl<NIndex: GIndex, L: Letter> TransitionSequence<NIndex, L> {
         self.0.iter_mut()
     }
 
-    pub fn iter_nodes(&self) -> impl Iterator<Item = NIndex> {
-        self.iter().map(|x| x.1)
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &NIndex> {
+        self.iter().map(|x| &x.1)
     }
 
     pub fn iter_letters(&self) -> impl Iterator<Item = &L> {
         self.iter().map(|x| &x.0)
     }
 
-    pub fn contains_node(&self, node: NIndex) -> bool {
-        self.iter_nodes().contains(&node)
+    pub fn contains_node(&self, node: &NIndex) -> bool {
+        self.iter_nodes().contains(node)
     }
 
     pub fn first(&self) -> Option<&(L, NIndex)> {
@@ -104,8 +104,8 @@ impl<NIndex: GIndex, L: Letter> TransitionSequence<NIndex, L> {
         &self.0[index]
     }
 
-    pub fn get_node(&self, index: usize) -> NIndex {
-        self.0[index].1
+    pub fn get_node(&self, index: usize) -> &NIndex {
+        &self.0[index].1
     }
 
     pub fn get_letter(&self, index: usize) -> &L {
@@ -165,7 +165,7 @@ impl<NIndex: GIndex, L: Letter> Display for TransitionSequence<NIndex, L> {
             "{}",
             self.0
                 .iter()
-                .map(|x| format!("--({:?})-> {:?}", x.0, x.1.index()))
+                .map(|x| format!("--({:?})-> {:?}", x.0, x.1))
                 .join(" ")
         )
     }

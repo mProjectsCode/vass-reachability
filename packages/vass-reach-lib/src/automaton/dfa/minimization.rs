@@ -123,7 +123,7 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge + FromLetter> DfaMinimizationTable<'
             for (i, symbol) in self.graph.alphabet.iter().enumerate() {
                 let target = entry.transitions[i];
                 let to = state_map[target];
-                dfa.add_edge(from, to, E::from_letter(symbol));
+                dfa.add_edge(&from, &to, E::from_letter(symbol));
                 if from != to {
                     trap = false;
                 }

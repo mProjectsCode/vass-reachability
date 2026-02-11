@@ -98,11 +98,12 @@ impl<T: AutomatonEdge + FromLetter> AutomatonEdge for VASSEdge<T> {
 }
 
 /// This trait represents node or edge indices in an automaton.
-/// The index space must be compact, so usually implementers of this trait are
-/// just some wrapper type around some integer type. It must be possible to
-/// construct an index from a [usize], to turn an index into a [usize], and
-/// there must be a representation of an empty index.
-pub trait GIndex: Debug + Copy + Clone + PartialEq + Eq + Hash + Ord {
+pub trait GIndex: Debug + Clone + PartialEq + Eq + Hash + Ord {}
+impl<T> GIndex for T where T: Debug + Clone + PartialEq + Eq + Hash + Ord {}
+
+/// A compact version of [GIndex] that can be easily converted to and from a
+/// [usize].
+pub trait CompactGIndex: GIndex + Copy {
     /// Create a new index from a [usize].
     fn new(index: usize) -> Self;
     /// Turn this index into a [usize] to e.g. index into a [Vec].
@@ -111,7 +112,7 @@ pub trait GIndex: Debug + Copy + Clone + PartialEq + Eq + Hash + Ord {
     fn empty() -> Self;
 }
 
-impl GIndex for NodeIndex {
+impl CompactGIndex for NodeIndex {
     fn new(index: usize) -> Self {
         NodeIndex::new(index)
     }
@@ -125,7 +126,7 @@ impl GIndex for NodeIndex {
     }
 }
 
-impl GIndex for EdgeIndex {
+impl CompactGIndex for EdgeIndex {
     fn new(index: usize) -> Self {
         EdgeIndex::new(index)
     }
@@ -139,7 +140,7 @@ impl GIndex for EdgeIndex {
     }
 }
 
-impl GIndex for usize {
+impl CompactGIndex for usize {
     fn new(index: usize) -> Self {
         index
     }
@@ -153,7 +154,7 @@ impl GIndex for usize {
     }
 }
 
-impl GIndex for u32 {
+impl CompactGIndex for u32 {
     fn new(index: usize) -> Self {
         index as u32
     }
@@ -168,13 +169,13 @@ impl GIndex for u32 {
 }
 
 /// An iterator over a compact index space.
-pub struct GIndexIterator<G: GIndex> {
+pub struct GIndexIterator<G: CompactGIndex> {
     current: usize,
     end: usize,
     __marker: std::marker::PhantomData<G>,
 }
 
-impl<G: GIndex> GIndexIterator<G> {
+impl<G: CompactGIndex> GIndexIterator<G> {
     /// Create a new iterator over a compact index interval.
     pub fn new(start: usize, end: usize) -> Self {
         GIndexIterator {
@@ -185,7 +186,7 @@ impl<G: GIndex> GIndexIterator<G> {
     }
 }
 
-impl<G: GIndex> Iterator for GIndexIterator<G> {
+impl<G: CompactGIndex> Iterator for GIndexIterator<G> {
     type Item = G;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -199,13 +200,13 @@ impl<G: GIndex> Iterator for GIndexIterator<G> {
     }
 }
 
-impl<G: GIndex> ExactSizeIterator for GIndexIterator<G> {
+impl<G: CompactGIndex> ExactSizeIterator for GIndexIterator<G> {
     fn len(&self) -> usize {
         self.end - self.current
     }
 }
 
-impl<G: GIndex> DoubleEndedIterator for GIndexIterator<G> {
+impl<G: CompactGIndex> DoubleEndedIterator for GIndexIterator<G> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current < self.end {
             self.end -= 1;
@@ -261,25 +262,37 @@ pub trait Automaton<Type: TransitionSystemType<Self::NIndex>>: Alphabet {
 
     /// Returns the node corresponding to the given index, or None if the index
     /// is invalid.
-    fn get_node(&self, index: Self::NIndex) -> Option<&Self::N>;
+    fn get_node(&self, index: &Self::NIndex) -> Option<&Self::N>;
 
     /// Returns the node corresponding to the given index, panicking if the
     /// index is invalid.
-    fn get_node_unchecked(&self, index: Self::NIndex) -> &Self::N;
+    fn get_node_unchecked(&self, index: &Self::NIndex) -> &Self::N;
+}
 
-    /// Returns an iterator over all node indices in the automaton.
-    fn iter_node_indices(&self) -> GIndexIterator<Self::NIndex> {
-        GIndexIterator::new(0, self.node_count())
-    }
-
-    /// Returns a combined iterator over all nodes in the automaton, yielding
-    /// (node_index, node_reference) pairs.
-    fn iter_nodes<'a>(&'a self) -> impl Iterator<Item = (Self::NIndex, &'a Self::N)>
+pub trait AutomatonIterators<Type: TransitionSystemType<Self::NIndex>>: Automaton<Type> {
+    fn iter_nodes<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (Self::NIndex, &'a Self::N)> + DoubleEndedIterator
     where
         Self::N: 'a,
     {
         self.iter_node_indices()
-            .filter_map(move |idx| self.get_node(idx).map(|n| (idx, n)))
+            .filter_map(move |idx| self.get_node(&idx).map(|n| (idx, n)))
+    }
+
+    fn iter_node_indices<'a, 'b>(
+        &'a self,
+    ) -> impl Iterator<Item = Self::NIndex> + DoubleEndedIterator + 'b;
+}
+
+impl<Type: TransitionSystemType<Self::NIndex>, A: Automaton<Type>> AutomatonIterators<Type> for A
+where
+    Self::NIndex: CompactGIndex,
+{
+    fn iter_node_indices<'a, 'b>(
+        &'a self,
+    ) -> impl Iterator<Item = Self::NIndex> + DoubleEndedIterator + 'b {
+        (0..self.node_count()).map(|i| Self::NIndex::new(i))
     }
 }
 
@@ -304,12 +317,18 @@ impl<NIndex: GIndex> TransitionSystemType<NIndex> for NonDeterministic {
 // MARK: Transition System
 
 pub trait TransitionSystem<Type: TransitionSystemType<Self::NIndex>>: Automaton<Type> {
-    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Type::SuccessorType;
+    fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Type::SuccessorType;
 
-    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
-    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
+    fn successors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
+    fn predecessors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
 
-    fn undirected_neighbors(&self, node: Self::NIndex) -> Vec<Self::NIndex> {
+    fn undirected_neighbors<'a>(&'a self, node: &'a Self::NIndex) -> Vec<Self::NIndex> {
         let mut neighbors = self
             .successors(node)
             .chain(self.predecessors(node))
@@ -321,46 +340,58 @@ pub trait TransitionSystem<Type: TransitionSystemType<Self::NIndex>>: Automaton<
 }
 
 impl<T: ExplicitEdgeAutomaton<Deterministic>> TransitionSystem<Deterministic> for T {
-    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
+    fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
         self.outgoing_edge_indices(node)
-            .find(|e| self.get_edge_unchecked(*e).matches(letter))
-            .map(|e| self.edge_target_unchecked(e))
+            .find(|e| self.get_edge_unchecked(&e).matches(letter))
+            .map(|e| self.edge_target_unchecked(&e))
     }
 
-    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn successors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
         Box::new(
             self.outgoing_edge_indices(node)
-                .map(|e| self.edge_target_unchecked(e)),
+                .map(|e| self.edge_target_unchecked(&e)),
         )
     }
 
-    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn predecessors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
         Box::new(
             self.incoming_edge_indices(node)
-                .map(|e| self.edge_source_unchecked(e)),
+                .map(|e| self.edge_source_unchecked(&e)),
         )
     }
 }
 
 impl<T: ExplicitEdgeAutomaton<NonDeterministic>> TransitionSystem<NonDeterministic> for T {
-    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Vec<Self::NIndex> {
+    fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Vec<Self::NIndex> {
         self.outgoing_edge_indices(node)
-            .filter(|e| self.get_edge_unchecked(*e).matches(letter))
-            .map(|e| self.edge_target_unchecked(e))
+            .filter(|e| self.get_edge_unchecked(&e).matches(letter))
+            .map(|e| self.edge_target_unchecked(&e))
             .collect()
     }
 
-    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn successors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
         Box::new(
             self.outgoing_edge_indices(node)
-                .map(|e| self.edge_target_unchecked(e)),
+                .map(|e| self.edge_target_unchecked(&e)),
         )
     }
 
-    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn predecessors<'a>(
+        &'a self,
+        node: &'a Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
         Box::new(
             self.incoming_edge_indices(node)
-                .map(|e| self.edge_source_unchecked(e)),
+                .map(|e| self.edge_source_unchecked(&e)),
         )
     }
 }
@@ -375,7 +406,7 @@ pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
     Automaton<Type, Letter = <<Self as ExplicitEdgeAutomaton<Type>>::E as AutomatonEdge>::Letter>
 {
     /// The index type used to identify edges.
-    type EIndex: GIndex;
+    type EIndex: CompactGIndex;
     /// The data type associated with edges.
     type E: AutomatonEdge;
 
@@ -385,38 +416,38 @@ pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
 
     /// Returns the edge corresponding to the given index, or None if the index
     /// is invalid.
-    fn get_edge(&self, index: Self::EIndex) -> Option<&Self::E>;
+    fn get_edge(&self, index: &Self::EIndex) -> Option<&Self::E>;
 
     /// Returns the edge corresponding to the given index, panicking if the
     /// index is invalid.
-    fn get_edge_unchecked(&self, index: Self::EIndex) -> &Self::E;
+    fn get_edge_unchecked(&self, index: &Self::EIndex) -> &Self::E;
 
     /// Returns the source and target nodes of the given edge, or None if the
     /// edge index is invalid.
-    fn edge_endpoints(&self, edge: Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)>;
+    fn edge_endpoints(&self, edge: &Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)>;
     /// Returns the source and target nodes of the given edge, panicking if the
     /// edge index is invalid.
-    fn edge_endpoints_unchecked(&self, edge: Self::EIndex) -> (Self::NIndex, Self::NIndex);
+    fn edge_endpoints_unchecked(&self, edge: &Self::EIndex) -> (Self::NIndex, Self::NIndex);
 
     /// Returns the source node of the given edge, or None if the edge index is
     /// invalid.
-    fn edge_source(&self, edge: Self::EIndex) -> Option<Self::NIndex> {
+    fn edge_source(&self, edge: &Self::EIndex) -> Option<Self::NIndex> {
         self.edge_endpoints(edge).map(|(src, _)| src)
     }
     /// Returns the target node of the given edge, or None if the edge index is
     /// invalid.
-    fn edge_target(&self, edge: Self::EIndex) -> Option<Self::NIndex> {
+    fn edge_target(&self, edge: &Self::EIndex) -> Option<Self::NIndex> {
         self.edge_endpoints(edge).map(|(_, tgt)| tgt)
     }
 
     /// Returns the source node of the given edge, panicking if the edge index
     /// is invalid.
-    fn edge_source_unchecked(&self, edge: Self::EIndex) -> Self::NIndex {
+    fn edge_source_unchecked(&self, edge: &Self::EIndex) -> Self::NIndex {
         self.edge_endpoints_unchecked(edge).0
     }
     /// Returns the target node of the given edge, panicking if the edge index
     /// is invalid.
-    fn edge_target_unchecked(&self, edge: Self::EIndex) -> Self::NIndex {
+    fn edge_target_unchecked(&self, edge: &Self::EIndex) -> Self::NIndex {
         self.edge_endpoints_unchecked(edge).1
     }
 
@@ -432,15 +463,15 @@ pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
         Self::E: 'a,
     {
         self.iter_edge_indices()
-            .filter_map(move |idx| self.get_edge(idx).map(|e| (idx, e)))
+            .filter_map(move |idx| self.get_edge(&idx).map(|e| (idx, e)))
     }
 
     /// Returns an iterator over the outgoing edge indices of the given node.
-    fn outgoing_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex>;
+    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex>;
     /// Returns an iterator over the incoming edge indices of the given node.
-    fn incoming_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex>;
+    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex>;
     /// Returns an iterator over the undirected edge indices of the given node.
-    fn undirected_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn undirected_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.outgoing_edge_indices(node)
             .chain(self.incoming_edge_indices(node))
     }
@@ -449,8 +480,8 @@ pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
     /// from and to nodes.
     fn connecting_edge_indices(
         &self,
-        from: Self::NIndex,
-        to: Self::NIndex,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
     ) -> impl Iterator<Item = Self::EIndex>;
 }
 
@@ -464,14 +495,19 @@ pub trait ModifiableAutomaton<Type: TransitionSystemType<Self::NIndex>>:
     fn add_node(&mut self, data: Self::N) -> Self::NIndex;
     /// Adds a new edge from the given from node to the given to node with the
     /// given label. Returns the index of the newly added edge.
-    fn add_edge(&mut self, from: Self::NIndex, to: Self::NIndex, label: Self::E) -> Self::EIndex;
+    fn add_edge<'a>(
+        &'a mut self,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
+        label: Self::E,
+    ) -> Self::EIndex;
 
     /// Removes the given node from the automaton.
     /// Also removes all edges connected to the node.
     /// For removing multiple nodes, consider using `retain_nodes` instead.
-    fn remove_node(&mut self, node: Self::NIndex);
+    fn remove_node<'a>(&'a mut self, node: &Self::NIndex);
     /// Removes the given edge from the automaton.
-    fn remove_edge(&mut self, edge: Self::EIndex);
+    fn remove_edge<'a>(&'a mut self, edge: &Self::EIndex);
 
     /// Retains only the nodes for which the given predicate returns true.
     fn retain_nodes<F>(&mut self, f: F)
@@ -488,7 +524,7 @@ pub trait InitializedAutomaton<Type: TransitionSystemType<Self::NIndex>>:
 
     /// Returns true if the passed in node is accepting / a final node. Returns
     /// false otherwise.
-    fn is_accepting(&self, node: Self::NIndex) -> bool;
+    fn is_accepting(&self, node: &Self::NIndex) -> bool;
 }
 
 pub trait SingleFinalStateAutomaton<Type: TransitionSystemType<Self::NIndex>>:

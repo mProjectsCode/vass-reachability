@@ -10,8 +10,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonEdge, AutomatonNode, Deterministic, ExplicitEdgeAutomaton,
-    FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton,
+    Alphabet, Automaton, AutomatonEdge, AutomatonIterators, AutomatonNode, Deterministic,
+    ExplicitEdgeAutomaton, FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton,
     index_map::IndexMap,
     nfa::{NFA, NFAEdge},
     path::Path,
@@ -136,11 +136,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
             let failure_state = self.add_node(DfaNode::new(false, true, data));
 
             for (state, letter) in failure_transitions {
-                self.add_edge(state, failure_state, E::from_letter(&letter));
+                self.add_edge(&state, &failure_state, E::from_letter(&letter));
             }
 
             for letter in self.alphabet.clone().iter() {
-                self.add_edge(failure_state, failure_state, E::from_letter(letter));
+                self.add_edge(&failure_state, &failure_state, E::from_letter(letter));
             }
 
             self.complete = true;
@@ -165,7 +165,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
             }
 
             let paths = self.bfs(Some(node), |index, data| {
-                data.accepting || non_trapping.contains(&index)
+                data.accepting || non_trapping.contains(index)
             });
 
             if paths.is_empty() {
@@ -200,7 +200,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         }
 
         for edge in self.graph.edge_references() {
-            inverted.add_edge(edge.source(), edge.target(), edge.weight().clone());
+            inverted.add_edge(&edge.source(), &edge.target(), edge.weight().clone());
         }
 
         inverted.set_complete_unchecked();
@@ -238,7 +238,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
             }
 
             if self.graph[node].accepting {
-                reversed.add_edge(start, new_node, NFAEdge::Epsilon);
+                reversed.add_edge(&start, &new_node, NFAEdge::Epsilon);
             }
         }
 
@@ -246,7 +246,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
             let source = node_hash.get(edge.target());
             let target = node_hash.get(edge.source());
 
-            reversed.add_edge(*source, *target, NFAEdge::Symbol(edge.weight().clone()));
+            reversed.add_edge(source, target, NFAEdge::Symbol(edge.weight().clone()));
         }
 
         reversed
@@ -316,7 +316,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
                                 new_state
                             });
 
-                        intersected.add_edge(new_state, *next_state, edge1.weight().clone());
+                        intersected.add_edge(&new_state, next_state, edge1.weight().clone());
                     }
                 }
             }
@@ -330,7 +330,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
     pub fn bfs(
         &self,
         start: Option<NodeIndex>,
-        is_target: impl Fn(NodeIndex, &DfaNode<N>) -> bool,
+        is_target: impl Fn(&NodeIndex, &DfaNode<N>) -> bool,
     ) -> Vec<Path<NodeIndex, EdgeIndex>> {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
@@ -340,9 +340,9 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         queue.push_back(Path::new(start));
 
         while let Some(path) = queue.pop_front() {
-            let last = path.end();
+            let last = path.end().clone();
 
-            if is_target(last, &self.graph[last]) {
+            if is_target(&last, &self.graph[last]) {
                 paths.push(path.clone());
             }
 
@@ -437,10 +437,10 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         while let Some(mut path) = stack.pop_front() {
             let last = path.end();
 
-            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+            for edge in self.graph.edges_directed(*last, Direction::Outgoing) {
                 let target = edge.target();
 
-                if path.start() == target {
+                if path.start() == &target {
                     path.add(edge.id(), target);
                     return Some(path);
                 }
@@ -472,16 +472,16 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         while let Some(mut path) = stack.pop_front() {
             let last = path.end();
 
-            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+            for edge in self.graph.edges_directed(*last, Direction::Outgoing) {
                 let target = edge.target();
 
-                if path.start() == target {
+                if path.start() == &target {
                     path.add(edge.id(), target);
                     loops.push(path.clone());
                     continue;
                 }
 
-                if !path.transitions_contain_node(target)
+                if !path.transitions_contain_node(&target)
                     && path.len() < length_limit.unwrap_or(usize::MAX)
                 {
                     let mut new_path = path.clone();
@@ -494,6 +494,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         loops
     }
 
+    /// Builds the subgraph induced by the given nodes.
+    /// The returned DFA contains only the given nodes and the edges between
+    /// them.
+    ///
+    /// The start state is set if it is in the given nodes.
     pub fn subgraph(&self, nodes: &[NodeIndex]) -> DFA<N, E>
     where
         N: Clone,
@@ -514,7 +519,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
                 if nodes.contains(&edge.target()) {
                     let from = node_map[&node];
                     let to = node_map[&edge.target()];
-                    sub_dfa.add_edge(from, to, edge.weight().clone());
+                    sub_dfa.add_edge(&from, &to, edge.weight().clone());
                 }
             }
         }
@@ -545,12 +550,12 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<Deterministic> f
         self.graph.node_count()
     }
 
-    fn get_node(&self, index: Self::NIndex) -> Option<&DfaNode<N>> {
-        self.graph.node_weight(index)
+    fn get_node(&self, index: &Self::NIndex) -> Option<&DfaNode<N>> {
+        self.graph.node_weight(*index)
     }
 
-    fn get_node_unchecked(&self, index: Self::NIndex) -> &DfaNode<N> {
-        &self.graph[index]
+    fn get_node_unchecked(&self, index: &Self::NIndex) -> &DfaNode<N> {
+        &self.graph[*index]
     }
 }
 
@@ -564,40 +569,42 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<Dete
         self.graph.edge_count()
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&E> {
-        self.graph.edge_weight(index)
+    fn get_edge(&self, index: &Self::EIndex) -> Option<&E> {
+        self.graph.edge_weight(*index)
     }
 
-    fn get_edge_unchecked(&self, index: Self::EIndex) -> &E {
-        self.graph.edge_weight(index).unwrap()
+    fn get_edge_unchecked(&self, index: &Self::EIndex) -> &E {
+        self.graph.edge_weight(*index).unwrap()
     }
 
-    fn edge_endpoints(&self, edge: Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
-        self.graph.edge_endpoints(edge)
+    fn edge_endpoints(&self, edge: &Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
+        self.graph.edge_endpoints(*edge)
     }
 
-    fn edge_endpoints_unchecked(&self, edge: Self::EIndex) -> (Self::NIndex, Self::NIndex) {
-        self.graph.edge_endpoints(edge).unwrap()
+    fn edge_endpoints_unchecked(&self, edge: &Self::EIndex) -> (Self::NIndex, Self::NIndex) {
+        self.graph.edge_endpoints(*edge).unwrap()
     }
 
-    fn outgoing_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.graph
-            .edges_directed(node, Direction::Outgoing)
+            .edges_directed(*node, Direction::Outgoing)
             .map(|edge| edge.id())
     }
 
-    fn incoming_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.graph
-            .edges_directed(node, Direction::Incoming)
+            .edges_directed(*node, Direction::Incoming)
             .map(|edge| edge.id())
     }
 
     fn connecting_edge_indices(
         &self,
-        from: Self::NIndex,
-        to: Self::NIndex,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
     ) -> impl Iterator<Item = Self::EIndex> {
-        self.graph.edges_connecting(from, to).map(|edge| edge.id())
+        self.graph
+            .edges_connecting(*from, *to)
+            .map(|edge| edge.id())
     }
 }
 
@@ -608,14 +615,21 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Determ
         self.graph.add_node(data)
     }
 
-    fn add_edge(&mut self, from: Self::NIndex, to: Self::NIndex, label: E) -> Self::EIndex {
+    fn add_edge(&mut self, from: &Self::NIndex, to: &Self::NIndex, label: E) -> Self::EIndex {
+        debug_assert!(
+            self.alphabet.iter().any(|l| label.matches(l)),
+            "Label {:?} not in alphabet {:?}",
+            label,
+            self.alphabet
+        );
+
         let existing_edge = self
             .graph
-            .edges_directed(from, Direction::Outgoing)
+            .edges_directed(*from, Direction::Outgoing)
             .find(|edge| *edge.weight() == label);
         if let Some(edge) = existing_edge {
             let target = edge.target();
-            if target != to {
+            if target != *to {
                 panic!(
                     "Transition conflict, adding the new transition causes this automaton to no longer be a DFA. Existing: {:?} -{:?}-> {:?}. New: {:?} -{:?}-> {:?}",
                     from, label, target, from, label, to
@@ -623,15 +637,15 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Determ
             }
         }
 
-        self.graph.add_edge(from, to, label)
+        self.graph.add_edge(*from, *to, label)
     }
 
-    fn remove_node(&mut self, node: Self::NIndex) {
-        self.graph.remove_node(node);
+    fn remove_node(&mut self, node: &Self::NIndex) {
+        self.graph.remove_node(*node);
     }
 
-    fn remove_edge(&mut self, edge: Self::EIndex) {
-        self.graph.remove_edge(edge);
+    fn remove_edge(&mut self, edge: &Self::EIndex) {
+        self.graph.remove_edge(*edge);
     }
 
     fn retain_nodes<F>(&mut self, f: F)
@@ -640,7 +654,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<Determ
     {
         for index in self.iter_node_indices().rev() {
             if !f(Frozen::from(&mut *self), index) {
-                self.remove_node(index);
+                self.remove_node(&index);
             }
         }
     }
@@ -653,7 +667,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton<Deter
         self.start.expect("Self must have a start state")
     }
 
-    fn is_accepting(&self, node: Self::NIndex) -> bool {
+    fn is_accepting(&self, node: &Self::NIndex) -> bool {
         self.get_node_unchecked(node).accepting
     }
 }

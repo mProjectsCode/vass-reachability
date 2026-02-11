@@ -3,7 +3,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::{
     automaton::{
-        GIndex,
+        AutomatonIterators, CompactGIndex, GIndex,
         cfg::{
             ExplicitEdgeCFG,
             update::{CFGCounterUpdatable, CFGCounterUpdate},
@@ -16,11 +16,11 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct ParikhImage<EIndex: GIndex> {
+pub struct ParikhImage<EIndex: CompactGIndex> {
     pub image: IndexMap<EIndex, u32>,
 }
 
-impl<EIndex: GIndex> ParikhImage<EIndex> {
+impl<EIndex: CompactGIndex> ParikhImage<EIndex> {
     pub fn new(image: IndexMap<EIndex, u32>) -> Self {
         ParikhImage { image }
     }
@@ -33,7 +33,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
 
     pub fn print(&self, logger: &Logger, level: LogLevel) {
         for (edge, count) in self.image.iter() {
-            logger.log(level.clone(), &format!("Edge: {}: {}", edge.index(), count));
+            logger.log(level.clone(), &format!("Edge: {:?}: {}", edge, count));
         }
     }
 
@@ -87,7 +87,7 @@ impl<EIndex: GIndex> ParikhImage<EIndex> {
         let mut map = IndexMap::new(edge_count);
 
         for (edge, _) in &path.transitions {
-            let entry = map.get_mut(*edge);
+            let entry = map.get_mut(edge.clone());
             *entry += 1;
         }
 
@@ -144,7 +144,7 @@ impl ParikhImage<EdgeIndex> {
 
             visited[node] = true;
 
-            for edge in cfg.outgoing_edge_indices(node) {
+            for edge in cfg.outgoing_edge_indices(&node) {
                 if self.get(edge) == 0 {
                     continue;
                 }
@@ -153,7 +153,7 @@ impl ParikhImage<EdgeIndex> {
                 self.set(edge, 0);
                 component.set_max(edge, count);
 
-                let target = cfg.edge_target_unchecked(edge);
+                let target = cfg.edge_target_unchecked(&edge);
                 if !visited[target] {
                     stack.push(target);
                 }
@@ -174,8 +174,8 @@ impl ParikhImage<EdgeIndex> {
         // next we get all edges that go from a connected node to a node outside the
         // connected component
         for node in &connected_nodes {
-            for edge in cfg.outgoing_edge_indices(*node) {
-                if !connected_nodes.contains(&cfg.edge_target_unchecked(edge)) {
+            for edge in cfg.outgoing_edge_indices(node) {
+                if !connected_nodes.contains(&cfg.edge_target_unchecked(&edge)) {
                     edges.insert(edge);
                 }
             }
@@ -192,8 +192,8 @@ impl ParikhImage<EdgeIndex> {
         // next we get all edges that go from a node outside the connected component
         // to a connected node
         for node in &connected_nodes {
-            for edge in cfg.incoming_edge_indices(*node) {
-                if !connected_nodes.contains(&cfg.edge_source_unchecked(edge)) {
+            for edge in cfg.incoming_edge_indices(node) {
+                if !connected_nodes.contains(&cfg.edge_source_unchecked(&edge)) {
                     edges.insert(edge);
                 }
             }
@@ -210,7 +210,7 @@ impl ParikhImage<EdgeIndex> {
                 continue;
             }
 
-            let (source, target) = cfg.edge_endpoints_unchecked(edge);
+            let (source, target) = cfg.edge_endpoints_unchecked(&edge);
 
             connected_nodes.insert(source);
             connected_nodes.insert(target);
@@ -256,7 +256,7 @@ impl ParikhImage<EdgeIndex> {
         let mut total_effect = VASSCounterUpdate::zero(dimension);
 
         for (edge_index, count) in self.image.iter() {
-            let edge = cfg.get_edge_unchecked(edge_index);
+            let edge = cfg.get_edge_unchecked(&edge_index);
 
             total_effect[edge.counter()] += edge.op() * (*count as i32);
         }
@@ -277,14 +277,14 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {
         assert_eq!(&valuation, final_valuation);
-        return if cfg.is_accepting(node_index) {
+        return if cfg.is_accepting(&node_index) {
             Some(TransitionSequence::new())
         } else {
             None
         };
     }
 
-    for edge in cfg.outgoing_edge_indices(node_index) {
+    for edge in cfg.outgoing_edge_indices(&node_index) {
         // first we check that the edge can still be taken
         let edge_count = parikh_image.image.get(edge);
         if *edge_count == 0 {
@@ -293,7 +293,7 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
 
         // next we check that taking the edge does not make a counter in the valuation
         // negative
-        let update = cfg.get_edge_unchecked(edge);
+        let update = cfg.get_edge_unchecked(&edge);
         if n_run && !valuation.can_apply_cfg_update(update) {
             continue;
         }
@@ -305,7 +305,7 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
         let mut parikh = parikh_image.clone();
         parikh.image.insert(edge, edge_count - 1);
 
-        let target = cfg.edge_target_unchecked(edge);
+        let target = cfg.edge_target_unchecked(&edge);
 
         let res = rec_build_run(parikh, cfg, target, valuation, final_valuation, n_run);
 

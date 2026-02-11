@@ -57,7 +57,7 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         letter: L,
         graph: &impl TransitionSystem<Deterministic, NIndex = NIndex, Letter = L>,
     ) -> anyhow::Result<()> {
-        let successor = graph.successor(self.end(), &letter).ok_or_else(|| {
+        let successor = graph.successor(&self.end(), &letter).ok_or_else(|| {
             anyhow::anyhow!(format!(
                 "path failed to take letter {:?}, no suitable successor found for end node {:?}",
                 letter,
@@ -73,21 +73,21 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         self.transitions.has_loop()
     }
 
-    pub fn start(&self) -> NIndex {
-        self.start
+    pub fn start(&self) -> &NIndex {
+        &self.start
     }
 
-    pub fn end(&self) -> NIndex {
-        self.transitions.end().unwrap_or(self.start)
+    pub fn end(&self) -> &NIndex {
+        self.transitions.end().unwrap_or(&self.start)
     }
 
     /// Whether the path contains a specific node.
     /// This does **not** check the start node.
-    pub fn transitions_contain_node(&self, node: NIndex) -> bool {
+    pub fn transitions_contain_node(&self, node: &NIndex) -> bool {
         self.transitions.contains_node(node)
     }
 
-    pub fn split_at_node(self, node: NIndex) -> Vec<Self> {
+    pub fn split_at_node(self, node: &NIndex) -> Vec<Self> {
         if self.transitions.is_empty() || !self.contains_node(node) {
             return vec![self];
         }
@@ -96,11 +96,11 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         let mut current_part = Path::new(self.start);
 
         for (letter, target) in self.transitions.iter() {
-            current_part.add(letter.clone(), *target);
+            current_part.add(letter.clone(), target.clone());
 
-            if *target == node {
+            if target == node {
                 parts.push(current_part);
-                current_part = Path::new(node);
+                current_part = Path::new(node.clone());
             }
         }
 
@@ -114,7 +114,7 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
     pub fn split_at_nodes(self, nodes: &[NIndex]) -> Vec<Self> {
         // for splitting to have an effect, the path needs to be non-empty and contain
         // at least one of the nodes
-        if self.transitions.is_empty() || nodes.iter().all(|n| !self.contains_node(*n)) {
+        if self.transitions.is_empty() || nodes.iter().all(|n| !self.contains_node(n)) {
             return vec![self];
         }
 
@@ -122,12 +122,12 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         let mut current_part = Path::new(self.start);
 
         for (letter, target) in self.transitions.iter() {
-            current_part.add(letter.clone(), *target);
+            current_part.add(letter.clone(), target.clone());
 
             for node in nodes {
                 if *node == *target {
                     parts.push(current_part);
-                    current_part = Path::new(*node);
+                    current_part = Path::new(node.clone());
                     break;
                 }
             }
@@ -141,17 +141,13 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
     }
 
     pub fn to_fancy_string(&self) -> String {
-        format!(
-            "{:?} {}",
-            self.start.index(),
-            self.transitions.to_fancy_string()
-        )
+        format!("{:?} {}", self.start, self.transitions.to_fancy_string())
     }
 
-    pub fn concatenate(&mut self, other: Self) {
+    pub fn concat(&mut self, other: Self) {
         assert_eq!(
             self.end(),
-            other.start,
+            &other.start,
             "Paths can only be concatenated if the end of the first matches the start of the second"
         );
         self.transitions.append(other.transitions);
@@ -161,14 +157,14 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         self.transitions.iter_letters()
     }
 
-    pub fn iter_nodes(&self) -> impl Iterator<Item = NIndex> {
-        vec![self.start]
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &NIndex> {
+        vec![&self.start]
             .into_iter()
             .chain(self.transitions.iter_nodes())
     }
 
-    pub fn has_node(&self, node: NIndex) -> bool {
-        self.start == node || self.transitions.contains_node(node)
+    pub fn has_node(&self, node: &NIndex) -> bool {
+        &self.start == node || self.transitions.contains_node(node)
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (L, NIndex)>
@@ -198,21 +194,21 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
     pub fn split_off(&mut self, index: usize) -> Self {
         Path {
             transitions: self.transitions.split_off(index),
-            start: self.start,
+            start: self.start.clone(),
         }
     }
 
     pub fn slice(&self, index: usize) -> Self {
         Path {
             transitions: self.transitions.slice(index),
-            start: self.start,
+            start: self.start.clone(),
         }
     }
 
     pub fn slice_end(&self, index: usize) -> Self {
         Path {
             transitions: self.transitions.slice_end(index),
-            start: self.start,
+            start: self.start.clone(),
         }
     }
 
@@ -224,15 +220,15 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         self.transitions.is_empty()
     }
 
-    pub fn contains_node(&self, node: NIndex) -> bool {
-        self.start == node || self.transitions.contains_node(node)
+    pub fn contains_node(&self, node: &NIndex) -> bool {
+        self.start == *node || self.transitions.contains_node(node)
     }
 
     pub fn get(&self, index: usize) -> &(L, NIndex) {
         self.transitions.get(index)
     }
 
-    pub fn get_node(&self, index: usize) -> NIndex {
+    pub fn get_node(&self, index: usize) -> &NIndex {
         self.transitions.get_node(index)
     }
 
@@ -243,7 +239,7 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
 
 impl<NIndex: GIndex, L: Letter> Display for Path<NIndex, L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {}", self.start.index(), self.transitions)
+        write!(f, "{:?} {}", self.start, self.transitions)
     }
 }
 

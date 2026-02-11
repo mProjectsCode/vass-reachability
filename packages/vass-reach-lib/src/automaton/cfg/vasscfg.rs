@@ -48,7 +48,7 @@ impl<N: AutomatonNode> VASSCFG<N> {
         while let Some((path, valuation)) = queue.pop_front() {
             let last = path.end();
 
-            for edge in self.graph.edges_directed(last, Direction::Outgoing) {
+            for edge in self.graph.edges_directed(*last, Direction::Outgoing) {
                 let mut new_valuation = valuation.clone();
 
                 let update = edge.weight();
@@ -103,8 +103,8 @@ pub fn build_bounded_counting_cfg(
 
     // once negative always stays negative
     for c in CFGCounterUpdate::alphabet(dimension) {
-        cfg.add_edge(negative, negative, c);
-        cfg.add_edge(overflow, overflow, c);
+        cfg.add_edge(&negative, &negative, c);
+        cfg.add_edge(&overflow, &overflow, c);
     }
 
     let mut states = vec![negative];
@@ -115,14 +115,14 @@ pub fn build_bounded_counting_cfg(
         let prev = states[i - 1];
         let current = states[i];
         let next = states[i + 1];
-        cfg.add_edge(current, prev, counter_down);
-        cfg.add_edge(current, next, counter_up);
+        cfg.add_edge(&current, &prev, counter_down);
+        cfg.add_edge(&current, &next, counter_up);
 
         // if we see some symbol that is not our counter updates, we stay in the same
         // state
         for c in CFGCounterUpdate::alphabet(dimension) {
             if c != counter_up && c != counter_down {
-                cfg.add_edge(current, current, c);
+                cfg.add_edge(&current, &current, c);
             }
         }
 
@@ -180,14 +180,14 @@ pub fn build_modulo_counting_cfg(
         let up = states[up_index as usize];
         let down = states[down_index as usize];
 
-        cfg.add_edge(current, up, counter_up);
-        cfg.add_edge(current, down, counter_down);
+        cfg.add_edge(&current, &up, counter_up);
+        cfg.add_edge(&current, &down, counter_down);
 
         // if we see some symbol that is not our counter updates, we stay in the same
         // state
         for c in CFGCounterUpdate::alphabet(dimension) {
             if c != counter_up && c != counter_down {
-                cfg.add_edge(current, current, c);
+                cfg.add_edge(&current, &current, c);
             }
         }
     }

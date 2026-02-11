@@ -7,6 +7,7 @@ use z3::{
 
 use crate::{
     automaton::{
+        AutomatonIterators,
         cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate},
         index_map::OptionIndexMap,
         path::{Path, parikh_image::ParikhImage},
@@ -160,8 +161,8 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
         let mut final_var_sum = Int::from_i64(ctx, 0);
 
         for node in self.cfg.iter_node_indices() {
-            let outgoing = self.cfg.outgoing_edge_indices(node);
-            let incoming = self.cfg.incoming_edge_indices(node);
+            let outgoing = self.cfg.outgoing_edge_indices(&node);
+            let incoming = self.cfg.incoming_edge_indices(&node);
 
             let mut outgoing_sum = Int::from_i64(ctx, 0);
             // the start node has one additional incoming connection
@@ -171,7 +172,7 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
                 Int::from_i64(ctx, 0)
             };
 
-            if self.cfg.is_accepting(node) {
+            if self.cfg.is_accepting(&node) {
                 // for each accepting node, we need some additional variable that denotes
                 // whether the node is used as the final node
                 let final_var = Int::new_const(ctx, format!("node_{}_final", node.index()));

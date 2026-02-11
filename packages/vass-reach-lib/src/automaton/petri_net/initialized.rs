@@ -41,8 +41,8 @@ impl InitializedPetriNet {
             let input_vec = transition.input_to_vass_update(self.net.place_count);
             let output_vec = transition.output_to_vass_update(self.net.place_count);
 
-            vass.add_edge(center_state, state, VASSEdge::new(i, input_vec));
-            vass.add_edge(state, center_state, VASSEdge::new(i, output_vec));
+            vass.add_edge(&center_state, &state, VASSEdge::new(i, input_vec));
+            vass.add_edge(&state, &center_state, VASSEdge::new(i, output_vec));
         }
 
         vass.init(

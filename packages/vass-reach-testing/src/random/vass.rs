@@ -36,7 +36,7 @@ pub fn generate_radom_vass(
                     input.push(r.gen_range(-max_tokens_per_transition..=max_tokens_per_transition));
                 }
 
-                vass.add_edge(states[from], states[to], VASSEdge::new(i, input.into()));
+                vass.add_edge(&states[from], &states[to], VASSEdge::new(i, input.into()));
             }
 
             let initial_m: VASSCounterValuation = (0..dimension)

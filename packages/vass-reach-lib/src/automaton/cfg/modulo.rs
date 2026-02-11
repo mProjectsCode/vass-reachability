@@ -134,24 +134,24 @@ impl Automaton<Deterministic> for ModuloCFG {
         self.mu.iter().map(|&m| m as usize).product()
     }
 
-    fn get_node(&self, _index: Self::NIndex) -> Option<&Self::N> {
+    fn get_node(&self, _index: &Self::NIndex) -> Option<&Self::N> {
         Some(&())
     }
 
-    fn get_node_unchecked(&self, _index: Self::NIndex) -> &Self::N {
+    fn get_node_unchecked(&self, _index: &Self::NIndex) -> &Self::N {
         &()
     }
 }
 
 impl TransitionSystem<Deterministic> for ModuloCFG {
-    fn successor(&self, node: Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
-        let mut valuation = self.index_to_counter(node);
+    fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
+        let mut valuation = self.index_to_counter(*node);
         valuation.apply_cfg_update_mod_slice(*letter, &self.mu);
         Some(self.counter_to_index(&valuation))
     }
 
-    fn successors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
-        let valuation = self.index_to_counter(node);
+    fn successors(&self, node: &Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        let valuation = self.index_to_counter(*node);
 
         Box::new(self.alphabet.iter().map(move |letter| {
             let mut new_valuation = valuation.clone();
@@ -160,8 +160,8 @@ impl TransitionSystem<Deterministic> for ModuloCFG {
         }))
     }
 
-    fn predecessors(&self, node: Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
-        let valuation = self.index_to_counter(node);
+    fn predecessors(&self, node: &Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        let valuation = self.index_to_counter(*node);
 
         Box::new(self.alphabet.iter().map(move |letter| {
             let mut new_valuation: VASSCounterValuation = valuation.clone();
@@ -176,8 +176,8 @@ impl InitializedAutomaton<Deterministic> for ModuloCFG {
         self.initial_index
     }
 
-    fn is_accepting(&self, node: Self::NIndex) -> bool {
-        self.final_index == node
+    fn is_accepting(&self, node: &Self::NIndex) -> bool {
+        self.final_index == *node
     }
 }
 
@@ -200,12 +200,12 @@ impl Language for ModuloCFG {
     {
         let mut current_index = self.get_initial();
         for letter in input {
-            current_index = match self.successor(current_index, letter) {
+            current_index = match self.successor(&current_index, letter) {
                 Some(succ) => succ,
                 None => return false,
             };
         }
-        self.is_accepting(current_index)
+        self.is_accepting(&current_index)
     }
 }
 
@@ -239,7 +239,7 @@ mod tests {
         let cfg = ModuloCFG::new(vec![4, 4], vec![0; 2].into(), vec![0; 2].into());
         let node_index = cfg.counter_to_index(&VASSCounterValuation::from(vec![1, 3]));
         let update = cfg_inc!(1);
-        let successor_index = cfg.successor(node_index, &update).unwrap();
+        let successor_index = cfg.successor(&node_index, &update).unwrap();
         let successor_counter = cfg.index_to_counter(successor_index);
         assert_eq!(successor_counter, VASSCounterValuation::from(vec![1, 0]));
     }

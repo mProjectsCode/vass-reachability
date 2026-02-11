@@ -134,7 +134,7 @@ impl<NIndex: GIndex> LTCTranslation<NIndex> {
                 LTCTranslationElement::Path(elements) => {
                     for (update, _) in elements {
                         let new = nfa.add_node(DfaNode::default());
-                        nfa.add_edge(current_end, new, NFAEdge::Symbol(*update));
+                        nfa.add_edge(&current_end, &new, NFAEdge::Symbol(*update));
                         current_end = new;
                     }
                 }
@@ -149,19 +149,19 @@ impl<NIndex: GIndex> LTCTranslation<NIndex> {
                             // be taken in the order that they are in
                             // the LTC
                             let loop_start = nfa.add_node(DfaNode::default());
-                            nfa.add_edge(current_end, loop_start, NFAEdge::Epsilon);
+                            nfa.add_edge(&current_end, &loop_start, NFAEdge::Epsilon);
                             current_end = loop_start;
                             loop_start
                         };
 
                         for letter in ts.iter_letters().take(ts.len() - 1) {
                             let new = nfa.add_node(DfaNode::default());
-                            nfa.add_edge(current_end, new, NFAEdge::Symbol(*letter));
+                            nfa.add_edge(&current_end, &new, NFAEdge::Symbol(*letter));
                             current_end = new;
                         }
 
                         let last_ts_entry = ts.last().unwrap();
-                        nfa.add_edge(current_end, loop_start, NFAEdge::Symbol(last_ts_entry.0));
+                        nfa.add_edge(&current_end, &loop_start, NFAEdge::Symbol(last_ts_entry.0));
 
                         current_end = loop_start;
                     }
@@ -201,17 +201,17 @@ impl<NIndex: GIndex> LTCTranslation<NIndex> {
 
 impl<NIndex: GIndex> From<&Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NIndex> {
     fn from(path: &Path<NIndex, CFGCounterUpdate>) -> Self {
-        let mut stack = TransitionSequence::new();
+        let mut stack: TransitionSequence<NIndex, CFGCounterUpdate> = TransitionSequence::new();
         // This is used to track the node where the transition sequence in the `stack`
         // started
-        let mut stack_start_node: Option<NIndex> = Some(path.start());
+        let mut stack_start_node: Option<NIndex> = Some(path.start().clone());
         let mut ltc_translation = vec![];
 
         for (update, node_index) in path.iter() {
-            if let Some(last_node) = stack_start_node
+            if let Some(last_node) = stack_start_node.take()
                 && *node_index == last_node
             {
-                stack.add(*update, *node_index);
+                stack.add(*update, node_index.clone());
 
                 // We don't need to update the `stack_start_node` here, because we just did
                 // a full loop
@@ -232,13 +232,13 @@ impl<NIndex: GIndex> From<&Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NI
 
             let existing_pos = stack.iter().position(|x| x.1 == *node_index);
 
-            stack.add(*update, *node_index);
+            stack.add(*update, node_index.clone());
 
             if let Some(pos) = existing_pos {
                 let transition_loop = stack.split_off(pos + 1);
                 // push the remaining transitions before the loop
                 if !stack.is_empty() {
-                    stack_start_node = Some(stack.last().unwrap().1);
+                    stack_start_node = Some(stack.last().unwrap().1.clone());
                     ltc_translation.push(LTCTranslationElement::Path(stack));
                 }
                 if !transition_loop.is_empty() {
@@ -248,14 +248,14 @@ impl<NIndex: GIndex> From<&Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NI
                     match ltc_translation.last_mut() {
                         Some(&mut LTCTranslationElement::Loops(ref mut l)) => {
                             if l.last() != Some(&transition_loop) {
+                                stack_start_node = Some(tl_last.clone());
                                 l.push(transition_loop);
-                                stack_start_node = Some(tl_last);
                             }
                         }
                         _ => {
+                            stack_start_node = Some(tl_last.clone());
                             ltc_translation
                                 .push(LTCTranslationElement::Loops(vec![transition_loop]));
-                            stack_start_node = Some(tl_last);
                         }
                     }
                 }
@@ -288,7 +288,8 @@ impl<NIndex: GIndex> From<Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NIn
 
 impl LTCTranslation<NodeIndex> {
     pub fn from_multi_graph_path(state: &ImplicitCFGProduct, path: &MultiGraphPath) -> Self {
-        path.to_path(state.main_cfg()).into()
+        path.to_path_in_cfg(state.main_cfg(), state.main_cfg_index())
+            .into()
     }
 }
 

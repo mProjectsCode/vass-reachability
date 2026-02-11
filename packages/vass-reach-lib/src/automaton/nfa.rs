@@ -6,8 +6,8 @@ use petgraph::{
 };
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonEdge, AutomatonNode, ExplicitEdgeAutomaton, FromLetter, Frozen,
-    InitializedAutomaton, Language, ModifiableAutomaton, NonDeterministic,
+    Alphabet, Automaton, AutomatonEdge, AutomatonIterators, AutomatonNode, ExplicitEdgeAutomaton,
+    FromLetter, Frozen, InitializedAutomaton, Language, ModifiableAutomaton, NonDeterministic,
     dfa::{DFA, node::DfaNode},
 };
 
@@ -108,7 +108,11 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
                     new_state
                 };
 
-                dfa.add_edge(state_map[&state], target_dfa_state, E::from_letter(symbol));
+                dfa.add_edge(
+                    &state_map[&state],
+                    &target_dfa_state,
+                    E::from_letter(symbol),
+                );
             }
         }
 
@@ -179,12 +183,12 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> Automaton<NonDeterministic
         self.graph.node_count()
     }
 
-    fn get_node(&self, index: Self::NIndex) -> Option<&DfaNode<N>> {
-        self.graph.node_weight(index)
+    fn get_node(&self, index: &Self::NIndex) -> Option<&DfaNode<N>> {
+        self.graph.node_weight(*index)
     }
 
-    fn get_node_unchecked(&self, index: Self::NIndex) -> &DfaNode<N> {
-        &self.graph[index]
+    fn get_node_unchecked(&self, index: &Self::NIndex) -> &DfaNode<N> {
+        &self.graph[*index]
     }
 }
 
@@ -199,40 +203,42 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<NonD
         self.graph.edge_count()
     }
 
-    fn get_edge(&self, index: Self::EIndex) -> Option<&NFAEdge<E>> {
-        self.graph.edge_weight(index)
+    fn get_edge(&self, index: &Self::EIndex) -> Option<&NFAEdge<E>> {
+        self.graph.edge_weight(*index)
     }
 
-    fn get_edge_unchecked(&self, index: Self::EIndex) -> &NFAEdge<E> {
-        self.graph.edge_weight(index).unwrap()
+    fn get_edge_unchecked(&self, index: &Self::EIndex) -> &NFAEdge<E> {
+        self.graph.edge_weight(*index).unwrap()
     }
 
-    fn edge_endpoints(&self, edge: Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
-        self.graph.edge_endpoints(edge)
+    fn edge_endpoints(&self, edge: &Self::EIndex) -> Option<(Self::NIndex, Self::NIndex)> {
+        self.graph.edge_endpoints(*edge)
     }
 
-    fn edge_endpoints_unchecked(&self, edge: Self::EIndex) -> (Self::NIndex, Self::NIndex) {
-        self.graph.edge_endpoints(edge).unwrap()
+    fn edge_endpoints_unchecked(&self, edge: &Self::EIndex) -> (Self::NIndex, Self::NIndex) {
+        self.graph.edge_endpoints(*edge).unwrap()
     }
 
-    fn outgoing_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.graph
-            .edges_directed(node, Direction::Outgoing)
+            .edges_directed(*node, Direction::Outgoing)
             .map(|edge| edge.id())
     }
 
-    fn incoming_edge_indices(&self, node: Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
         self.graph
-            .edges_directed(node, Direction::Incoming)
+            .edges_directed(*node, Direction::Incoming)
             .map(|edge| edge.id())
     }
 
     fn connecting_edge_indices(
         &self,
-        from: Self::NIndex,
-        to: Self::NIndex,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
     ) -> impl Iterator<Item = Self::EIndex> {
-        self.graph.edges_connecting(from, to).map(|edge| edge.id())
+        self.graph
+            .edges_connecting(*from, *to)
+            .map(|edge| edge.id())
     }
 }
 
@@ -245,19 +251,19 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<NonDet
 
     fn add_edge(
         &mut self,
-        from: Self::NIndex,
-        to: Self::NIndex,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
         label: NFAEdge<E>,
     ) -> Self::EIndex {
-        self.graph.add_edge(from, to, label)
+        self.graph.add_edge(*from, *to, label)
     }
 
-    fn remove_node(&mut self, node: Self::NIndex) {
-        self.graph.remove_node(node);
+    fn remove_node(&mut self, node: &Self::NIndex) {
+        self.graph.remove_node(*node);
     }
 
-    fn remove_edge(&mut self, edge: Self::EIndex) {
-        self.graph.remove_edge(edge);
+    fn remove_edge(&mut self, edge: &Self::EIndex) {
+        self.graph.remove_edge(*edge);
     }
 
     fn retain_nodes<F>(&mut self, f: F)
@@ -266,7 +272,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ModifiableAutomaton<NonDet
     {
         for index in self.iter_node_indices().rev() {
             if !f(Frozen::from(&mut *self), index) {
-                self.remove_node(index);
+                self.remove_node(&index);
             }
         }
     }
@@ -279,7 +285,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedAutomaton<NonDe
         self.start.expect("Self must have a start state")
     }
 
-    fn is_accepting(&self, node: Self::NIndex) -> bool {
+    fn is_accepting(&self, node: &Self::NIndex) -> bool {
         self.get_node(node)
             .map(|n| n.accepting)
             .expect("Node should be part of the NFA")

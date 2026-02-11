@@ -1,57 +1,136 @@
 use hashbrown::HashMap;
+use petgraph::graph::NodeIndex;
 
 use crate::automaton::{
+    TransitionSystem,
     cfg::{
-        CFG, ExplicitEdgeCFG,
+        CFG,
         update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
-    index_map::IndexMap,
+    implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
     path::Path,
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
-/// A path in the product of multiple graphs, storing the sequence of updates.
+/// A path in the product of multiple graphs, storing the sequence of updates
+/// and states.
+///
+/// The states are stored as `MultiGraphState`, which contains the individual
+/// states in each graph of the product.
 #[derive(Debug, Clone)]
 pub struct MultiGraphPath {
     pub updates: Vec<CFGCounterUpdate>,
+    /// INVARIANT: There are always updates.len() + 1 states in the path.
+    pub states: Vec<MultiGraphState>,
 }
 
 impl MultiGraphPath {
-    pub fn new() -> Self {
-        MultiGraphPath { updates: vec![] }
+    pub fn new(start: MultiGraphState) -> Self {
+        MultiGraphPath {
+            updates: vec![],
+            states: vec![start],
+        }
     }
 
-    pub fn to_path<C: CFG>(&self, cfg: &C) -> Path<C::NIndex, CFGCounterUpdate> {
-        let start = cfg.get_initial();
-        let mut path = Path::new(start);
+    pub fn from_word(
+        start: MultiGraphState,
+        word: impl IntoIterator<Item = CFGCounterUpdate>,
+        product: &ImplicitCFGProduct,
+    ) -> Self {
+        let mut path = MultiGraphPath::new(start);
 
-        for update in &self.updates {
-            let target = cfg
-                .successor(path.end(), update)
-                .expect("path to be valid with in CFG");
+        for update in word {
+            let target = product.successor(path.end(), &update).unwrap_or_else(|| {
+                panic!("Invalid update {:?} from state {:?}", update, path.end())
+            });
+            path.add(update, target);
+        }
 
-            path.add(*update, target);
+        path
+    }
+
+    pub fn start(&self) -> &MultiGraphState {
+        &self.states[0]
+    }
+
+    pub fn end(&self) -> &MultiGraphState {
+        self.states.last().unwrap()
+    }
+
+    /// Turns this MultiGraphPath into a Path in the specified cfg.
+    /// The cfg_index specifies which cfg in the product to extract the path
+    /// for.
+    pub fn to_path_in_cfg<C: CFG<NIndex = NodeIndex>>(
+        &self,
+        cfg: &C,
+        cfg_index: usize,
+    ) -> Path<C::NIndex, CFGCounterUpdate> {
+        // TODO: cfg not needed, we can read initial state from this path
+        let mut path = Path::new(cfg.get_initial());
+
+        for (update, state) in self.iter_updates_and_state() {
+            path.add(*update, state.cfg_state(cfg_index));
         }
 
         path
     }
 
     pub fn len(&self) -> usize {
+        debug_assert!(self.states.len() == self.updates.len() + 1);
+
         self.updates.len()
+    }
+
+    /// The number of states in the path, which is always one more than the
+    /// number of updates.
+    pub fn state_len(&self) -> usize {
+        debug_assert!(self.states.len() == self.updates.len() + 1);
+
+        self.states.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.updates.is_empty()
     }
 
-    pub fn add(&mut self, letter: CFGCounterUpdate) {
+    pub fn add(&mut self, letter: CFGCounterUpdate, state: MultiGraphState) {
         self.updates.push(letter);
+        self.states.push(state);
+    }
+
+    pub fn concat(&mut self, mut other: Self) {
+        debug_assert!(self.end() == other.start());
+        debug_assert!(self.states.len() == self.updates.len() + 1);
+        debug_assert!(other.states.len() == other.updates.len() + 1);
+
+        self.updates.append(&mut other.updates);
+        self.states.append(&mut other.states[1..].to_vec());
+
+        debug_assert!(self.states.len() == self.updates.len() + 1);
     }
 
     pub fn iter(
         &self,
     ) -> impl DoubleEndedIterator + ExactSizeIterator + Iterator<Item = CFGCounterUpdate> + '_ {
         self.updates.iter().copied()
+    }
+
+    pub fn iter_updates_and_state(
+        &self,
+    ) -> impl DoubleEndedIterator
+    + ExactSizeIterator
+    + Iterator<Item = (&CFGCounterUpdate, &MultiGraphState)> {
+        self.updates.iter().zip(self.states.iter().skip(1))
+    }
+
+    pub fn iter_states(
+        &self,
+    ) -> impl DoubleEndedIterator + ExactSizeIterator + Iterator<Item = &MultiGraphState> {
+        self.states.iter()
+    }
+
+    pub fn contains_state(&self, node: &MultiGraphState) -> bool {
+        self.states.contains(node)
     }
 
     /// Checks if a path is N-reaching.
@@ -124,22 +203,14 @@ impl MultiGraphPath {
         None
     }
 
-    /// Checks if the path visits a cfg note more than a certain number of
+    /// Checks if the path visits a product note more than a certain number of
     /// times.
-    pub fn visits_node_multiple_times(&self, cfg: &impl ExplicitEdgeCFG, limit: u32) -> bool {
-        let start = cfg.get_initial();
-        let mut last_node = start;
-        let mut visited = IndexMap::new(cfg.node_count());
-        visited.insert(last_node, 1);
+    pub fn visits_node_multiple_times(&self, limit: u32) -> bool {
+        let mut visited = HashMap::new();
+        visited.insert(self.start(), 1);
 
-        for update in &self.updates {
-            let edge_ref = cfg
-                .outgoing_edge_indices(last_node)
-                .find(|e| cfg.get_edge_unchecked(*e) == update)
-                .expect("Path should be valid");
-
-            last_node = cfg.edge_endpoints_unchecked(edge_ref).1;
-            let value = visited.get_mut(last_node);
+        for (_, state) in self.iter_updates_and_state() {
+            let value = visited.entry(state).or_insert(0);
             *value += 1;
             if *value > limit {
                 return true;
@@ -149,32 +220,23 @@ impl MultiGraphPath {
         false
     }
 
-    /// Checks if the path visits a cfg node more than a certain number of times
-    /// while also having increasing counter valuations.
+    /// Checks if the path visits a product node more than a certain number of
+    /// times while also having increasing counter valuations.
     pub fn is_counter_forwards_pumped(
         &self,
-        cfg: &impl ExplicitEdgeCFG,
         dimension: usize,
         counter: VASSCounterIndex,
         limit: u32,
     ) -> bool {
-        let start = cfg.get_initial();
-        let mut last_node = start;
         let mut visited = HashMap::new();
         let mut counters = VASSCounterValuation::zero(dimension);
-        visited.insert(last_node, (1, counters.clone()));
+        visited.insert(self.start(), (1, counters.clone()));
 
-        for update in &self.updates {
-            let edge_ref = cfg
-                .outgoing_edge_indices(last_node)
-                .find(|e| cfg.get_edge_unchecked(*e) == update)
-                .expect("Path should be valid");
-
-            last_node = cfg.edge_endpoints_unchecked(edge_ref).1;
+        for (update, state) in self.iter_updates_and_state() {
             counters.apply_cfg_update(*update);
 
             let entry = visited
-                .entry(last_node)
+                .entry(state)
                 .or_insert((0, VASSCounterValuation::zero(dimension)));
 
             // check that we have pumped and that we pumped the counter we care about
@@ -190,34 +252,25 @@ impl MultiGraphPath {
         false
     }
 
-    /// Checks if the path visits a cfg node more than a certain number of times
-    /// while also having decreasing counter valuations.
+    /// Checks if the path visits a product node more than a certain number of
+    /// times while also having decreasing counter valuations.
     pub fn is_counter_backwards_pumped(
         &self,
-        cfg: &impl ExplicitEdgeCFG,
         dimension: usize,
         counter: VASSCounterIndex,
         limit: u32,
     ) -> bool {
-        let start = cfg.get_initial();
-        let mut last_node = start;
         let mut visited = HashMap::new();
         let mut counters = VASSCounterValuation::zero(dimension);
-        visited.insert(last_node, (1, counters.clone()));
+        visited.insert(self.start(), (1, counters.clone()));
 
         // iterate in reverse order
-        for update in self.updates.iter().rev() {
-            let edge_ref = cfg
-                .outgoing_edge_indices(last_node)
-                .find(|e| cfg.get_edge_unchecked(*e) == update)
-                .expect("Path should be valid");
-
-            last_node = cfg.edge_endpoints_unchecked(edge_ref).1;
+        for (update, state) in self.iter_updates_and_state().rev() {
             // apply the reverse update since we are going backwards
             counters.apply_cfg_update(update.reverse());
 
             let entry = visited
-                .entry(last_node)
+                .entry(state)
                 .or_insert((0, VASSCounterValuation::zero(dimension)));
 
             // check that we have pumped and that we pumped the counter we care about
@@ -235,8 +288,27 @@ impl MultiGraphPath {
 
     pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
         Self {
-            updates: self.updates[range].to_vec(),
+            updates: self.updates[range.clone()].to_vec(),
+            states: self.states[range.start..=range.end].to_vec(),
         }
+    }
+
+    pub fn split_at(self, f: impl Fn(&MultiGraphState) -> bool) -> Vec<Self> {
+        let mut parts = vec![];
+        let mut current_part = MultiGraphPath::new(self.start().clone());
+
+        for (update, state) in self.iter_updates_and_state() {
+            current_part.add(*update, state.clone());
+
+            if f(state) {
+                parts.push(current_part);
+                current_part = MultiGraphPath::new(state.clone());
+            }
+        }
+
+        parts.push(current_part);
+
+        parts
     }
 
     pub fn max_counter_value(
