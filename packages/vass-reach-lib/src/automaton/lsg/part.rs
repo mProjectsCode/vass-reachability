@@ -4,7 +4,7 @@ use petgraph::{
     graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::EdgeRef,
 };
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::automaton::{
     Alphabet, Automaton, AutomatonIterators, Deterministic, ExplicitEdgeAutomaton, Frozen,
@@ -351,11 +351,11 @@ impl LSGPart {
     pub fn random_node<T: Rng>(&self, random: &mut T) -> &MultiGraphState {
         match self {
             LSGPart::SubGraph(subgraph) => {
-                let node_index = random.gen_range(0..subgraph.graph.node_count());
+                let node_index = random.random_range(0..subgraph.graph.node_count());
                 &subgraph.graph[NodeIndex::new(node_index)]
             }
             LSGPart::Path(path) => {
-                let node_index = random.gen_range(0..path.path.state_len());
+                let node_index = random.random_range(0..path.path.state_len());
                 &path.path.states[node_index]
             }
         }

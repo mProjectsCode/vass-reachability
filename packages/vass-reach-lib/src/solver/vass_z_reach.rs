@@ -1,9 +1,6 @@
 use petgraph::graph::EdgeIndex;
 use serde::{Deserialize, Serialize};
-use z3::{
-    Config, Context, Solver,
-    ast::{Ast, Int},
-};
+use z3::{Config, Solver, ast::Int, with_z3_config};
 
 use crate::{
     automaton::{
@@ -60,11 +57,8 @@ impl VASSZReachSolverResult {
         final_valuation: &VASSCounterValuation,
         n_run: bool,
     ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
-        let Some(parikh_image) = self.get_parikh_image() else {
-            return None;
-        };
-
-        parikh_image.build_run(cfg, initial_valuation, final_valuation, n_run)
+        self.get_parikh_image()?
+            .build_run(cfg, initial_valuation, final_valuation, n_run)
     }
 }
 
@@ -94,7 +88,7 @@ impl VASSZReachSolverResult {
 ///
 /// Since this constraint act's on sets of nodes and there are only a limited
 /// number of subsets of nodes, the solver terminates.
-pub struct VASSZReachSolver<'l, 'c, C: ExplicitEdgeCFG> {
+pub struct VASSZReachSolver<'l, 'c, C: ExplicitEdgeCFG + Sync> {
     cfg: &'c C,
     initial_valuation: VASSCounterValuation,
     final_valuation: VASSCounterValuation,
@@ -104,7 +98,7 @@ pub struct VASSZReachSolver<'l, 'c, C: ExplicitEdgeCFG> {
     solver_start_time: Option<std::time::Instant>,
 }
 
-impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
+impl<'l, 'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'l, 'c, C> {
     pub fn new(
         cfg: &'c C,
         initial_valuation: VASSCounterValuation,
@@ -128,13 +122,14 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
 
         let mut config = Config::new();
         config.set_model_generation(true);
-        let ctx = Context::new(&config);
-        let solver = Solver::new(&ctx);
+        with_z3_config(&config, || {
+            let solver = Solver::new();
 
-        self.solve_inner(&ctx, &solver)
+            self.solve_inner(&solver)
+        })
     }
 
-    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> VASSZReachSolverResult {
+    fn solve_inner(&mut self, solver: &Solver) -> VASSZReachSolverResult {
         // a map that allows us to access the edge variables by their edge id
         let mut edge_map = OptionIndexMap::new(self.cfg.edge_count());
 
@@ -142,14 +137,14 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
         let mut sums: Box<[_]> = self
             .initial_valuation
             .iter()
-            .map(|x| Int::from_i64(ctx, *x as i64))
+            .map(|x| Int::from_i64(*x as i64))
             .collect();
 
         for (edge, update) in self.cfg.iter_edges() {
             // we need one variable for each edge
-            let edge_var = Int::new_const(ctx, format!("edge_{}", edge.index()));
+            let edge_var = Int::new_const(format!("edge_{}", edge.index()));
             // CONSTRAINT: an edge can only be taken positive times
-            solver.assert(&edge_var.ge(&Int::from_i64(ctx, 0)));
+            solver.assert(edge_var.ge(Int::from_i64(0)));
 
             // add the edges effect to the counter sum
             let i = update.counter();
@@ -158,25 +153,25 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
             edge_map.insert(edge, edge_var);
         }
 
-        let mut final_var_sum = Int::from_i64(ctx, 0);
+        let mut final_var_sum = Int::from_i64(0);
 
         for node in self.cfg.iter_node_indices() {
             let outgoing = self.cfg.outgoing_edge_indices(&node);
             let incoming = self.cfg.incoming_edge_indices(&node);
 
-            let mut outgoing_sum = Int::from_i64(ctx, 0);
+            let mut outgoing_sum = Int::from_i64(0);
             // the start node has one additional incoming connection
             let mut incoming_sum = if node == self.cfg.get_initial() {
-                Int::from_i64(ctx, 1)
+                Int::from_i64(1)
             } else {
-                Int::from_i64(ctx, 0)
+                Int::from_i64(0)
             };
 
             if self.cfg.is_accepting(&node) {
                 // for each accepting node, we need some additional variable that denotes
                 // whether the node is used as the final node
-                let final_var = Int::new_const(ctx, format!("node_{}_final", node.index()));
-                solver.assert(&final_var.ge(&Int::from_i64(ctx, 0)));
+                let final_var = Int::new_const(format!("node_{}_final", node.index()));
+                solver.assert(final_var.ge(Int::from_i64(0)));
 
                 outgoing_sum += &final_var;
                 final_var_sum += &final_var;
@@ -194,15 +189,15 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
 
             // CONSTRAINT: the sum of all outgoing edges must be equal to the sum of all
             // incoming edges for each node
-            solver.assert(&outgoing_sum._eq(&incoming_sum));
+            solver.assert(outgoing_sum.eq(incoming_sum));
         }
 
         // CONSTRAINT: only one final variable can be set
-        solver.assert(&final_var_sum._eq(&Int::from_i64(ctx, 1)));
+        solver.assert(final_var_sum.eq(Int::from_i64(1)));
 
         // CONSTRAINT: the final valuation must be equal to the counter sums
         for (sum, target) in sums.iter().zip(self.final_valuation.iter()) {
-            solver.assert(&sum._eq(&Int::from_i64(ctx, *target as i64)));
+            solver.assert(sum.eq(Int::from_i64(*target as i64)));
         }
 
         self.step_count = 1;
@@ -243,7 +238,7 @@ impl<'l, 'c, C: ExplicitEdgeCFG> VASSZReachSolver<'l, 'c, C> {
                     }
 
                     for component in components {
-                        forbid_parikh_image(&component, self.cfg, &edge_map, solver, ctx);
+                        forbid_parikh_image(&component, self.cfg, &edge_map, solver);
                     }
 
                     self.step_count += 1;

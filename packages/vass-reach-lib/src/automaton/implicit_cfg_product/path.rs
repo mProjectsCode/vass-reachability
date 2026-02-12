@@ -111,21 +111,20 @@ impl MultiGraphPath {
 
     pub fn iter(
         &self,
-    ) -> impl DoubleEndedIterator + ExactSizeIterator + Iterator<Item = CFGCounterUpdate> + '_ {
+    ) -> impl DoubleEndedIterator<Item = CFGCounterUpdate> + ExactSizeIterator + '_ {
         self.updates.iter().copied()
     }
 
     pub fn iter_updates_and_state(
         &self,
-    ) -> impl DoubleEndedIterator
-    + ExactSizeIterator
-    + Iterator<Item = (&CFGCounterUpdate, &MultiGraphState)> {
+    ) -> impl DoubleEndedIterator<Item = (&CFGCounterUpdate, &MultiGraphState)> + ExactSizeIterator
+    {
         self.updates.iter().zip(self.states.iter().skip(1))
     }
 
     pub fn iter_states(
         &self,
-    ) -> impl DoubleEndedIterator + ExactSizeIterator + Iterator<Item = &MultiGraphState> {
+    ) -> impl DoubleEndedIterator<Item = &MultiGraphState> + ExactSizeIterator {
         self.states.iter()
     }
 

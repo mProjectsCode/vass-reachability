@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
     automaton::{
@@ -10,6 +10,7 @@ use crate::{
         lsg::{LinearSubGraph, part::LSGPart},
         vass::counter::VASSCounterValuation,
     },
+    config::ExtensionStrategyConfig,
     solver::{
         SolverStatus,
         lsg_reach::{LSGReachSolverOptions, LSGSolution},
@@ -18,8 +19,8 @@ use crate::{
 
 /// Struct to iteratively extend a Linear Subgraph (LSG) by adding nodes chosen
 /// by a `NodeChooser`, while keeping the LSG unreachable.
-#[derive(Debug, Clone)]
-pub struct LSGExtender<'a, Strategy: ExtensionStrategy> {
+#[derive(Debug)]
+pub struct LSGExtender<'a> {
     /// The current Linear Subgraph being extended.
     pub lsg: LinearSubGraph<'a>,
     /// The previous Linear Subgraph before the last extension.
@@ -32,17 +33,17 @@ pub struct LSGExtender<'a, Strategy: ExtensionStrategy> {
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
     /// The strategy used to select nodes to add to the LSG.
-    pub strategy: Strategy,
+    pub strategy: ExtensionStrategyEnum,
     /// Maximum number of refinement steps to perform.
     pub max_refinements: u64,
 }
 
-impl<'a, Strategy: ExtensionStrategy> LSGExtender<'a, Strategy> {
+impl<'a> LSGExtender<'a> {
     pub fn new(
         path: MultiGraphPath,
         product: &'a ImplicitCFGProduct,
         dimension: usize,
-        strategy: Strategy,
+        strategy: ExtensionStrategyEnum,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         max_refinements: u64,
@@ -59,6 +60,23 @@ impl<'a, Strategy: ExtensionStrategy> LSGExtender<'a, Strategy> {
             final_valuation,
             max_refinements,
         }
+    }
+
+    pub fn from_cfg_product(
+        path: MultiGraphPath,
+        cfg_product: &'a ImplicitCFGProduct,
+        node_chooser: ExtensionStrategyEnum,
+        max_refinements: u64,
+    ) -> Self {
+        Self::new(
+            path,
+            cfg_product,
+            cfg_product.dimension,
+            node_chooser,
+            cfg_product.initial_valuation.clone(),
+            cfg_product.final_valuation.clone(),
+            max_refinements,
+        )
     }
 
     /// Refines `self.lsg` by trying to extend it using the `node_chooser`
@@ -105,31 +123,50 @@ impl<'a, Strategy: ExtensionStrategy> LSGExtender<'a, Strategy> {
     }
 }
 
-impl<'a, Strategy: ExtensionStrategy> LSGExtender<'a, Strategy> {
-    pub fn from_cfg_product(
-        path: MultiGraphPath,
-        cfg_product: &'a ImplicitCFGProduct,
-        node_chooser: Strategy,
-        max_refinements: u64,
-    ) -> Self {
-        Self::new(
-            path,
-            cfg_product,
-            cfg_product.dimension,
-            node_chooser,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
-            max_refinements,
-        )
-    }
-}
-
 pub trait ExtensionStrategy {
     fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, step: u64) -> Option<LinearSubGraph<'a>>;
 
     fn on_rollback(&mut self, solution: &LSGSolution);
 }
 
+#[derive(Debug)]
+pub enum ExtensionStrategyEnum {
+    RandomNode(RandomNodeStrategy),
+    RandomSCC(RandomSCCStrategy),
+}
+
+impl ExtensionStrategyEnum {
+    pub fn from_config(node_chooser: ExtensionStrategyConfig, seed: u64) -> Self {
+        match node_chooser {
+            ExtensionStrategyConfig::Random => {
+                ExtensionStrategyEnum::RandomNode(RandomNodeStrategy::new(20, seed))
+            }
+            ExtensionStrategyConfig::RandomSCC => {
+                ExtensionStrategyEnum::RandomSCC(RandomSCCStrategy::new(20, seed))
+            }
+        }
+    }
+
+    pub fn extend<'a>(
+        &mut self,
+        lsg: &LinearSubGraph<'a>,
+        step: u64,
+    ) -> Option<LinearSubGraph<'a>> {
+        match self {
+            ExtensionStrategyEnum::RandomNode(strategy) => strategy.extend(lsg, step),
+            ExtensionStrategyEnum::RandomSCC(strategy) => strategy.extend(lsg, step),
+        }
+    }
+
+    pub fn on_rollback(&mut self, solution: &LSGSolution) {
+        match self {
+            ExtensionStrategyEnum::RandomNode(strategy) => strategy.on_rollback(solution),
+            ExtensionStrategyEnum::RandomSCC(strategy) => strategy.on_rollback(solution),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct RandomNodeStrategy {
     pub max_retries: usize,
     pub seed: u64,
@@ -154,14 +191,14 @@ impl ExtensionStrategy for RandomNodeStrategy {
     fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, _step: u64) -> Option<LinearSubGraph<'a>> {
         for _ in 0..self.max_retries {
             let parts_len = lsg.parts.len();
-            let part_index = self.random.gen_range(0..parts_len);
+            let part_index = self.random.random_range(0..parts_len);
             let state = lsg.parts[part_index].random_node(&mut self.random);
 
-            let neighbors: Vec<_> = lsg.product.undirected_neighbors(&state);
+            let neighbors: Vec<_> = lsg.product.undirected_neighbors(state);
 
             let selected = neighbors
                 .iter()
-                .find(|n| !lsg.contains_state(*n) && !self.blacklist.contains(n));
+                .find(|n| !lsg.contains_state(n) && !self.blacklist.contains(n));
 
             if let Some(selected) = selected {
                 self.last_added = Some(selected.clone());
@@ -179,6 +216,7 @@ impl ExtensionStrategy for RandomNodeStrategy {
     }
 }
 
+#[derive(Debug)]
 pub struct RandomSCCStrategy {
     pub max_retries: usize,
     pub seed: u64,
@@ -221,10 +259,10 @@ impl ExtensionStrategy for RandomSCCStrategy {
             }
 
             for _ in 0..self.max_retries {
-                let path_index = self.random.gen_range(0..paths.len());
+                let path_index = self.random.random_range(0..paths.len());
                 let path = &paths[path_index];
 
-                let state_index = self.random.gen_range(0..path.path.state_len());
+                let state_index = self.random.random_range(0..path.path.state_len());
                 let state = &path.path.states[state_index];
 
                 if self.blacklist.contains(state) {

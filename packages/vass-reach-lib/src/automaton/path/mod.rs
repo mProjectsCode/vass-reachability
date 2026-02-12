@@ -57,7 +57,7 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         letter: L,
         graph: &impl TransitionSystem<Deterministic, NIndex = NIndex, Letter = L>,
     ) -> anyhow::Result<()> {
-        let successor = graph.successor(&self.end(), &letter).ok_or_else(|| {
+        let successor = graph.successor(self.end(), &letter).ok_or_else(|| {
             anyhow::anyhow!(format!(
                 "path failed to take letter {:?}, no suitable successor found for end node {:?}",
                 letter,

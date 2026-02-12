@@ -10,7 +10,7 @@ pub fn generate(logger: &Logger, args: &Args) -> anyhow::Result<()> {
     let Some(folder) = &args.folder else {
         anyhow::bail!("missing required folder argument");
     };
-    let test = Test::canonicalize(&folder)?;
+    let test = Test::canonicalize(folder)?;
     let config = test.instance_config()?;
 
     logger.info("Generating random Petri nets...");

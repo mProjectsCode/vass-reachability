@@ -39,7 +39,7 @@ impl<'a> Tool for KReachTool<'a> {
 
     fn test(&self) -> anyhow::Result<()> {
         Command::new("stack")
-            .args(&["exec", "kosaraju"])
+            .args(["exec", "kosaraju"])
             .current_dir(self.get_tool_path()?)
             .status()?;
 
@@ -48,7 +48,7 @@ impl<'a> Tool for KReachTool<'a> {
 
     fn build(&self) -> anyhow::Result<()> {
         Command::new("stack")
-            .args(&["build", "kosaraju"])
+            .args(["build", "kosaraju"])
             .current_dir(self.get_tool_path()?)
             .status()?;
 
@@ -60,9 +60,11 @@ impl<'a> Tool for KReachTool<'a> {
         file_path: &std::path::Path,
         _config: &TestRunConfig,
     ) -> anyhow::Result<SolverRunResult> {
-        // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p RuntimeMaxSec={self.test_config.timeout} stack exec kosaraju -- -r {file_path}`
+        // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p
+        // RuntimeMaxSec={self.test_config.timeout} stack exec kosaraju -- -r
+        // {file_path}`
         let mut command = Command::new("systemd-run");
-        command.args(&[
+        command.args([
             "--user",
             "--scope",
             &format!(
@@ -115,8 +117,7 @@ impl<'a> Tool for KReachTool<'a> {
 
             Ok(SolverRunResult::Crash(format!(
                 "Process exited with status code {} and stderr:\n {}",
-                output.status,
-                stderr.to_string()
+                output.status, stderr
             )))
         }
     }

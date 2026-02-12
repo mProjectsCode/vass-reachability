@@ -33,7 +33,7 @@ impl<EIndex: CompactGIndex> ParikhImage<EIndex> {
 
     pub fn print(&self, logger: &Logger, level: LogLevel) {
         for (edge, count) in self.image.iter() {
-            logger.log(level.clone(), &format!("Edge: {:?}: {}", edge, count));
+            logger.log(level, &format!("Edge: {:?}: {}", edge, count));
         }
     }
 
@@ -87,7 +87,7 @@ impl<EIndex: CompactGIndex> ParikhImage<EIndex> {
         let mut map = IndexMap::new(edge_count);
 
         for (edge, _) in &path.transitions {
-            let entry = map.get_mut(edge.clone());
+            let entry = map.get_mut(*edge);
             *entry += 1;
         }
 

@@ -56,7 +56,7 @@ async fn start_server(_logger: &Logger, _args: &Args, ui_config: UIConfig) -> an
 
 fn start_ui(ui_config: &UIConfig) -> anyhow::Result<()> {
     let mut command = Command::new("bun");
-    command.args(&[
+    command.args([
         "run",
         "dev",
         "--",

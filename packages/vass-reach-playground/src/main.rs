@@ -12,8 +12,10 @@ use vass_reach_lib::{
 };
 
 fn main() {
-    // let lim_cfg = build_bounded_counting_cfg(1, CFGCounterUpdate::new(1).unwrap(), 4, 0, 0);
-    // let rev_lim_cfg = build_rev_bounded_counting_cfg(1, CFGCounterUpdate::new(1).unwrap(), 4, 0, 0);
+    // let lim_cfg = build_bounded_counting_cfg(1,
+    // CFGCounterUpdate::new(1).unwrap(), 4, 0, 0); let rev_lim_cfg =
+    // build_rev_bounded_counting_cfg(1, CFGCounterUpdate::new(1).unwrap(), 4, 0,
+    // 0);
 
     // println!("Limit CFG: {:#?}", &lim_cfg);
     // println!("{}", lim_cfg.to_graphviz(None as Option<Path>));
@@ -29,7 +31,8 @@ fn main() {
     // vass.add_transition(q0, q1, ('b', vec![-2, 0].into()));
     // vass.add_transition(q1, q1, ('b', vec![-1, 0].into()));
 
-    // let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0, q1);
+    // let initialized_vass = vass.init(vec![0, 0].into(), vec![0, 0].into(), q0,
+    // q1);
 
     // let logger = Logger::new(
     //     vass_reach_lib::logger::LogLevel::Debug,
@@ -39,9 +42,9 @@ fn main() {
 
     // let res = VASSReachSolver::new(
     //     &initialized_vass,
-    //     // some time that is long enough, but makes the test run in a reasonable time
-    //     VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-    //     Some(&logger),
+    //     // some time that is long enough, but makes the test run in a reasonable
+    // time     VASSReachConfig::default().
+    // with_timeout(Some(Duration::from_secs(5))),     Some(&logger),
     // )
     // .solve();
 
@@ -53,7 +56,8 @@ fn main() {
 
 fn difficult_instance() {
     //                                              a1 + 6 >= a0 & a1 >= 0 & a0 >= 0
-    // (a0)^6      .     (a0a1 cup a0'a1' cup a0)*                 .                 (a0a1a1 cup a0'a1'a1')*    .         (a1 cup a1')*
+    // (a0)^6      .     (a0a1 cup a0'a1' cup a0)*                 .
+    // (a0a1a1 cup a0'a1'a1')*    .         (a1 cup a1')*
     let mut vass = VASS::new(2, (0..10).collect());
 
     let s0 = vass.add_node(());
@@ -91,7 +95,7 @@ fn difficult_instance() {
         None,
     );
 
-    let res = VASSReachSolver::new(
+    let _res = VASSReachSolver::new(
         &initialized,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_mins(5))),

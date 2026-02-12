@@ -1,5 +1,3 @@
-use std::iter::repeat;
-
 use itertools::Itertools;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
 
@@ -105,8 +103,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
                 VASSEdge::new(
                     self.vass.alphabet.len() + i * 2,
                     VASSCounterUpdate::new(
-                        repeat(0)
-                            .take(self.dimension())
+                        std::iter::repeat_n(0, self.dimension())
                             .chain([-a, other_a - b, other_b])
                             .collect(),
                     ),
@@ -119,8 +116,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
                 VASSEdge::new(
                     self.vass.alphabet.len() + i * 2,
                     VASSCounterUpdate::new(
-                        repeat(0)
-                            .take(self.dimension())
+                        std::iter::repeat_n(0, self.dimension())
                             .chain([b, -other_a, a - other_b])
                             .collect(),
                     ),

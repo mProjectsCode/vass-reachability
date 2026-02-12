@@ -7,7 +7,7 @@ use crate::{
         cfg::vasscfg::VASSCFG,
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
-        lsg::extender::{LSGExtender, RandomSCCStrategy},
+        lsg::extender::{ExtensionStrategyEnum, LSGExtender},
         ltc::{LTC, translation::LTCTranslation},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
@@ -75,7 +75,7 @@ pub type VASSReachSolverResult =
 
 #[derive(Debug)]
 pub struct VASSReachSolver<'l> {
-    options: VASSReachConfig,
+    config: VASSReachConfig,
     logger: Option<&'l Logger>,
     state: ImplicitCFGProduct,
     step_count: u64,
@@ -104,7 +104,7 @@ impl<'l> VASSReachSolver<'l> {
         );
 
         VASSReachSolver {
-            options: config,
+            config,
             logger,
             state,
             step_count: 0,
@@ -186,105 +186,113 @@ impl<'l> VASSReachSolver<'l> {
             }
 
             // Now we know that the path is spurious, we need to refine our approximation.
-            // We select a refinement action based on the path.
-            match self.select_refinement_action(&path) {
-                VASSReachRefinementAction::IncreaseModulo(counter_index, x) => {
-                    let current_mu = self.state.get_mu(counter_index);
-                    let new_mu = match self.options.get_modulo().get_mode() {
-                        ModuloMode::Increment => current_mu + 1,
-                        ModuloMode::LeastCommonMultiple => {
-                            let mut new_mu = current_mu;
-                            while x.rem_euclid(new_mu)
-                                == self.state.final_valuation[counter_index].rem_euclid(new_mu)
-                            {
-                                new_mu += current_mu;
-                            }
-                            new_mu
-                        }
-                    };
-                    self.state.set_mu(counter_index, new_mu);
-
-                    if let Some(l) = self.logger {
-                        l.debug(&format!(
-                            "Increasing mu for counter {:?} from {:?} to {:?}",
-                            counter_index, current_mu, new_mu
-                        ));
-                    }
-                }
-                VASSReachRefinementAction::IncreaseForwardsBound(counter_index, bound) => {
-                    self.state.set_forward_bound(counter_index, bound);
-
-                    if let Some(l) = self.logger {
-                        l.debug(&format!(
-                            "Increasing forward bound for counter {:?} to {:?}",
-                            counter_index, bound
-                        ));
-                    }
-                }
-                VASSReachRefinementAction::IncreaseBackwardsBound(counter_index, bound) => {
-                    self.state.set_backward_bound(counter_index, bound);
-
-                    if let Some(l) = self.logger {
-                        l.debug(&format!(
-                            "Increasing backward bound for counter {:?} to {:?}",
-                            counter_index, bound
-                        ));
-                    }
-                }
-                VASSReachRefinementAction::BuildAutomaton => {
-                    let ltc_automaton = if *self.options.get_lts().get_enabled() {
-                        if let Some(l) = self.logger {
-                            l.debug("Building and checking LTC");
-                        }
-
-                        Some(self.ltc(&path)?)
-                    } else {
-                        None
-                    };
-
-                    let lsg_automaton = if *self.options.get_lsg().get_enabled() {
-                        if let Some(l) = self.logger {
-                            l.debug("Building and checking LSG");
-                        }
-
-                        let mut extender = LSGExtender::from_cfg_product(
-                            path,
-                            &self.state,
-                            RandomSCCStrategy::new(10, self.step_count as u64),
-                            // RandomNodeStrategy::new(10, self.step_count as u64),
-                            *self.options.get_lsg().get_max_refinement_steps(),
-                        );
-                        let mut cfg = extender.run();
-                        cfg.invert_mut();
-                        Some(cfg)
-                    } else {
-                        None
-                    };
-
-                    match (ltc_automaton, lsg_automaton) {
-                        (Some(ltc_cfg), Some(lsg_cfg)) => {
-                            // We would expect both automata to be somewhat similar, they are built
-                            // from the same path at least. So we would
-                            // expect their intersection to not blow up too much.
-                            let product = ltc_cfg.intersect(&lsg_cfg);
-                            self.state.add_cfg(product);
-                        }
-                        (Some(ltc_cfg), None) => {
-                            self.state.add_cfg(ltc_cfg);
-                        }
-                        (None, Some(lsg_cfg)) => {
-                            self.state.add_cfg(lsg_cfg);
-                        }
-                        (None, None) => {}
-                    }
-                }
-            }
+            self.refinement_step(path)?;
 
             if let Some(l) = self.logger {
                 l.debug(&format!("Step time: {:?}", step_time.elapsed()));
                 l.empty(LogLevel::Info);
             }
         }
+    }
+
+    fn refinement_step(&mut self, path: MultiGraphPath) -> Result<(), VASSReachSolverStatus> {
+        // We select a refinement action based on the path.
+        match self.select_refinement_action(&path) {
+            VASSReachRefinementAction::IncreaseModulo(counter_index, x) => {
+                let current_mu = self.state.get_mu(counter_index);
+                let new_mu = match self.config.get_modulo().get_mode() {
+                    ModuloMode::Increment => current_mu + 1,
+                    ModuloMode::LeastCommonMultiple => {
+                        let mut new_mu = current_mu;
+                        while x.rem_euclid(new_mu)
+                            == self.state.final_valuation[counter_index].rem_euclid(new_mu)
+                        {
+                            new_mu += current_mu;
+                        }
+                        new_mu
+                    }
+                };
+                self.state.set_mu(counter_index, new_mu);
+
+                if let Some(l) = self.logger {
+                    l.debug(&format!(
+                        "Increasing mu for counter {:?} from {:?} to {:?}",
+                        counter_index, current_mu, new_mu
+                    ));
+                }
+            }
+            VASSReachRefinementAction::IncreaseForwardsBound(counter_index, bound) => {
+                self.state.set_forward_bound(counter_index, bound);
+
+                if let Some(l) = self.logger {
+                    l.debug(&format!(
+                        "Increasing forward bound for counter {:?} to {:?}",
+                        counter_index, bound
+                    ));
+                }
+            }
+            VASSReachRefinementAction::IncreaseBackwardsBound(counter_index, bound) => {
+                self.state.set_backward_bound(counter_index, bound);
+
+                if let Some(l) = self.logger {
+                    l.debug(&format!(
+                        "Increasing backward bound for counter {:?} to {:?}",
+                        counter_index, bound
+                    ));
+                }
+            }
+            VASSReachRefinementAction::BuildAutomaton => {
+                let ltc_automaton = if *self.config.get_lts().get_enabled() {
+                    if let Some(l) = self.logger {
+                        l.debug("Building and checking LTC");
+                    }
+
+                    Some(self.ltc(&path)?)
+                } else {
+                    None
+                };
+
+                let lsg_automaton = if *self.config.get_lsg().get_enabled() {
+                    if let Some(l) = self.logger {
+                        l.debug("Building and checking LSG");
+                    }
+
+                    let mut extender = LSGExtender::from_cfg_product(
+                        path,
+                        &self.state,
+                        ExtensionStrategyEnum::from_config(
+                            *self.config.get_lsg().get_strategy(),
+                            self.step_count,
+                        ),
+                        *self.config.get_lsg().get_max_refinement_steps(),
+                    );
+                    let mut cfg = extender.run();
+                    cfg.invert_mut();
+                    Some(cfg)
+                } else {
+                    None
+                };
+
+                match (ltc_automaton, lsg_automaton) {
+                    (Some(ltc_cfg), Some(lsg_cfg)) => {
+                        // We would expect both automata to be somewhat similar, they are built
+                        // from the same path at least. So we would
+                        // expect their intersection to not blow up too much.
+                        let product = ltc_cfg.intersect(&lsg_cfg);
+                        self.state.add_cfg(product);
+                    }
+                    (Some(ltc_cfg), None) => {
+                        self.state.add_cfg(ltc_cfg);
+                    }
+                    (None, Some(lsg_cfg)) => {
+                        self.state.add_cfg(lsg_cfg);
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Selects a refinement action based on the given spurious path.
@@ -355,10 +363,10 @@ impl<'l> VASSReachSolver<'l> {
 
     /// Builds and checks the LTC automaton for the given path.
     fn ltc(&self, path: &MultiGraphPath) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
-        let translation = LTCTranslation::from_multi_graph_path(&self.state, &path);
+        let translation = LTCTranslation::from_multi_graph_path(&self.state, path);
         let ltc = translation.to_ltc(self.state.dimension);
 
-        if *self.options.get_lts().get_relaxed_enabled() {
+        if *self.config.get_lts().get_relaxed_enabled() {
             self.ltc_relaxed(ltc, translation)
         } else {
             self.ltc_strict(ltc, translation)
@@ -414,7 +422,7 @@ impl<'l> VASSReachSolver<'l> {
     /// If so, returns an `Err` value.
     fn max_iterations_reached(&self) -> Result<(), VASSReachSolverStatus> {
         if self
-            .options
+            .config
             .get_max_iterations()
             .map(|x| x <= self.step_count)
             .unwrap_or(false)
@@ -431,7 +439,7 @@ impl<'l> VASSReachSolver<'l> {
     /// If so, returns an `Err` value.
     fn max_time_reached(&self) -> Result<(), VASSReachSolverStatus> {
         if let Some(t) = self.get_solver_time()
-            && let Some(max_time) = self.options.get_timeout()
+            && let Some(max_time) = self.config.get_timeout()
             && &t > max_time
         {
             return Err(SolverStatus::Unknown(VASSReachSolverError::Timeout));

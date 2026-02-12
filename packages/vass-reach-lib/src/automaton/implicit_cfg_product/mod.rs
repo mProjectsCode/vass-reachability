@@ -1,5 +1,3 @@
-use std::cell::{Ref, RefCell};
-
 use hashbrown::HashSet;
 use itertools::Itertools;
 
@@ -20,7 +18,7 @@ use crate::automaton::{
 pub mod path;
 pub mod state;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ImplicitCFGProduct {
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
@@ -29,7 +27,7 @@ pub struct ImplicitCFGProduct {
     pub forward_bound: Box<[u32]>,
     pub backward_bound: Box<[u32]>,
     pub cfgs: Vec<VASSCFG<()>>,
-    explicit: RefCell<Option<VASSCFG<()>>>,
+    explicit: Option<VASSCFG<()>>,
 }
 
 impl ImplicitCFGProduct {
@@ -43,8 +41,7 @@ impl ImplicitCFGProduct {
         let forward_bound = vec![2; dimension];
         let backward_bound = vec![2; dimension];
 
-        let mut cfgs = Vec::new();
-        cfgs.reserve(dimension * 3 + 1);
+        let mut cfgs = Vec::with_capacity(dimension * 3 + 1);
         cfgs.push(cfg);
 
         for i in 0..dimension {
@@ -86,7 +83,7 @@ impl ImplicitCFGProduct {
             forward_bound: forward_bound.into_boxed_slice(),
             backward_bound: backward_bound.into_boxed_slice(),
             cfgs,
-            explicit: RefCell::new(None),
+            explicit: None,
         }
     }
 
@@ -113,7 +110,7 @@ impl ImplicitCFGProduct {
             forward_bound: forward_bound.into_boxed_slice(),
             backward_bound: backward_bound.into_boxed_slice(),
             cfgs,
-            explicit: RefCell::new(None),
+            explicit: None,
         }
     }
 
@@ -351,14 +348,14 @@ impl ImplicitCFGProduct {
         }
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a VASSCFG<()>> {
+    pub fn iter(&self) -> impl Iterator<Item = &VASSCFG<()>> {
         self.cfgs.iter()
     }
 
     /// If not already done, constructs and returns a ref to the explicit
     /// product CFG.
-    pub fn explicit(&self) -> Ref<'_, VASSCFG<()>> {
-        if self.explicit.borrow().is_none() {
+    pub fn explicit(&mut self) -> &VASSCFG<()> {
+        if self.explicit.is_none() {
             // TODO: construct the product in one step
             let mut explicit_cfg = self.cfgs[0].clone();
 
@@ -366,14 +363,14 @@ impl ImplicitCFGProduct {
                 explicit_cfg = explicit_cfg.intersect(cfg);
             }
 
-            *self.explicit.borrow_mut() = Some(explicit_cfg);
+            self.explicit = Some(explicit_cfg);
         }
 
-        Ref::map(self.explicit.borrow(), |opt| opt.as_ref().unwrap())
+        self.explicit.as_ref().unwrap()
     }
 
-    pub fn reset_explicit(&self) {
-        *self.explicit.borrow_mut() = None;
+    pub fn reset_explicit(&mut self) {
+        self.explicit = None;
     }
 }
 

@@ -47,7 +47,7 @@ impl<'a> Tool for VASSReachTool<'a> {
 
     fn test(&self) -> anyhow::Result<()> {
         Command::new("./target/release/vass-reach")
-            .args(&["--help"])
+            .args(["--help"])
             .current_dir(self.get_tool_path()?)
             .status()?;
 
@@ -56,7 +56,7 @@ impl<'a> Tool for VASSReachTool<'a> {
 
     fn build(&self) -> anyhow::Result<()> {
         Command::new("cargo")
-            .args(&["build", "--release"])
+            .args(["build", "--release"])
             .current_dir(self.get_tool_path()?)
             .status()?;
 
@@ -68,9 +68,11 @@ impl<'a> Tool for VASSReachTool<'a> {
         file_path: &std::path::Path,
         config: &TestRunConfig,
     ) -> anyhow::Result<SolverRunResult> {
-        // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p RuntimeMaxSec={self.test_config.timeout} ./target/release/vass-reach {file_path}`
+        // `systemd-run --user --scope --unit=kreach_run_{file_stub} -p MemoryMax=4G -p
+        // RuntimeMaxSec={self.test_config.timeout} ./target/release/vass-reach
+        // {file_path}`
         let mut command = Command::new("systemd-run");
-        command.args(&[
+        command.args([
             "--user",
             "--scope",
             &format!(
@@ -98,9 +100,10 @@ impl<'a> Tool for VASSReachTool<'a> {
         // command.stdout(Stdio::piped());
         // command.stderr(Stdio::piped());
 
-        // // the tool itself has a timeout, we give it some extra time to stop gracefully before we kill it
-        // let command_timeout = (self.test_config.timeout as f64 * 1.5) as u64;
-        // let output = run_with_watcher(&mut command, command_timeout)?;
+        // // the tool itself has a timeout, we give it some extra time to stop
+        // gracefully before we kill it let command_timeout =
+        // (self.test_config.timeout as f64 * 1.5) as u64; let output =
+        // run_with_watcher(&mut command, command_timeout)?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -119,8 +122,7 @@ impl<'a> Tool for VASSReachTool<'a> {
 
             Ok(SolverRunResult::Crash(format!(
                 "Process exited with status code {} and stderr:\n {}",
-                output.status,
-                stderr.to_string()
+                output.status, stderr
             )))
         }
     }

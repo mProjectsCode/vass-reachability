@@ -270,29 +270,29 @@ pub trait Automaton<Type: TransitionSystemType<Self::NIndex>>: Alphabet {
 }
 
 pub trait AutomatonIterators<Type: TransitionSystemType<Self::NIndex>>: Automaton<Type> {
-    fn iter_nodes<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (Self::NIndex, &'a Self::N)> + DoubleEndedIterator
+    fn iter_nodes<'a>(&'a self) -> impl DoubleEndedIterator<Item = (Self::NIndex, &'a Self::N)>
     where
         Self::N: 'a,
+        Self::NIndex: 'a,
     {
         self.iter_node_indices()
             .filter_map(move |idx| self.get_node(&idx).map(|n| (idx, n)))
     }
 
-    fn iter_node_indices<'a, 'b>(
-        &'a self,
-    ) -> impl Iterator<Item = Self::NIndex> + DoubleEndedIterator + 'b;
+    fn iter_node_indices<'a, 'b>(&'a self) -> impl DoubleEndedIterator<Item = Self::NIndex> + 'b
+    where
+        Self::NIndex: 'b;
 }
 
 impl<Type: TransitionSystemType<Self::NIndex>, A: Automaton<Type>> AutomatonIterators<Type> for A
 where
     Self::NIndex: CompactGIndex,
 {
-    fn iter_node_indices<'a, 'b>(
-        &'a self,
-    ) -> impl Iterator<Item = Self::NIndex> + DoubleEndedIterator + 'b {
-        (0..self.node_count()).map(|i| Self::NIndex::new(i))
+    fn iter_node_indices<'a, 'b>(&'a self) -> impl DoubleEndedIterator<Item = Self::NIndex> + 'b
+    where
+        Self::NIndex: 'b,
+    {
+        (0..self.node_count()).map(Self::NIndex::new)
     }
 }
 
@@ -342,7 +342,7 @@ pub trait TransitionSystem<Type: TransitionSystemType<Self::NIndex>>: Automaton<
 impl<T: ExplicitEdgeAutomaton<Deterministic>> TransitionSystem<Deterministic> for T {
     fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Option<Self::NIndex> {
         self.outgoing_edge_indices(node)
-            .find(|e| self.get_edge_unchecked(&e).matches(letter))
+            .find(|e| self.get_edge_unchecked(e).matches(letter))
             .map(|e| self.edge_target_unchecked(&e))
     }
 
@@ -370,7 +370,7 @@ impl<T: ExplicitEdgeAutomaton<Deterministic>> TransitionSystem<Deterministic> fo
 impl<T: ExplicitEdgeAutomaton<NonDeterministic>> TransitionSystem<NonDeterministic> for T {
     fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Vec<Self::NIndex> {
         self.outgoing_edge_indices(node)
-            .filter(|e| self.get_edge_unchecked(&e).matches(letter))
+            .filter(|e| self.get_edge_unchecked(e).matches(letter))
             .map(|e| self.edge_target_unchecked(&e))
             .collect()
     }
@@ -495,19 +495,14 @@ pub trait ModifiableAutomaton<Type: TransitionSystemType<Self::NIndex>>:
     fn add_node(&mut self, data: Self::N) -> Self::NIndex;
     /// Adds a new edge from the given from node to the given to node with the
     /// given label. Returns the index of the newly added edge.
-    fn add_edge<'a>(
-        &'a mut self,
-        from: &Self::NIndex,
-        to: &Self::NIndex,
-        label: Self::E,
-    ) -> Self::EIndex;
+    fn add_edge(&mut self, from: &Self::NIndex, to: &Self::NIndex, label: Self::E) -> Self::EIndex;
 
     /// Removes the given node from the automaton.
     /// Also removes all edges connected to the node.
     /// For removing multiple nodes, consider using `retain_nodes` instead.
-    fn remove_node<'a>(&'a mut self, node: &Self::NIndex);
+    fn remove_node(&mut self, node: &Self::NIndex);
     /// Removes the given edge from the automaton.
-    fn remove_edge<'a>(&'a mut self, edge: &Self::EIndex);
+    fn remove_edge(&mut self, edge: &Self::EIndex);
 
     /// Retains only the nodes for which the given predicate returns true.
     fn retain_nodes<F>(&mut self, f: F)

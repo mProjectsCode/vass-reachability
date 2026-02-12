@@ -1,31 +1,26 @@
 #![allow(clippy::just_underscores_and_digits)]
 
-use z3::{
-    Config, Context, SatResult, Solver,
-    ast::{Ast, Int},
-};
+use z3::{SatResult, Solver, ast::Int};
 
 #[test]
 fn z3_works() {
-    let config = Config::new();
-    let ctx = Context::new(&config);
-    let solver = Solver::new(&ctx);
+    let solver = Solver::new();
 
-    let x = Int::new_const(&ctx, "x");
-    let y = Int::new_const(&ctx, "y");
+    let x = Int::new_const("x");
+    let y = Int::new_const("y");
 
-    let _0 = Int::from_i64(&ctx, 0);
-    let _5 = Int::from_i64(&ctx, 5);
-    let _17 = Int::from_i64(&ctx, 17);
+    let _0 = Int::from_i64(0);
+    let _5 = Int::from_i64(5);
+    let _17 = Int::from_i64(17);
 
     // both x and y are positive
     solver.assert(&x.ge(&_0));
     solver.assert(&y.ge(&_0));
 
     // x + 5 * y = 17
-    solver.assert(&(&x + &_5 * &y)._eq(&_17));
+    solver.assert(&(&x + &_5 * &y).eq(&_17));
     // x + y = 5
-    solver.assert(&(&x + &y)._eq(&_5));
+    solver.assert(&(&x + &y).eq(&_5));
 
     match solver.check() {
         SatResult::Sat => {

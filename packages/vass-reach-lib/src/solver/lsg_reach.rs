@@ -1,13 +1,14 @@
 use std::{
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
+    time::Duration,
 };
 
 use petgraph::graph::EdgeIndex;
-use z3::{
-    Config, Context, Solver,
-    ast::{Ast, Int},
-};
+use z3::{Config, Context, Solver, ast::Int, with_z3_config};
 
 use crate::{
     automaton::{
@@ -33,7 +34,7 @@ use crate::{
 pub struct LSGReachSolverOptions<'l> {
     logger: Option<&'l Logger>,
     max_iterations: Option<u32>,
-    max_time: Option<std::time::Duration>,
+    max_time: Option<Duration>,
     stop_signal: Option<Arc<AtomicBool>>,
 }
 
@@ -48,7 +49,7 @@ impl<'l> LSGReachSolverOptions<'l> {
         self
     }
 
-    pub fn with_time_limit(mut self, limit: std::time::Duration) -> Self {
+    pub fn with_time_limit(mut self, limit: Duration) -> Self {
         self.max_time = Some(limit);
         self
     }
@@ -58,7 +59,7 @@ impl<'l> LSGReachSolverOptions<'l> {
         self
     }
 
-    pub fn with_optional_time_limit(mut self, limit: Option<std::time::Duration>) -> Self {
+    pub fn with_optional_time_limit(mut self, limit: Option<Duration>) -> Self {
         self.max_time = limit;
         self
     }
@@ -157,11 +158,11 @@ pub enum LSGReachSolverError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LSGReachSolverStatistics {
     pub step_count: u32,
-    pub time: std::time::Duration,
+    pub time: Duration,
 }
 
 impl LSGReachSolverStatistics {
-    pub fn new(step_count: u32, time: std::time::Duration) -> Self {
+    pub fn new(step_count: u32, time: Duration) -> Self {
         LSGReachSolverStatistics { step_count, time }
     }
 }
@@ -218,48 +219,51 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
 
         let mut config = Config::new();
         config.set_model_generation(true);
-        let ctx = Context::new(&config);
-        let solver = Solver::new(&ctx);
 
-        let context_handle = ctx.handle();
+        with_z3_config(&config, || {
+            let solver = Solver::new();
 
-        let start_time = self.solver_start_time.unwrap();
-        let stop_signal = self.stop_signal.clone();
-        let max_time = self.options.max_time;
+            let context = Context::thread_local();
+            let context_handle = context.handle();
 
-        let mut result = None;
+            let start_time = self.solver_start_time.unwrap();
+            let stop_signal = self.stop_signal.clone();
+            let max_time = self.options.max_time;
 
-        thread::scope(|s| {
-            s.spawn(|| {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+            let mut result = None;
 
-                    if let Some(max_time) = max_time
-                        && start_time.elapsed() >= max_time
-                    {
-                        stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
+            thread::scope(|s| {
+                s.spawn(|| {
+                    loop {
+                        std::thread::sleep(Duration::from_millis(10));
+
+                        if let Some(max_time) = max_time
+                            && start_time.elapsed() >= max_time
+                        {
+                            stop_signal.store(true, Ordering::SeqCst);
+                        }
+
+                        if stop_signal.load(Ordering::SeqCst) {
+                            context_handle.interrupt();
+                            break;
+                        }
                     }
+                });
 
-                    if stop_signal.load(std::sync::atomic::Ordering::SeqCst) {
-                        context_handle.interrupt();
-                        break;
-                    }
-                }
+                result = Some(self.solve_inner(&solver));
+
+                stop_signal.store(true, Ordering::SeqCst);
             });
 
-            result = Some(self.solve_inner(&ctx, &solver));
-
-            stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
-        });
-
-        result.expect("Thread panicked")
+            result.expect("Thread panicked")
+        })
     }
 
-    fn solve_inner(&mut self, ctx: &Context, solver: &Solver) -> LSGReachSolverResult {
+    fn solve_inner(&mut self, solver: &Solver) -> LSGReachSolverResult {
         let mut sums: Box<[_]> = self
             .initial_valuation
             .iter()
-            .map(|x| Int::from_i64(ctx, *x as i64))
+            .map(|x| Int::from_i64(*x as i64))
             .collect();
 
         let edge_maps = self
@@ -269,19 +273,18 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
             .enumerate()
             .filter_map(|(i, part)| match part {
                 LSGPart::Path(path) => {
-                    self.build_path_constraints(path, ctx, solver, &mut sums);
+                    self.build_path_constraints(path, solver, &mut sums);
                     None
                 }
                 LSGPart::SubGraph(subgraph) => {
-                    let edge_map =
-                        self.build_subgraph_constraints(i, subgraph, ctx, solver, &mut sums);
+                    let edge_map = self.build_subgraph_constraints(i, subgraph, solver, &mut sums);
                     Some(edge_map)
                 }
             })
             .collect::<Vec<_>>();
 
         for (sum, target) in sums.iter().zip(self.final_valuation.iter()) {
-            solver.assert(&sum._eq(&Int::from_i64(ctx, *target as i64)));
+            solver.assert(sum.eq(Int::from_i64(*target as i64)));
         }
 
         self.step_count = 1;
@@ -350,7 +353,7 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
 
                     for (subgraph, edge_map, _, components) in parikh_image_components.into_iter() {
                         for component in components {
-                            forbid_parikh_image(&component, subgraph, edge_map, solver, ctx);
+                            forbid_parikh_image(&component, subgraph, edge_map, solver);
                         }
                     }
 
@@ -368,51 +371,43 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
         }
     }
 
-    fn build_path_constraints<'c>(
-        &self,
-        path: &LSGPath,
-        ctx: &'c Context,
-        solver: &Solver,
-        sums: &mut Box<[Int<'c>]>,
-    ) {
+    fn build_path_constraints(&self, path: &LSGPath, solver: &Solver, sums: &mut Box<[Int]>) {
         let path_updates = cfg_updates_to_counter_updates(path.path.iter(), self.lsg.dimension);
 
         // first subtract the minimums
         for (update, sum) in path_updates.0.iter().zip(sums.iter_mut()) {
-            let update_ast = Int::from_i64(ctx, *update as i64);
+            let update_ast = Int::from_i64(*update as i64);
             *sum = &*sum - &update_ast;
         }
 
         // then assert non-negativity
         for sum in sums.iter() {
-            let zero = Int::from_i64(ctx, 0);
+            let zero = Int::from_i64(0);
             let geq_zero = sum.ge(&zero);
             solver.assert(&geq_zero);
         }
 
         // then add the rest to get the path's effect
         for (update, sum) in path_updates.1.iter().zip(sums.iter_mut()) {
-            let update_ast = Int::from_i64(ctx, *update as i64);
+            let update_ast = Int::from_i64(*update as i64);
             *sum = &*sum + &update_ast;
         }
     }
 
-    fn build_subgraph_constraints<'c>(
+    fn build_subgraph_constraints(
         &self,
         part_index: usize,
         subgraph: &LSGGraph,
-        ctx: &'c Context,
         solver: &Solver,
-        sums: &mut Box<[Int<'c>]>,
-    ) -> OptionIndexMap<EdgeIndex, Int<'c>> {
+        sums: &mut Box<[Int]>,
+    ) -> OptionIndexMap<EdgeIndex, Int> {
         let mut edge_map = OptionIndexMap::new(subgraph.edge_count());
 
         for (edge, update) in subgraph.iter_edges() {
             // we need one variable for each edge
-            let edge_var =
-                Int::new_const(ctx, format!("graph_{}_edge_{}", part_index, edge.index()));
+            let edge_var = Int::new_const(format!("graph_{}_edge_{}", part_index, edge.index()));
             // CONSTRAINT: an edge can only be taken positive times
-            solver.assert(&edge_var.ge(&Int::from_i64(ctx, 0)));
+            solver.assert(edge_var.ge(Int::from_i64(0)));
 
             // add the edges effect to the counter sum
             let i = update.counter();
@@ -428,15 +423,15 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
             // the end node has one additional outgoing connection, this works, because we
             // always have exactly one end node
             let mut outgoing_sum = if node == subgraph.end {
-                Int::from_i64(ctx, 1)
+                Int::from_i64(1)
             } else {
-                Int::from_i64(ctx, 0)
+                Int::from_i64(0)
             };
             // the start node has one additional incoming connection
             let mut incoming_sum = if node == subgraph.start {
-                Int::from_i64(ctx, 1)
+                Int::from_i64(1)
             } else {
-                Int::from_i64(ctx, 0)
+                Int::from_i64(0)
             };
 
             for edge in outgoing {
@@ -451,7 +446,7 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
 
             // CONSTRAINT: the sum of all outgoing edges must be equal to the sum of all
             // incoming edges for each node
-            solver.assert(&outgoing_sum._eq(&incoming_sum));
+            solver.assert(outgoing_sum.eq(&incoming_sum));
         }
 
         edge_map
@@ -465,7 +460,7 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
     }
 
     fn max_time_reached(&self) -> bool {
-        self.stop_signal.load(std::sync::atomic::Ordering::SeqCst)
+        self.stop_signal.load(Ordering::SeqCst)
     }
 
     fn max_iterations_reached_result(&self) -> LSGReachSolverResult {
@@ -490,7 +485,7 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
         LSGReachSolverStatistics::new(self.step_count, self.get_solver_time().unwrap_or_default())
     }
 
-    fn get_solver_time(&self) -> Option<std::time::Duration> {
+    fn get_solver_time(&self) -> Option<Duration> {
         self.solver_start_time.map(|x| x.elapsed())
     }
 }

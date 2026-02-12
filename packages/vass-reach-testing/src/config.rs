@@ -31,7 +31,7 @@ impl Test {
             bail!("Test path is not absolute");
         }
 
-        Ok(Self { path: path })
+        Ok(Self { path })
     }
 
     pub fn canonicalize<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
@@ -81,7 +81,7 @@ impl Test {
         Ok(())
     }
 
-    pub fn write_nets(&self, nets: &Vec<InitializedPetriNet>) -> anyhow::Result<()> {
+    pub fn write_nets(&self, nets: &[InitializedPetriNet]) -> anyhow::Result<()> {
         let instances_folder = self.instances_folder();
         if !instances_folder.exists() {
             fs::create_dir_all(&instances_folder)?

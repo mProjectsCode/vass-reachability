@@ -67,7 +67,7 @@ impl<'a> LinearSubGraph<'a> {
                 LSGPart::Path(path) => path
                     .path
                     .clone()
-                    .split_at(|s| neighbors.contains(&s))
+                    .split_at(|s| neighbors.contains(s))
                     .into_iter()
                     .map(|p| LSGPart::Path(p.into()))
                     .collect_vec(),
@@ -221,8 +221,7 @@ impl<'a> LinearSubGraph<'a> {
             })
             .collect_vec();
 
-        let mut new_parts = vec![];
-        new_parts.reserve(split_parts.len());
+        let mut new_parts = Vec::with_capacity(split_parts.len());
 
         for part in split_parts {
             let ends_at_node = part.end() == &state;
@@ -352,7 +351,7 @@ fn partial_accept_path<'a>(
 ) -> bool {
     let mut index = 0;
 
-    if path.path.len() == 0 {
+    if path.path.is_empty() {
         return true;
     }
 

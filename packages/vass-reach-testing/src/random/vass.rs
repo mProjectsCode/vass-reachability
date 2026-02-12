@@ -1,4 +1,4 @@
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 use vass_reach_lib::automaton::{
     ModifiableAutomaton,
     vass::{VASS, VASSEdge, counter::VASSCounterValuation, initialized::InitializedVASS},
@@ -27,26 +27,26 @@ pub fn generate_radom_vass(
             }
 
             for i in 0..transition_count {
-                let from = r.gen_range(0..state_count);
-                let to = r.gen_range(0..state_count);
+                let from = r.random_range(0..state_count);
+                let to = r.random_range(0..state_count);
 
                 let mut input = vec![];
 
                 for _ in 0..dimension {
-                    input.push(r.gen_range(-max_tokens_per_transition..=max_tokens_per_transition));
+                    input.push(
+                        r.random_range(-max_tokens_per_transition..=max_tokens_per_transition),
+                    );
                 }
 
                 vass.add_edge(&states[from], &states[to], VASSEdge::new(i, input.into()));
             }
 
             let initial_m: VASSCounterValuation = (0..dimension)
-                .into_iter()
-                .map(|_| r.gen_range(0..=max_tokens_per_transition))
+                .map(|_| r.random_range(0..=max_tokens_per_transition))
                 .collect();
 
             let final_m: VASSCounterValuation = (0..dimension)
-                .into_iter()
-                .map(|_| r.gen_range(0..=max_tokens_per_transition))
+                .map(|_| r.random_range(0..=max_tokens_per_transition))
                 .collect();
 
             vass.init(initial_m, final_m, states[0], states[state_count - 1])

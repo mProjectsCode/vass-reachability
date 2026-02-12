@@ -7,9 +7,6 @@
         "VASSCFG"
     ],
     "rust-analyzer.linkedProjects": [
-        "packages/vass-reach/Cargo.toml",
-        "packages/vass-reach-lib/Cargo.toml",
-        "packages/vass-reach-playground/Cargo.toml",
-        "packages/vass-reach-testing/Cargo.toml"
+        "Cargo.toml",
     ]
 }

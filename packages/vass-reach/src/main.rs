@@ -10,7 +10,8 @@ use vass_reach_lib::{
     },
 };
 
-/// The mode to run this tool in, either solve for reachability in N (natural numbers) or Z (whole numbers).
+/// The mode to run this tool in, either solve for reachability in N (natural
+/// numbers) or Z (whole numbers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
     N,
@@ -54,8 +55,8 @@ impl ModeWithConfig {
 
     pub fn logger_config(&self) -> &LoggerConfig {
         match self {
-            ModeWithConfig::N(c) => &c.logger(),
-            ModeWithConfig::Z(c) => &c.logger(),
+            ModeWithConfig::N(c) => c.logger(),
+            ModeWithConfig::Z(c) => c.logger(),
         }
     }
 }

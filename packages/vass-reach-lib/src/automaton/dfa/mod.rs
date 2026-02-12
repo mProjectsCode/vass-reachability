@@ -56,7 +56,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         {
             let is_complete = self.check_complete();
             assert_eq!(is_complete, self.complete);
-            return is_complete;
+            is_complete
         }
     }
 
@@ -340,7 +340,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         queue.push_back(Path::new(start));
 
         while let Some(path) = queue.pop_front() {
-            let last = path.end().clone();
+            let last = *path.end();
 
             if is_target(&last, &self.graph[last]) {
                 paths.push(path.clone());
@@ -524,10 +524,10 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
             }
         }
 
-        if let Some(start) = self.start {
-            if nodes.contains(&start) {
-                sub_dfa.set_initial(node_map[&start]);
-            }
+        if let Some(start) = self.start
+            && nodes.contains(&start)
+        {
+            sub_dfa.set_initial(node_map[&start]);
         }
 
         sub_dfa

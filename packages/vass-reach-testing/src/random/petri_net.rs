@@ -1,4 +1,4 @@
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 use vass_reach_lib::automaton::{
     petri_net::{PetriNet, initialized::InitializedPetriNet},
     vass::counter::VASSCounterValuation,
@@ -38,12 +38,10 @@ pub fn generate_random_petri_net(
             }
 
             let initial_m: VASSCounterValuation = (0..place_count)
-                .into_iter()
-                .map(|_| r.gen_range(0..max_tokens_per_transition) as i32)
+                .map(|_| r.random_range(0..max_tokens_per_transition) as i32)
                 .collect();
             let final_m: VASSCounterValuation = (0..place_count)
-                .into_iter()
-                .map(|_| r.gen_range(0..max_tokens_per_transition) as i32)
+                .map(|_| r.random_range(0..max_tokens_per_transition) as i32)
                 .collect();
 
             petri_net.init(initial_m, final_m)
@@ -61,8 +59,8 @@ fn generate_transition(
     let mut output = vec![];
 
     for p in 1..=place_count {
-        input.push((r.gen_range(0..max_tokens_per_transition), p));
-        output.push((r.gen_range(0..max_tokens_per_transition), p));
+        input.push((r.random_range(0..max_tokens_per_transition), p));
+        output.push((r.random_range(0..max_tokens_per_transition), p));
     }
 
     net.add_transition(input, output);
@@ -80,7 +78,7 @@ fn generate_guard_free_transition(
     assert!(max_tokens_per_transition > 0);
 
     for p in 1..=place_count {
-        let change = r.gen_range(1..2 * max_tokens_per_transition);
+        let change = r.random_range(1..2 * max_tokens_per_transition);
         let change = (change as i64) - max_tokens_per_transition as i64;
         if change > 0 {
             input.push((change as usize, p));

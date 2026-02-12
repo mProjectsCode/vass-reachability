@@ -8,7 +8,6 @@ use crate::{generation::generate, testing::test, visualization::visualize};
 
 pub mod config;
 pub mod generation;
-pub mod process_watcher;
 pub mod random;
 pub mod testing;
 pub mod tools;

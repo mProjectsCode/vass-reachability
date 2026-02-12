@@ -37,12 +37,12 @@ pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
     logger.info("Resetting systemd scopes...");
 
     for tool_config in &config.runs {
-        let Some(tool) = tools.iter().find(|tool| tool.name() == &tool_config.tool) else {
+        let Some(tool) = tools.iter().find(|tool| tool.name() == tool_config.tool) else {
             continue;
         };
 
         Command::new("systemctl")
-            .args(&["--user", "reset-failed"])
+            .args(["--user", "reset-failed"])
             .status()
             .context("failed to reset systemd runs via systemctl")?;
 

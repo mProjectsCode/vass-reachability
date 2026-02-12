@@ -487,7 +487,7 @@ impl ToSpecFormat for InitializedPetriNet {
             .collect::<Vec<String>>()
             .join(" ");
         spec.push_str(&vars);
-        spec.push_str("\n");
+        spec.push('\n');
 
         // rules
         spec.push_str("rules\n");
@@ -531,7 +531,7 @@ impl ToSpecFormat for InitializedPetriNet {
             init_atoms.push(format!("p{}={}", i + 1, init_valuation[i]));
         }
         spec.push_str(&init_atoms.join(", "));
-        spec.push_str("\n");
+        spec.push('\n');
 
         // target
         spec.push_str("target\n    ");
@@ -541,7 +541,7 @@ impl ToSpecFormat for InitializedPetriNet {
             target_atoms.push(format!("p{}={}", i + 1, target_valuation[i]));
         }
         spec.push_str(&target_atoms.join(", "));
-        spec.push_str("\n");
+        spec.push('\n');
 
         spec
     }

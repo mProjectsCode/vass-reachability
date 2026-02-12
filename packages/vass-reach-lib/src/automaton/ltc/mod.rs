@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use z3::{
-    Config, Context, Solver,
-    ast::{Ast, Bool, Int},
+    Solver,
+    ast::{Bool, Int},
 };
 
 use crate::automaton::vass::counter::{VASSCounterUpdate, VASSCounterValuation};
@@ -132,15 +132,32 @@ impl LTC {
     ) -> LTCSolverResult {
         let time = std::time::Instant::now();
 
-        let config = Config::new();
-        let ctx = Context::new(&config);
-        let solver = Solver::new(&ctx);
+        let solver = Solver::new();
 
-        let zero = Int::from_i64(&ctx, 0);
+        let result = self.reach_inner(
+            &solver,
+            n_reach,
+            assert_n_loops,
+            initial_valuation,
+            final_valuation,
+        );
+
+        LTCSolverResult::new(result, time.elapsed())
+    }
+
+    fn reach_inner(
+        &self,
+        solver: &Solver,
+        n_reach: bool,
+        assert_n_loops: bool,
+        initial_valuation: &VASSCounterValuation,
+        final_valuation: &VASSCounterValuation,
+    ) -> bool {
+        let zero = Int::from_i64(0);
 
         let mut sums = initial_valuation
             .iter()
-            .map(|&x| Int::from_i64(&ctx, x as i64))
+            .map(|&x| Int::from_i64(x as i64))
             .collect_vec();
         // currently unused, for path extraction later
         let mut loop_variables = vec![];
@@ -151,10 +168,10 @@ impl LTC {
                     let ls = loops
                         .iter()
                         .enumerate()
-                        .map(|(j, _)| Int::new_const(&ctx, format!("{i}_{j}")))
+                        .map(|(j, _)| Int::new_const(format!("{i}_{j}")))
                         .collect_vec();
                     for l in ls.iter() {
-                        solver.assert(&l.ge(&zero));
+                        solver.assert(l.ge(&zero));
                     }
 
                     for i in 0..self.dimension {
@@ -162,19 +179,19 @@ impl LTC {
                             if assert_n_loops {
                                 for (j, (subtract, add)) in loops.iter().enumerate() {
                                     let l = &ls[j];
-                                    let sub_i = &Int::from_i64(&ctx, subtract[i] as i64);
-                                    let add_i = &Int::from_i64(&ctx, add[i] as i64);
+                                    let sub_i = &Int::from_i64(subtract[i] as i64);
+                                    let add_i = &Int::from_i64(add[i] as i64);
 
                                     // if we want to solve reach in N, we need to assert after every
                                     // subtraction
                                     // that the counters are positive
-                                    let lm1 = l - &Int::from_i64(&ctx, 1);
+                                    let lm1 = l - &Int::from_i64(1);
 
                                     let c1 = &sums[i] - sub_i;
                                     let c2 = &sums[i] - sub_i * l + add_i * &lm1;
 
-                                    solver.assert(&l.ge(&zero).implies(&c1.ge(&zero)));
-                                    solver.assert(&l.ge(&zero).implies(&c2.ge(&zero)));
+                                    solver.assert(l.ge(&zero).implies(c1.ge(&zero)));
+                                    solver.assert(l.ge(&zero).implies(c2.ge(&zero)));
 
                                     sums[i] = &sums[i] - sub_i * l + add_i * l;
                                 }
@@ -184,10 +201,10 @@ impl LTC {
 
                                 for (j, (subtract, add)) in loops.iter().enumerate() {
                                     let l = &ls[j];
-                                    let sub_i = &Int::from_i64(&ctx, subtract[i] as i64);
-                                    let add_i = &Int::from_i64(&ctx, add[i] as i64);
+                                    let sub_i = &Int::from_i64(subtract[i] as i64);
+                                    let add_i = &Int::from_i64(add[i] as i64);
 
-                                    let lm1 = l - &Int::from_i64(&ctx, 1);
+                                    let lm1 = l - &Int::from_i64(1);
 
                                     let c1 = &sums[i] - sub_i;
                                     let mut c2 = &sums[i] - sub_i * l + add_i * &lm1;
@@ -195,15 +212,15 @@ impl LTC {
                                     for other in loops.iter().enumerate() {
                                         if other.0 != j {
                                             c2 = &c2
-                                                - &Int::from_i64(&ctx, other.1.0[i] as i64)
+                                                - &Int::from_i64(other.1.0[i] as i64)
                                                     * &ls[other.0]
-                                                + &Int::from_i64(&ctx, other.1.1[i] as i64)
+                                                + &Int::from_i64(other.1.1[i] as i64)
                                                     * &ls[other.0];
                                         }
                                     }
 
-                                    let c1 = l.ge(&zero).implies(&c1.ge(&zero));
-                                    let c2 = l.ge(&zero).implies(&c2.ge(&zero));
+                                    let c1 = l.ge(&zero).implies(c1.ge(&zero));
+                                    let c2 = l.ge(&zero).implies(c2.ge(&zero));
 
                                     c_in.push(c1);
                                     c_out.push(c2);
@@ -212,13 +229,13 @@ impl LTC {
                                 let c_in = c_in.iter().collect_vec();
                                 let c_out = c_out.iter().collect_vec();
 
-                                solver.assert(&Bool::or(&ctx, &c_in));
-                                solver.assert(&Bool::or(&ctx, &c_out));
+                                solver.assert(Bool::or(&c_in));
+                                solver.assert(Bool::or(&c_out));
 
                                 for (j, (subtract, add)) in loops.iter().enumerate() {
                                     let l = &ls[j];
-                                    let sub_i = &Int::from_i64(&ctx, subtract[i] as i64);
-                                    let add_i = &Int::from_i64(&ctx, add[i] as i64);
+                                    let sub_i = &Int::from_i64(subtract[i] as i64);
+                                    let add_i = &Int::from_i64(add[i] as i64);
 
                                     sums[i] = &sums[i] - sub_i * l + add_i * l;
                                 }
@@ -226,8 +243,8 @@ impl LTC {
                         } else {
                             for (j, (subtract, add)) in loops.iter().enumerate() {
                                 let l = &ls[j];
-                                let sub_i = &Int::from_i64(&ctx, subtract[i] as i64);
-                                let add_i = &Int::from_i64(&ctx, add[i] as i64);
+                                let sub_i = &Int::from_i64(subtract[i] as i64);
+                                let add_i = &Int::from_i64(add[i] as i64);
 
                                 sums[i] = &sums[i] - sub_i * l + add_i * l;
                             }
@@ -240,37 +257,31 @@ impl LTC {
                     // for each counter, we subtract the subtract value, then assert that we are
                     // positive and add the add value
                     for i in 0..self.dimension {
-                        sums[i] = &sums[i] - &Int::from_i64(&ctx, subtract[i] as i64);
+                        sums[i] = &sums[i] - &Int::from_i64(subtract[i] as i64);
 
                         // if we want to solve reach in N, we need to assert after every subtraction
                         // that the counters are positive
                         if n_reach {
-                            solver.assert(&sums[i].ge(&zero));
+                            solver.assert(sums[i].ge(&zero));
                         }
 
-                        sums[i] = &sums[i] + &Int::from_i64(&ctx, add[i] as i64);
+                        sums[i] = &sums[i] + &Int::from_i64(add[i] as i64);
                     }
                 }
             }
         }
 
         for (sum, target) in sums.into_iter().zip(final_valuation.iter()) {
-            solver.assert(&sum._eq(&Int::from_i64(&ctx, *target as i64)));
+            solver.assert(sum.eq(Int::from_i64(*target as i64)));
         }
 
         // println!("Solver setup took: {:?}", time.elapsed());
 
-        let result = match solver.check() {
+        match solver.check() {
             z3::SatResult::Sat => true,
             z3::SatResult::Unsat => false,
             z3::SatResult::Unknown => panic!("Solver returned unknown"),
-        };
-
-        // let stats = solver.get_statistics();
-        // println!("Solver statistics: {:?}", stats);
-        // println!("Solver took: {:?}", time.elapsed());
-
-        LTCSolverResult::new(result, time.elapsed())
+        }
     }
 }
 

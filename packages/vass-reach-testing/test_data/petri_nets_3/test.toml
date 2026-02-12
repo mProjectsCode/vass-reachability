@@ -2,15 +2,15 @@ timeout = 60
 memory_max_gb = 4
 
 [[runs]]
-name = "vass-reach-inc"
+name = "vass-reach-random"
 tool = "vass-reach"
-config = "./vass_reach_inc.toml"
+config = "./vass_reach_random.toml"
 max_parallel = 8
 
 [[runs]]
-name = "vass-reach-lcm"
+name = "vass-reach-scc"
 tool = "vass-reach"
-config = "./vass_reach_lcm.toml"
+config = "./vass_reach_scc.toml"
 max_parallel = 8
 
 # [[runs]]

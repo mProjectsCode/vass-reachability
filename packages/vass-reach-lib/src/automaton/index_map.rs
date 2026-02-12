@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, iter::Enumerate};
 
 use petgraph::{
     csr::IndexType,
@@ -51,10 +51,10 @@ impl<T: IndexType> IndexMapData for EdgeIndex<T> {
 }
 
 impl IndexMapData for () {
-    fn empty() -> Self {
-        ()
-    }
+    fn empty() -> Self {}
 }
+
+// MARK: IndexMap
 
 /// A vector based map from keys of type K to values of type V.
 /// The maximum key index must be known at map creation time.
@@ -125,13 +125,6 @@ impl<K: CompactGIndex, V: IndexMapData> IndexMap<K, V> {
         self.data[key.index()] = V::empty();
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = (K, V)> {
-        self.data
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| (K::new(i), v))
-    }
-
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (K, &'a V)> + 'a {
         self.data.iter().enumerate().map(|(i, v)| (K::new(i), v))
     }
@@ -192,6 +185,39 @@ impl<K: CompactGIndex, V: IndexMapData> std::ops::IndexMut<K> for IndexMap<K, V>
     }
 }
 
+pub struct IndexMapIntoIter<K: CompactGIndex, V: IndexMapData> {
+    map: Enumerate<std::vec::IntoIter<V>>,
+    __marker: std::marker::PhantomData<K>,
+}
+
+impl<K: CompactGIndex, V: IndexMapData> IndexMapIntoIter<K, V> {
+    fn new(map: IndexMap<K, V>) -> Self {
+        IndexMapIntoIter {
+            map: map.data.into_iter().enumerate(),
+            __marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<K: CompactGIndex, V: IndexMapData> Iterator for IndexMapIntoIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.map.next().map(|(i, v)| (K::new(i), v))
+    }
+}
+
+impl<K: CompactGIndex, V: IndexMapData> IntoIterator for IndexMap<K, V> {
+    type Item = (K, V);
+    type IntoIter = IndexMapIntoIter<K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexMapIntoIter::new(self)
+    }
+}
+
+// MARK: OptionIndexMap
+
 #[derive(Debug, Clone)]
 pub struct OptionIndexMap<K: CompactGIndex, V: Debug + Clone + PartialEq> {
     data: Vec<Option<V>>,
@@ -213,7 +239,7 @@ impl<K: CompactGIndex, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
     pub fn has_key(&self, key: K) -> bool {
         let index = key.index();
 
-        index < self.data.len() && self.data[index] != None
+        index < self.data.len() && self.data[index].is_some()
     }
 
     pub fn get(&self, key: K) -> Option<&V> {
@@ -226,13 +252,6 @@ impl<K: CompactGIndex, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
 
     pub fn insert(&mut self, key: K, value: V) {
         self.data[key.index()] = Some(value);
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = (K, V)> {
-        self.data
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, v)| v.map(|x| (K::new(i), x)))
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (K, &'a V)> + 'a {
@@ -267,7 +286,7 @@ impl<K: CompactGIndex, V: Debug + Clone + PartialEq> OptionIndexMap<K, V> {
         V2: Debug + Clone + PartialEq,
         F: Fn(&V) -> V2,
     {
-        let data = self.data.iter().map(|v| v.as_ref().map(|v| f(v))).collect();
+        let data = self.data.iter().map(|v| v.as_ref().map(&f)).collect();
 
         OptionIndexMap {
             data,
@@ -291,6 +310,44 @@ impl<K: CompactGIndex, V: Debug + Clone + PartialEq> std::ops::IndexMut<K>
         self.get_mut(index).expect("key not present in map")
     }
 }
+
+pub struct OptionIndexMapIntoIter<K: CompactGIndex, V: Debug + Clone + PartialEq> {
+    map: Enumerate<std::vec::IntoIter<Option<V>>>,
+    __marker: std::marker::PhantomData<K>,
+}
+
+impl<K: CompactGIndex, V: Debug + Clone + PartialEq> OptionIndexMapIntoIter<K, V> {
+    fn new(map: OptionIndexMap<K, V>) -> Self {
+        OptionIndexMapIntoIter {
+            map: map.data.into_iter().enumerate(),
+            __marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<K: CompactGIndex, V: Debug + Clone + PartialEq> Iterator for OptionIndexMapIntoIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for (i, v) in self.map.by_ref() {
+            if let Some(v) = v {
+                return Some((K::new(i), v));
+            }
+        }
+        None
+    }
+}
+
+impl<K: CompactGIndex, V: Debug + Clone + PartialEq> IntoIterator for OptionIndexMap<K, V> {
+    type Item = (K, V);
+    type IntoIter = OptionIndexMapIntoIter<K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OptionIndexMapIntoIter::new(self)
+    }
+}
+
+// MARK: IndexSet
 
 #[derive(Debug, Clone)]
 pub struct IndexSet<K: CompactGIndex> {

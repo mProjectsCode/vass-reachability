@@ -143,7 +143,7 @@ impl FromStr for CFGCounterUpdate {
 
         let mut number = 0;
         let mut index = 2;
-        while let Some(char) = chars.next() {
+        for char in chars {
             if let Some(digit) = char.to_digit(10) {
                 number = number * 10 + digit;
             } else {

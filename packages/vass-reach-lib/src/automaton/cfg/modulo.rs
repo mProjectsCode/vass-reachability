@@ -107,10 +107,8 @@ impl ModuloCFG {
     pub fn index_to_counter(&self, index: NodeIndex) -> VASSCounterValuation {
         let mut counter = vec![0_i32; self.dimension];
         let mut remaining = index.index() as i32;
-        for i in 0..self.dimension {
-            let mu = self.mu[i];
-
-            counter[i] = remaining % mu;
+        for (counter, mu) in counter.iter_mut().zip(&self.mu) {
+            *counter = remaining % mu;
             remaining /= mu;
         }
         counter.into()

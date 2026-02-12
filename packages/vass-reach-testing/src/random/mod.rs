@@ -43,7 +43,7 @@ fn persist_to_file<T: Serialize>(
 }
 
 pub fn persist_multiple_to_file<T: Serialize>(
-    objs: &Vec<T>,
+    objs: &[T],
     folder_path: &std::path::Path,
     base_file_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +60,7 @@ pub fn persist_multiple_to_file<T: Serialize>(
 }
 
 pub fn persist_nets_to_file(
-    nets: &Vec<InitializedPetriNet>,
+    nets: &[InitializedPetriNet],
     folder_path: &std::path::Path,
     base_file_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
