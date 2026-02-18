@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use vass_reach_macros::config;
 
-use crate::logger::LogLevel;
-
 pub trait IntoOr<T> {
     fn into_or(self, or: T) -> T;
 }
@@ -22,18 +20,6 @@ impl<T> IntoOr<T> for Option<T> {
     }
 }
 
-pub trait GeneralConfig {
-    fn logger(&self) -> &LoggerConfig;
-}
-
-config! {
-    pub struct LoggerConfig {
-        enabled: bool = false,
-        log_file: bool = false,
-        log_level: LogLevel = LogLevel::Warn,
-    }
-}
-
 config! {
     pub struct VASSReachConfig {
         timeout: Option<std::time::Duration> = None,
@@ -41,13 +27,6 @@ config! {
         modulo: ModuloConfig (Option<PartialModuloConfig> = ModuloConfig::default()),
         lts: LTSConfig (Option<PartialLTSConfig> = LTSConfig::default()),
         lsg: LSGConfig (Option<PartialLSGConfig> = LSGConfig::default()),
-        logger: LoggerConfig (Option<PartialLoggerConfig> = LoggerConfig::default()),
-    }
-}
-
-impl GeneralConfig for VASSReachConfig {
-    fn logger(&self) -> &LoggerConfig {
-        &self.logger
     }
 }
 
@@ -88,12 +67,5 @@ config! {
     pub struct VASSZReachConfig {
         timeout: Option<std::time::Duration> = None,
         max_iterations: Option<u64> = None,
-        logger: LoggerConfig (Option<PartialLoggerConfig> = LoggerConfig::default()),
-    }
-}
-
-impl GeneralConfig for VASSZReachConfig {
-    fn logger(&self) -> &LoggerConfig {
-        &self.logger
     }
 }

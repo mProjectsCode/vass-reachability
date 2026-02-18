@@ -4,7 +4,7 @@ use hashbrown::HashSet;
 
 use crate::automaton::{
     AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, GIndex, Letter, TransitionSystem,
-    TransitionSystemType, path::transition_sequence::TransitionSequence,
+    path::transition_sequence::TransitionSequence,
 };
 
 pub mod parikh_image;

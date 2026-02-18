@@ -1,18 +1,15 @@
 use hashbrown::HashSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::{
-    automaton::{
-        AutomatonIterators, CompactGIndex, GIndex,
-        cfg::{
-            ExplicitEdgeCFG,
-            update::{CFGCounterUpdatable, CFGCounterUpdate},
-        },
-        index_map::{IndexMap, IndexSet},
-        path::{Path, transition_sequence::TransitionSequence},
-        vass::counter::{VASSCounterUpdate, VASSCounterValuation},
+use crate::automaton::{
+    AutomatonIterators, CompactGIndex, GIndex,
+    cfg::{
+        ExplicitEdgeCFG,
+        update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
-    logger::{LogLevel, Logger},
+    index_map::{IndexMap, IndexSet},
+    path::{Path, transition_sequence::TransitionSequence},
+    vass::counter::{VASSCounterUpdate, VASSCounterValuation},
 };
 
 #[derive(Debug, Clone)]
@@ -28,12 +25,6 @@ impl<EIndex: CompactGIndex> ParikhImage<EIndex> {
     pub fn empty(edge_count: usize) -> Self {
         ParikhImage {
             image: IndexMap::new(edge_count),
-        }
-    }
-
-    pub fn print(&self, logger: &Logger, level: LogLevel) {
-        for (edge, count) in self.image.iter() {
-            logger.log(level, &format!("Edge: {:?}: {}", edge, count));
         }
     }
 

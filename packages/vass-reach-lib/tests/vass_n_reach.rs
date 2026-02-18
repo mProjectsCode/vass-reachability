@@ -26,7 +26,6 @@ fn test_vass_n_reach_1() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -49,7 +48,6 @@ fn test_vass_n_reach_2() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -71,7 +69,6 @@ fn test_vass_n_reach_3() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -114,7 +111,6 @@ fn test_vass_n_reach_4() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -141,7 +137,6 @@ fn test_vass_n_reach_5() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -166,7 +161,6 @@ fn test_vass_n_reach_6() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -189,7 +183,6 @@ fn test_vass_n_reach_7() {
         &initialized_vass,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 

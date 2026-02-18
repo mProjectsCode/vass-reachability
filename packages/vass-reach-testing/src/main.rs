@@ -2,7 +2,6 @@ use std::{fmt::Display, fs, str::FromStr};
 
 use anyhow::Context;
 use clap::Parser;
-use vass_reach_lib::logger::{LogLevel, Logger};
 
 use crate::{generation::generate, testing::test, visualization::visualize};
 
@@ -55,28 +54,29 @@ impl Display for Mode {
 }
 
 fn main() {
-    let logger = Logger::new(LogLevel::Info, "tester".to_string(), None);
-    let res = run(&logger);
+    tracing_subscriber::fmt::init();
+
+    let res = run();
     match &res {
-        Ok(_) => logger.info("Tester completed successfully."),
-        Err(e) => logger.error(&format!("Tester failed with error: {}", e)),
+        Ok(_) => tracing::info!("Tester completed successfully."),
+        Err(e) => tracing::error!("Tester failed with error: {}", e),
     }
 }
 
-fn run(logger: &Logger) -> anyhow::Result<()> {
-    logger.info(&format!(
+fn run() -> anyhow::Result<()> {
+    tracing::info!(
         "Running from: {}",
         fs::canonicalize(".")
             .context("failed to canonicalize cwd")?
             .display()
-    ));
+    );
 
     let args = Args::parse();
 
     match &args.mode {
-        Mode::Generate => generate(logger, &args),
-        Mode::Test => test(logger, &args),
-        Mode::Visualize => visualize(logger, &args),
+        Mode::Generate => generate(&args),
+        Mode::Test => test(&args),
+        Mode::Visualize => visualize(&args),
     }
     .with_context(|| format!("failed in mode: {}", &args.mode))
 }

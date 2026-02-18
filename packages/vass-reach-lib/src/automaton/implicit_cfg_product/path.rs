@@ -3,10 +3,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::automaton::{
     TransitionSystem,
-    cfg::{
-        CFG,
-        update::{CFGCounterUpdatable, CFGCounterUpdate},
-    },
+    cfg::update::{CFGCounterUpdatable, CFGCounterUpdate},
     implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
     path::Path,
     vass::counter::{VASSCounterIndex, VASSCounterValuation},

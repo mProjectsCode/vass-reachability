@@ -1,19 +1,17 @@
-use vass_reach_lib::logger::Logger;
-
 use crate::{
     Args,
     config::Test,
     random::{RandomOptions, petri_net::generate_random_petri_net},
 };
 
-pub fn generate(logger: &Logger, args: &Args) -> anyhow::Result<()> {
+pub fn generate(args: &Args) -> anyhow::Result<()> {
     let Some(folder) = &args.folder else {
         anyhow::bail!("missing required folder argument");
     };
     let test = Test::canonicalize(folder)?;
     let config = test.instance_config()?;
 
-    logger.info("Generating random Petri nets...");
+    tracing::info!("Generating random Petri nets...");
 
     let random_petri_nets = generate_random_petri_net(
         RandomOptions::new(config.seed, config.num_instances),
@@ -23,17 +21,14 @@ pub fn generate(logger: &Logger, args: &Args) -> anyhow::Result<()> {
         config.petri_net_no_guards,
     );
 
-    logger.info(&format!(
-        "Generated {} random Petri nets.",
-        random_petri_nets.len()
-    ));
+    tracing::info!("Generated {} random Petri nets.", random_petri_nets.len());
 
     test.write_nets(&random_petri_nets)?;
 
-    logger.info(&format!(
+    tracing::info!(
         "Persisted random Petri nets to folder: {}",
         test.instances_folder().display()
-    ));
+    );
 
     Ok(())
 }

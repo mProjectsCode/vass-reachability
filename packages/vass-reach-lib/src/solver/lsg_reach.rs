@@ -23,7 +23,6 @@ use crate::{
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
         vass::counter::VASSCounterValuation,
     },
-    logger::Logger,
     solver::{
         SolverResult, SolverStatus,
         utils::{forbid_parikh_image, parikh_image_from_edge_map},
@@ -31,19 +30,13 @@ use crate::{
 };
 
 #[derive(Debug, Default)]
-pub struct LSGReachSolverOptions<'l> {
-    logger: Option<&'l Logger>,
+pub struct LSGReachSolverOptions {
     max_iterations: Option<u32>,
     max_time: Option<Duration>,
     stop_signal: Option<Arc<AtomicBool>>,
 }
 
-impl<'l> LSGReachSolverOptions<'l> {
-    pub fn with_logger(mut self, logger: &'l Logger) -> Self {
-        self.logger = Some(logger);
-        self
-    }
-
+impl LSGReachSolverOptions {
     pub fn with_iteration_limit(mut self, limit: u32) -> Self {
         self.max_iterations = Some(limit);
         self
@@ -74,7 +67,7 @@ impl<'l> LSGReachSolverOptions<'l> {
         lsg: &'g LinearSubGraph<'g>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-    ) -> LSGReachSolver<'l, 'g> {
+    ) -> LSGReachSolver<'g> {
         LSGReachSolver::new(lsg, initial_valuation, final_valuation, self)
     }
 }
@@ -181,22 +174,22 @@ impl LSGReachSolverResult {
     }
 }
 
-pub struct LSGReachSolver<'l, 'g> {
+pub struct LSGReachSolver<'g> {
     lsg: &'g LinearSubGraph<'g>,
     initial_valuation: &'g VASSCounterValuation,
     final_valuation: &'g VASSCounterValuation,
-    options: LSGReachSolverOptions<'l>,
+    options: LSGReachSolverOptions,
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'l, 'g> LSGReachSolver<'l, 'g> {
+impl<'g> LSGReachSolver<'g> {
     pub fn new(
         lsg: &'g LinearSubGraph<'g>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-        options: LSGReachSolverOptions<'l>,
+        options: LSGReachSolverOptions,
     ) -> Self {
         let stop_signal = options
             .stop_signal
@@ -341,15 +334,13 @@ impl<'l, 'g> LSGReachSolver<'l, 'g> {
                         return self.max_time_reached_result();
                     }
 
-                    if let Some(l) = self.options.logger {
-                        l.debug(&format!(
-                            "Restricting {} connected components",
-                            parikh_image_components
-                                .iter()
-                                .map(|(_, _, _, c)| c.len())
-                                .sum::<usize>()
-                        ));
-                    }
+                    tracing::debug!(
+                        "Restricting {} connected components",
+                        parikh_image_components
+                            .iter()
+                            .map(|(_, _, _, c)| c.len())
+                            .sum::<usize>()
+                    );
 
                     for (subgraph, edge_map, _, components) in parikh_image_components.into_iter() {
                         for component in components {

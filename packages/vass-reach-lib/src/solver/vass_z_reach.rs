@@ -11,7 +11,6 @@ use crate::{
         vass::counter::VASSCounterValuation,
     },
     config::VASSZReachConfig,
-    logger::Logger,
     solver::{
         SolverResult, SolverStatus,
         utils::{forbid_parikh_image, parikh_image_from_edge_map},
@@ -88,30 +87,27 @@ impl VASSZReachSolverResult {
 ///
 /// Since this constraint act's on sets of nodes and there are only a limited
 /// number of subsets of nodes, the solver terminates.
-pub struct VASSZReachSolver<'l, 'c, C: ExplicitEdgeCFG + Sync> {
+pub struct VASSZReachSolver<'c, C: ExplicitEdgeCFG + Sync> {
     cfg: &'c C,
     initial_valuation: VASSCounterValuation,
     final_valuation: VASSCounterValuation,
     options: VASSZReachConfig,
-    logger: Option<&'l Logger>,
     step_count: u64,
     solver_start_time: Option<std::time::Instant>,
 }
 
-impl<'l, 'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'l, 'c, C> {
+impl<'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'c, C> {
     pub fn new(
         cfg: &'c C,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         options: VASSZReachConfig,
-        logger: Option<&'l Logger>,
     ) -> Self {
         VASSZReachSolver {
             cfg,
             initial_valuation,
             final_valuation,
             options,
-            logger,
             step_count: 0,
             solver_start_time: None,
         }
@@ -230,12 +226,7 @@ impl<'l, 'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'l, 'c, C> {
                         return self.max_time_reached_result();
                     }
 
-                    if let Some(l) = self.logger {
-                        l.debug(&format!(
-                            "Restricting {} connected components",
-                            components.len()
-                        ));
-                    }
+                    tracing::debug!("Restricting {} connected components", components.len());
 
                     for component in components {
                         forbid_parikh_image(&component, self.cfg, &edge_map, solver);
@@ -254,9 +245,7 @@ impl<'l, 'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'l, 'c, C> {
             };
         }
 
-        if let Some(l) = self.logger {
-            l.debug(&format!("Solved Z-Reach in {} steps", self.step_count));
-        }
+        tracing::debug!("Solved Z-Reach in {} steps", self.step_count);
 
         self.get_solver_result(status)
     }

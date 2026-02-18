@@ -7,7 +7,7 @@ use rayon::{
     iter::{IntoParallelRefIterator, ParallelIterator},
 };
 use serde::{Deserialize, Serialize};
-use vass_reach_lib::{logger::Logger, solver::SerializableSolverResult};
+use vass_reach_lib::solver::SerializableSolverResult;
 
 use crate::{
     Args,
@@ -15,7 +15,7 @@ use crate::{
     tools::{Tool, ToolWrapper, kreach::KReachTool, vass_reach::VASSReachTool},
 };
 
-pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
+pub fn test(args: &Args) -> anyhow::Result<()> {
     let Some(folder) = &args.folder else {
         anyhow::bail!("missing required folder argument");
     };
@@ -25,7 +25,7 @@ pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
         .test_config()
         .with_context(|| format!("failed to read context file at: {}", test.path.display()))?;
 
-    logger.info("Loading tool configuration...");
+    tracing::info!("Loading tool configuration...");
 
     let tool_config = load_tool_config().context("failed to load tool config")?;
 
@@ -34,7 +34,7 @@ pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
         KReachTool::new(&tool_config, &config).into(),
     ];
 
-    logger.info("Resetting systemd scopes...");
+    tracing::info!("Resetting systemd scopes...");
 
     for tool_config in &config.runs {
         let Some(tool) = tools.iter().find(|tool| tool.name() == tool_config.tool) else {
@@ -46,19 +46,19 @@ pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
             .status()
             .context("failed to reset systemd runs via systemctl")?;
 
-        logger.info(&format!("Building tool: {}", tool.name()));
+        tracing::info!("Building tool: {}", tool.name());
 
         tool.build()
             .with_context(|| format!("failed to build tool: {}", tool.name()))?;
 
-        logger.info(&format!("Testing tool: {}", tool.name()));
+        tracing::info!("Testing tool: {}", tool.name());
 
         tool.test()
             .with_context(|| format!("failed to run test for tool: {}", tool.name()))?;
 
-        logger.info(&format!("Running tool: {}", tool.name()));
+        tracing::info!("Running tool: {}", tool.name());
 
-        let results = run_tool_on_folder(logger, &test.instances_folder(), tool, tool_config)?;
+        let results = run_tool_on_folder(&test.instances_folder(), tool, tool_config)?;
 
         test.write_results(tool, results, tool_config)
             .with_context(|| {
@@ -68,17 +68,16 @@ pub fn test(logger: &Logger, args: &Args) -> anyhow::Result<()> {
                 )
             })?;
 
-        logger.info(&format!(
+        tracing::info!(
             "Persisted test results to folder: {}",
             &test.results_folder().display()
-        ));
+        );
     }
 
     Ok(())
 }
 
 fn run_tool_on_folder<T: Tool + Send + Sync>(
-    logger: &Logger,
     folder: &path::Path,
     tool: &T,
     config: &TestRunConfig,
@@ -118,12 +117,12 @@ fn run_tool_on_folder<T: Tool + Send + Sync>(
                     match result {
                         Ok(result) => SolverResultStatistic::new(result, duration),
                         Err(e) => {
-                            logger.warn(&format!(
+                            tracing::warn!(
                                 "Tool {} crashed on file {}: {}",
                                 tool.name(),
                                 file.path().display(),
                                 e
-                            ));
+                            );
 
                             SolverResultStatistic::new(
                                 SolverRunResult::Crash(e.to_string()),

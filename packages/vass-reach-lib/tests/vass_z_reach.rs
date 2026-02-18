@@ -30,7 +30,6 @@ fn test_vass_z_reach_1() {
         initialized_vass.initial_valuation.clone(),
         initialized_vass.final_valuation.clone(),
         VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -72,7 +71,6 @@ fn test_vass_z_reach_2() {
         initialized_vass.initial_valuation.clone(),
         initialized_vass.final_valuation.clone(),
         VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -96,7 +94,6 @@ fn test_vass_z_reach_3() {
         initialized_vass.initial_valuation.clone(),
         initialized_vass.final_valuation.clone(),
         VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -138,7 +135,6 @@ fn test_vass_z_reach_4() {
         initialized_vass.initial_valuation.clone(),
         initialized_vass.final_valuation.clone(),
         VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 
@@ -176,7 +172,6 @@ fn test_vass_z_reach_5() {
         initialized_vass.initial_valuation.clone(),
         initialized_vass.final_valuation.clone(),
         VASSZReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 

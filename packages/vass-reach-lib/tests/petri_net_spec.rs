@@ -34,7 +34,6 @@ fn parse_from_spec_1() {
         &net.to_vass(),
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default().with_timeout(Some(Duration::from_secs(5))),
-        None,
     )
     .solve();
 

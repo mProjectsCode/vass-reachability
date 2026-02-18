@@ -3,15 +3,16 @@ use std::time::Duration;
 use vass_reach_lib::{
     automaton::{
         ModifiableAutomaton,
-        petri_net::spec::ToSpecFormat,
         vass::{VASS, VASSEdge},
     },
     config::VASSReachConfig,
-    logger::Logger,
     solver::vass_reach::VASSReachSolver,
 };
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
     // let lim_cfg = build_bounded_counting_cfg(1,
     // CFGCounterUpdate::new(1).unwrap(), 4, 0, 0); let rev_lim_cfg =
     // build_rev_bounded_counting_cfg(1, CFGCounterUpdate::new(1).unwrap(), 4, 0,
@@ -83,25 +84,12 @@ fn difficult_instance() {
 
     let initialized = vass.init(vec![0, 0].into(), vec![0, 0].into(), s0, s3);
 
-    // let vas = initialized.to_vas();
-    // let petri_net = vas.to_petri_net();
-    // let spec = petri_net.to_spec_format();
-
-    // println!("{}", spec);
-
-    let logger = Logger::new(
-        vass_reach_lib::logger::LogLevel::Debug,
-        "".to_string(),
-        None,
-    );
-
     let _res = VASSReachSolver::new(
         &initialized,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default()
             .with_timeout(Some(Duration::from_mins(5)))
             .with_max_iterations(Some(10)),
-        Some(&logger),
     )
     .solve();
 }

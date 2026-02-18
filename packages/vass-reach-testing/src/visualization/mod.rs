@@ -8,14 +8,13 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::cors::{Any, CorsLayer};
-use vass_reach_lib::logger::Logger;
 
 use crate::{
     Args,
     config::{Test, TestData, UIConfig, load_ui_config},
 };
 
-pub fn visualize(logger: &Logger, args: &Args) -> anyhow::Result<()> {
+pub fn visualize(args: &Args) -> anyhow::Result<()> {
     let ui_config = load_ui_config()?;
 
     start_ui(&ui_config).context("failed to start ui")?;
@@ -24,11 +23,11 @@ pub fn visualize(logger: &Logger, args: &Args) -> anyhow::Result<()> {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(start_server(logger, args, ui_config))
+        .block_on(start_server(args, ui_config))
         .context("failed to run server")
 }
 
-async fn start_server(_logger: &Logger, _args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
+async fn start_server(_args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
     let config = Arc::new(ui_config);
 
     let cors_layer = CorsLayer::new()

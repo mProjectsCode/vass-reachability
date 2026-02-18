@@ -3,8 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use clap::Parser;
 use vass_reach_lib::{
     automaton::petri_net::initialized::InitializedPetriNet,
-    config::{GeneralConfig, LoggerConfig, VASSReachConfig, VASSZReachConfig},
-    logger::Logger,
+    config::{VASSReachConfig, VASSZReachConfig},
     solver::{
         SerializableSolverResult, vass_reach::VASSReachSolver, vass_z_reach::VASSZReachSolver,
     },
@@ -52,13 +51,6 @@ impl ModeWithConfig {
             Mode::Z => Self::Z(VASSZReachConfig::from_optional_file(config)?),
         })
     }
-
-    pub fn logger_config(&self) -> &LoggerConfig {
-        match self {
-            ModeWithConfig::N(c) => c.logger(),
-            ModeWithConfig::Z(c) => c.logger(),
-        }
-    }
 }
 
 #[derive(Parser, Debug)]
@@ -76,6 +68,7 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
 
     let config = ModeWithConfig::from_file(args.mode, args.config)?;
@@ -83,11 +76,9 @@ fn main() -> anyhow::Result<()> {
     let petri_net = InitializedPetriNet::from_file(&args.file)?;
     let vass = petri_net.to_vass();
 
-    let logger = Logger::from_config(config.logger_config(), "Solver".into());
-
     match config {
         ModeWithConfig::N(c) => {
-            let res = VASSReachSolver::new(&vass, c, logger.as_ref()).solve();
+            let res = VASSReachSolver::new(&vass, c).solve();
 
             let json_res = serde_json::to_string_pretty(&SerializableSolverResult::from(res))?;
             println!("{}", json_res);
@@ -98,7 +89,6 @@ fn main() -> anyhow::Result<()> {
                 vass.initial_valuation.clone(),
                 vass.final_valuation.clone(),
                 c,
-                logger.as_ref(),
             )
             .solve();
 
