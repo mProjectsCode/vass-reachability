@@ -464,6 +464,16 @@ impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
     }
 }
 
+impl InitializedAutomaton<Deterministic> for ImplicitCFGProduct {
+    fn get_initial(&self) -> Self::NIndex {
+        self.initial()
+    }
+
+    fn is_accepting(&self, node: &Self::NIndex) -> bool {
+        self.is_accepting(node)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum BoundedCFGDirection {
     Forward,
@@ -511,12 +521,14 @@ impl MultiGraphTraversalState {
     }
 
     pub fn to_path(&self, product: &ImplicitCFGProduct) -> MultiGraphPath {
-        let mut path = MultiGraphPath::new(self.last_state.clone());
+        let mut path = MultiGraphPath::new(product.initial());
 
         for update in &self.word {
             let next_state = path.end().take_letter(&product.cfgs, update).unwrap();
             path.add(*update, next_state);
         }
+
+        debug_assert_eq!(path.end(), &self.last_state);
 
         path
     }

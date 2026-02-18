@@ -66,7 +66,7 @@ impl MultiGraphPath {
         cfg_index: usize,
     ) -> Path<C::NIndex, CFGCounterUpdate> {
         // TODO: cfg not needed, we can read initial state from this path
-        let mut path = Path::new(cfg.get_initial());
+        let mut path = Path::new(self.start().cfg_state(cfg_index));
 
         for (update, state) in self.iter_updates_and_state() {
             path.add(*update, state.cfg_state(cfg_index));
@@ -230,6 +230,20 @@ impl MultiGraphPath {
         let mut visited = HashMap::new();
         let mut counters = VASSCounterValuation::zero(dimension);
         visited.insert(self.start(), (1, counters.clone()));
+
+        // TODO: Currently we look at the entire product here, but this is a problem.
+        // Since the product contains the bounded counting separators, we don't actually
+        // see pumping in the product since we always change state in some
+        // bounded counting separator.
+        //
+        // Our current metric for pumping is that we see the same product state multiple
+        // times with increasing counter valuations, but exactly that does not
+        // happen due to the bounded counting separators.
+
+        // 1. go back to looking only at the main cfg
+        // 2. look at the product, but not at the indices corresponding to the modulo
+        //    and bounded counting separators
+        // 3. use some other metric for pumping
 
         for (update, state) in self.iter_updates_and_state() {
             counters.apply_cfg_update(*update);

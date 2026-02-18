@@ -237,6 +237,11 @@ impl RandomSCCStrategy {
     }
 }
 
+// Idea: chance based on how often a SCC was visited, when long in SCC, then
+// maybe more safe?
+
+// Idea: Sub SCC, we look at strongly connected subsets of SCCs
+
 impl ExtensionStrategy for RandomSCCStrategy {
     fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, _step: u64) -> Option<LinearSubGraph<'a>> {
         for _ in 0..self.max_retries {

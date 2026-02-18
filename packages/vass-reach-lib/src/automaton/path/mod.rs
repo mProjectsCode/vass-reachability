@@ -1,7 +1,10 @@
 use std::{fmt::Display, vec::IntoIter};
 
+use hashbrown::HashSet;
+
 use crate::automaton::{
-    Deterministic, GIndex, Letter, TransitionSystem, path::transition_sequence::TransitionSequence,
+    AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, GIndex, Letter, TransitionSystem,
+    TransitionSystemType, path::transition_sequence::TransitionSequence,
 };
 
 pub mod parikh_image;
@@ -165,6 +168,40 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
 
     pub fn has_node(&self, node: &NIndex) -> bool {
         &self.start == node || self.transitions.contains_node(node)
+    }
+
+    pub fn visited_edges<
+        E: AutomatonEdge<Letter = L>,
+        A: ExplicitEdgeAutomaton<Deterministic, NIndex = NIndex, Letter = L, E = E>,
+    >(
+        &self,
+        graph: &A,
+    ) -> HashSet<A::EIndex> {
+        let mut edges = HashSet::new();
+        let mut current_node = &self.start;
+
+        for (letter, target) in self.transitions.iter() {
+            let con_edges: Vec<_> = graph
+                .connecting_edge_indices_with_letter(current_node, target, letter)
+                .collect();
+            if con_edges.is_empty() {
+                panic!(
+                    "No edge found for transition {:?} --({:?})-> {:?}",
+                    current_node, letter, target
+                );
+            }
+            if con_edges.len() > 1 {
+                panic!(
+                    "Multiple edges found for transition {:?} --({:?})-> {:?}, edges: {:?}",
+                    current_node, letter, target, con_edges
+                );
+            }
+            edges.insert(con_edges[0]);
+
+            current_node = target;
+        }
+
+        edges
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (L, NIndex)>

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     automaton::{
         Automaton, AutomatonEdge, AutomatonNode, FromLetter,
+        algorithms::EdgeAutomatonAlgorithms,
         cfg::vasscfg::VASSCFG,
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
@@ -92,9 +93,9 @@ impl<'l> VASSReachSolver<'l> {
         cfg.make_complete(());
         cfg = cfg.minimize();
 
-        // if let Some(l) = logger {
-        //     l.debug(&cfg.to_graphviz(None as Option<Path>));
-        // }
+        if let Some(l) = logger {
+            l.debug(&cfg.to_graphviz(None, None));
+        }
 
         let state = ImplicitCFGProduct::new(
             ivass.dimension(),
@@ -183,6 +184,18 @@ impl<'l> VASSReachSolver<'l> {
 
             if let Some(l) = self.logger {
                 l.debug(&format!("Spurious path: {:?}", path.to_fancy_string()));
+            }
+
+            if true && let Some(l) = self.logger {
+                let cfg_path =
+                    path.to_path_in_cfg(self.state.main_cfg(), self.state.main_cfg_index());
+                l.debug(&format!("{:?}", cfg_path));
+
+                let graphviz = self
+                    .state
+                    .main_cfg()
+                    .to_graphviz(None, Some(cfg_path.visited_edges(self.state.main_cfg())));
+                l.debug(&graphviz);
             }
 
             // Now we know that the path is spurious, we need to refine our approximation.

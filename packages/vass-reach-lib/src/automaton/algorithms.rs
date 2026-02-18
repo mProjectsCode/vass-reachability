@@ -1,3 +1,4 @@
+use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::automaton::{
@@ -65,8 +66,8 @@ where
 {
     fn to_graphviz(
         &self,
-        nodes: Option<Vec<Self::NIndex>>,
-        edges: Option<Vec<Self::EIndex>>,
+        highlight_nodes: Option<HashSet<Self::NIndex>>,
+        highlight_edges: Option<HashSet<Self::EIndex>>,
     ) -> String {
         let mut dot = String::new();
         dot.push_str("digraph finite_state_machine {\n");
@@ -90,19 +91,29 @@ where
         ));
         dot.push_str("node [shape = circle];\n");
 
-        if let Some(nodes) = nodes {
-            for node in nodes {
-                dot.push_str(&format!("{:?} [color = red]\n", node.index()));
-            }
-        }
-
         let start = self.get_initial();
         dot.push_str(&format!("START -> {:?};\n", start.index()));
+
+        for (node, _) in self.iter_nodes() {
+            let mut attrs = vec![("label", format!("\"{:?}\"", node.index()))];
+
+            if let Some(nodes) = &highlight_nodes
+                && nodes.contains(&node)
+            {
+                attrs.push(("color", "red".to_string()));
+            }
+
+            dot.push_str(&format!(
+                "{:?} [ {} ];\n",
+                node.index(),
+                attrs.iter().map(|(k, v)| format!("{}={}", k, v)).join(" ")
+            ));
+        }
 
         for (edge, data) in self.iter_edges() {
             let mut attrs = vec![("label", format!("\"{:?} ({:?})\"", data, edge.index()))];
 
-            if let Some(edges) = &edges
+            if let Some(edges) = &highlight_edges
                 && edges.contains(&edge)
             {
                 attrs.push(("color", "red".to_string()));

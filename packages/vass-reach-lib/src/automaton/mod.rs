@@ -298,16 +298,22 @@ where
 
 // MARK: Transition System Types
 
+/// This trait represents the type of transition system. Currently this is used
+/// to distinguish between deterministic and non-deterministic systems.
 pub trait TransitionSystemType<NIndex: GIndex> {
     type SuccessorType;
 }
 
+/// A deterministic transition system has at most one successor for each node
+/// and letter.
 pub struct Deterministic {}
 
 impl<NIndex: GIndex> TransitionSystemType<NIndex> for Deterministic {
     type SuccessorType = Option<NIndex>;
 }
 
+/// A non-deterministic transition system can have multiple successors for each
+/// node and letter.
 pub struct NonDeterministic {}
 
 impl<NIndex: GIndex> TransitionSystemType<NIndex> for NonDeterministic {
@@ -317,17 +323,28 @@ impl<NIndex: GIndex> TransitionSystemType<NIndex> for NonDeterministic {
 // MARK: Transition System
 
 pub trait TransitionSystem<Type: TransitionSystemType<Self::NIndex>>: Automaton<Type> {
+    /// The successor of a node under a given letter. The [TransitionSystemType]
+    /// determines the return type, e.g. whether the system is deterministic or
+    /// not.
     fn successor(&self, node: &Self::NIndex, letter: &Self::Letter) -> Type::SuccessorType;
 
+    /// The set of successors of a node. Usually calculated as the union of the
+    /// successors under all letters in the alphabet.
     fn successors<'a>(
         &'a self,
         node: &'a Self::NIndex,
     ) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
+
+    /// The set of predecessors of a node.
     fn predecessors<'a>(
         &'a self,
         node: &'a Self::NIndex,
     ) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
 
+    /// The set of neighbors of a node, i.e. the union of its successors and
+    /// predecessors.
+    ///
+    /// The returned [Vec] is sorted and deduplicated.
     fn undirected_neighbors<'a>(&'a self, node: &'a Self::NIndex) -> Vec<Self::NIndex> {
         let mut neighbors = self
             .successors(node)
@@ -483,6 +500,18 @@ pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
         from: &Self::NIndex,
         to: &Self::NIndex,
     ) -> impl Iterator<Item = Self::EIndex>;
+
+    /// Returns an iterator over the edge indices directly connecting the given
+    /// from and to nodes and matching the given letter.
+    fn connecting_edge_indices_with_letter(
+        &self,
+        from: &Self::NIndex,
+        to: &Self::NIndex,
+        letter: &Self::Letter,
+    ) -> impl Iterator<Item = Self::EIndex> {
+        self.connecting_edge_indices(from, to)
+            .filter(move |e| self.get_edge_unchecked(e).matches(letter))
+    }
 }
 
 // MARK: Other Automaton Traits

@@ -83,11 +83,11 @@ fn difficult_instance() {
 
     let initialized = vass.init(vec![0, 0].into(), vec![0, 0].into(), s0, s3);
 
-    let vas = initialized.to_vas();
-    let petri_net = vas.to_petri_net();
-    let spec = petri_net.to_spec_format();
+    // let vas = initialized.to_vas();
+    // let petri_net = vas.to_petri_net();
+    // let spec = petri_net.to_spec_format();
 
-    println!("{}", spec);
+    // println!("{}", spec);
 
     let logger = Logger::new(
         vass_reach_lib::logger::LogLevel::Debug,
@@ -98,7 +98,9 @@ fn difficult_instance() {
     let _res = VASSReachSolver::new(
         &initialized,
         // some time that is long enough, but makes the test run in a reasonable time
-        VASSReachConfig::default().with_timeout(Some(Duration::from_mins(5))),
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::from_mins(5)))
+            .with_max_iterations(Some(10)),
         Some(&logger),
     )
     .solve();
