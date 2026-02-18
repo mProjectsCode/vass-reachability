@@ -187,8 +187,7 @@ impl<'l> VASSReachSolver<'l> {
             }
 
             if true && let Some(l) = self.logger {
-                let cfg_path =
-                    path.to_path_in_cfg(self.state.main_cfg(), self.state.main_cfg_index());
+                let cfg_path = path.to_path_in_cfg(self.state.main_cfg_index());
                 l.debug(&format!("{:?}", cfg_path));
 
                 let graphviz = self

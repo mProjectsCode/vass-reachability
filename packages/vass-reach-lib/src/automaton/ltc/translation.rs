@@ -288,8 +288,7 @@ impl<NIndex: GIndex> From<Path<NIndex, CFGCounterUpdate>> for LTCTranslation<NIn
 
 impl LTCTranslation<NodeIndex> {
     pub fn from_multi_graph_path(state: &ImplicitCFGProduct, path: &MultiGraphPath) -> Self {
-        path.to_path_in_cfg(state.main_cfg(), state.main_cfg_index())
-            .into()
+        path.to_path_in_cfg(state.main_cfg_index()).into()
     }
 }
 

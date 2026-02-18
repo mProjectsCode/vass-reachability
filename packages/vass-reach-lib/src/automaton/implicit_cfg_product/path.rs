@@ -60,12 +60,7 @@ impl MultiGraphPath {
     /// Turns this MultiGraphPath into a Path in the specified cfg.
     /// The cfg_index specifies which cfg in the product to extract the path
     /// for.
-    pub fn to_path_in_cfg<C: CFG<NIndex = NodeIndex>>(
-        &self,
-        cfg: &C,
-        cfg_index: usize,
-    ) -> Path<C::NIndex, CFGCounterUpdate> {
-        // TODO: cfg not needed, we can read initial state from this path
+    pub fn to_path_in_cfg(&self, cfg_index: usize) -> Path<NodeIndex, CFGCounterUpdate> {
         let mut path = Path::new(self.start().cfg_state(cfg_index));
 
         for (update, state) in self.iter_updates_and_state() {
