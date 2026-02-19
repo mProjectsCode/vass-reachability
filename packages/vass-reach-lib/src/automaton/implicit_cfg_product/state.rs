@@ -45,6 +45,23 @@ impl MultiGraphState {
             states: new_states.into_boxed_slice(),
         })
     }
+
+    /// Clears the indices in the given range, setting them to
+    /// `NodeIndex::end()`.
+    ///
+    /// This is useful for tracking only a subset of the graphs in the product,
+    /// for example when we want to ignore the bounded counting separators.
+    pub fn clear_indices(&mut self, range: std::ops::Range<usize>) {
+        for i in range {
+            self.states[i] = NodeIndex::end();
+        }
+    }
+
+    /// Clears the index at the given position, setting it to
+    /// `NodeIndex::end()`.
+    pub fn clear_index(&mut self, index: usize) {
+        self.states[index] = NodeIndex::end();
+    }
 }
 
 impl Index<usize> for MultiGraphState {

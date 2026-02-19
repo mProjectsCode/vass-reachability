@@ -221,7 +221,13 @@ impl MultiGraphPath {
     ) -> bool {
         let mut visited = HashMap::new();
         let mut counters = VASSCounterValuation::zero(dimension);
-        visited.insert(self.start(), (1, counters.clone()));
+        let mut start = self.start().clone();
+
+        // clear the indices corresponding to the modulo and bounded counting
+        // separators, since they don't matter for pumping
+        start.clear_indices(1..dimension * 3 + 1);
+
+        visited.insert(start, (1, counters.clone()));
 
         // TODO: Currently we look at the entire product here, but this is a problem.
         // Since the product contains the bounded counting separators, we don't actually
@@ -235,10 +241,15 @@ impl MultiGraphPath {
         // 1. go back to looking only at the main cfg
         // 2. look at the product, but not at the indices corresponding to the modulo
         //    and bounded counting separators
-        // 3. use some other metric for pumping
+        // 4. use some other metric for pumping
 
         for (update, state) in self.iter_updates_and_state() {
             counters.apply_cfg_update(*update);
+
+            // clear the indices corresponding to the modulo and bounded counting
+            // separators, since they don't matter for pumping
+            let mut state = state.clone();
+            state.clear_indices(1..dimension * 3 + 1);
 
             let entry = visited
                 .entry(state)
@@ -298,14 +309,14 @@ impl MultiGraphPath {
         }
     }
 
-    pub fn split_at(self, f: impl Fn(&MultiGraphState) -> bool) -> Vec<Self> {
+    pub fn split_at(self, f: impl Fn(&MultiGraphState, usize) -> bool) -> Vec<Self> {
         let mut parts = vec![];
         let mut current_part = MultiGraphPath::new(self.start().clone());
 
-        for (update, state) in self.iter_updates_and_state() {
+        for (i, (update, state)) in self.iter_updates_and_state().enumerate() {
             current_part.add(*update, state.clone());
 
-            if f(state) {
+            if f(state, i) {
                 parts.push(current_part);
                 current_part = MultiGraphPath::new(state.clone());
             }
@@ -314,6 +325,19 @@ impl MultiGraphPath {
         parts.push(current_part);
 
         parts
+    }
+
+    pub fn split_off(&mut self, i: usize) -> Self {
+        debug_assert!(i < self.updates.len());
+
+        let mut new_path = MultiGraphPath::new(self.states[i + 1].clone());
+        new_path.updates = self.updates.split_off(i);
+        new_path.states.extend(self.states.split_off(i + 1));
+
+        debug_assert!(self.states.len() == self.updates.len() + 1);
+        debug_assert!(new_path.states.len() == new_path.updates.len() + 1);
+
+        new_path
     }
 
     pub fn max_counter_value(

@@ -100,7 +100,7 @@ impl LSGSolution {
         for (part, lsg_part) in self.parts.iter().zip(lsg.iter_parts()) {
             match part {
                 LSGSolutionPart::SubGraph(image) => {
-                    let subgraph = lsg_part.unwrap_subgraph();
+                    let subgraph = lsg_part.unwrap_subgraph(lsg);
 
                     // first we need to calculate the start and end valuations for the subgraph
                     let start_valuation = current_valuation.clone();
@@ -119,7 +119,7 @@ impl LSGSolution {
                     product_path.concat(mapped_path);
                 }
                 LSGSolutionPart::Path() => {
-                    let path = lsg_part.unwrap_path();
+                    let path = lsg_part.unwrap_path(lsg);
 
                     // we need to update the current valuation for possible following subgraphs
                     let update = cfg_updates_to_counter_update(path.path.iter(), dimension);
@@ -265,12 +265,17 @@ impl<'g> LSGReachSolver<'g> {
             .iter()
             .enumerate()
             .filter_map(|(i, part)| match part {
-                LSGPart::Path(path) => {
-                    self.build_path_constraints(path, solver, &mut sums);
+                LSGPart::Path(idx) => {
+                    self.build_path_constraints(self.lsg.path(*idx), solver, &mut sums);
                     None
                 }
-                LSGPart::SubGraph(subgraph) => {
-                    let edge_map = self.build_subgraph_constraints(i, subgraph, solver, &mut sums);
+                LSGPart::SubGraph(idx) => {
+                    let edge_map = self.build_subgraph_constraints(
+                        i,
+                        self.lsg.subgraph(*idx),
+                        solver,
+                        &mut sums,
+                    );
                     Some(edge_map)
                 }
             })

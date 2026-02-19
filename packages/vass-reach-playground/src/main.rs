@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use vass_reach_lib::{
     automaton::{
         ModifiableAutomaton,
@@ -10,9 +11,15 @@ use vass_reach_lib::{
 };
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+    let filter = tracing_subscriber::filter::Targets::new()
+        .with_default(tracing::Level::DEBUG)
+        .with_target("z3", tracing::Level::INFO);
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
         .init();
+
     // let lim_cfg = build_bounded_counting_cfg(1,
     // CFGCounterUpdate::new(1).unwrap(), 4, 0, 0); let rev_lim_cfg =
     // build_rev_bounded_counting_cfg(1, CFGCounterUpdate::new(1).unwrap(), 4, 0,

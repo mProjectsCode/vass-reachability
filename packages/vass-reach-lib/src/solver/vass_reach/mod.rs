@@ -163,7 +163,7 @@ impl VASSReachSolver {
 
             if true {
                 let cfg_path = path.to_path_in_cfg(self.state.main_cfg_index());
-                tracing::debug!("{:?}", cfg_path);
+                // tracing::debug!("{:?}", cfg_path);
 
                 let graphviz = self
                     .state

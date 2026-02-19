@@ -11,6 +11,7 @@ use crate::automaton::{
     InitializedAutomaton, Language, ModifiableAutomaton, SingleFinalStateAutomaton,
     cfg::{CFG, update::CFGCounterUpdate},
     implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath, state::MultiGraphState},
+    lsg::LinearSubGraph,
     path::Path,
 };
 
@@ -297,67 +298,95 @@ impl From<MultiGraphPath> for LSGPath {
 
 #[derive(Debug, Clone)]
 pub enum LSGPart {
-    SubGraph(LSGGraph),
-    Path(LSGPath),
+    SubGraph(usize),
+    Path(usize),
 }
 
 impl LSGPart {
-    /// Checks if the part contains the given node.
-    /// The node index is in the context of the CFG, not the part itself.
-    pub fn contains_node(&self, node: &MultiGraphState) -> bool {
+    fn process<T>(
+        &self,
+        lsg: &LinearSubGraph,
+        subgraph_fn: impl Fn(&LSGGraph) -> T,
+        path_fn: impl Fn(&LSGPath) -> T,
+    ) -> T {
         match self {
-            LSGPart::SubGraph(subgraph) => subgraph.graph.node_weights().contains(node),
-            LSGPart::Path(path) => path.path.contains_state(node),
+            LSGPart::SubGraph(i) => subgraph_fn(lsg.subgraph(*i)),
+            LSGPart::Path(i) => path_fn(lsg.path(*i)),
         }
     }
 
+    /// Checks if the part contains the given node.
+    /// The node index is in the context of the CFG, not the part itself.
+    pub fn contains_node(&self, lsg: &LinearSubGraph, node: &MultiGraphState) -> bool {
+        self.process(
+            lsg,
+            |subgraph| subgraph.graph.node_weights().contains(node),
+            |path| path.path.contains_state(node),
+        )
+    }
+
     // Checks if the part has the given node as start or end node.
-    pub fn has_node_as_extremal(&self, node: &MultiGraphState) -> bool {
-        match self {
-            LSGPart::SubGraph(subgraph) => {
-                subgraph.product_start() == node || subgraph.product_end() == node
-            }
-            LSGPart::Path(path) => path.path.start() == node || path.path.end() == node,
-        }
+    pub fn has_node_as_extremal(&self, lsg: &LinearSubGraph, node: &MultiGraphState) -> bool {
+        self.process(
+            &lsg,
+            |subgraph| subgraph.product_start() == node || subgraph.product_end() == node,
+            |path| path.path.start() == node || path.path.end() == node,
+        )
     }
 
     /// Iters the nodes in this part.
     /// The node indices are in the context of the CFG, not the part itself.
-    pub fn iter_nodes<'a>(&'a self) -> Box<dyn Iterator<Item = &'a MultiGraphState> + 'a> {
+    pub fn iter_nodes<'a>(
+        &'a self,
+        lsg: &'a LinearSubGraph<'a>,
+    ) -> Box<dyn Iterator<Item = &'a MultiGraphState> + 'a> {
         match self {
-            LSGPart::SubGraph(subgraph) => Box::new(subgraph.graph.node_weights()),
-            LSGPart::Path(path) => Box::new(path.path.iter_states()),
+            LSGPart::SubGraph(i) => Box::new(lsg.subgraph(*i).graph.node_weights()),
+            LSGPart::Path(i) => Box::new(lsg.path(*i).path.iter_states()),
         }
     }
 
     /// Returns the start node of the part.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn start(&self) -> &MultiGraphState {
+    pub fn start<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a MultiGraphState {
         match self {
-            LSGPart::SubGraph(subgraph) => subgraph.product_start(),
-            LSGPart::Path(path) => path.path.start(),
+            LSGPart::SubGraph(i) => lsg.subgraph(*i).product_start(),
+            LSGPart::Path(i) => lsg.path(*i).path.start(),
         }
     }
 
     /// Returns the end node of the part.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn end(&self) -> &MultiGraphState {
+    pub fn end<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a MultiGraphState {
         match self {
-            LSGPart::SubGraph(subgraph) => subgraph.product_end(),
-            LSGPart::Path(path) => path.path.end(),
+            LSGPart::SubGraph(i) => lsg.subgraph(*i).product_end(),
+            LSGPart::Path(i) => lsg.path(*i).path.end(),
         }
     }
 
-    pub fn random_node<T: Rng>(&self, random: &mut T) -> &MultiGraphState {
+    pub fn random_node<'a, T: Rng>(
+        &self,
+        lsg: &'a LinearSubGraph<'a>,
+        random: &mut T,
+    ) -> &'a MultiGraphState {
         match self {
-            LSGPart::SubGraph(subgraph) => {
+            LSGPart::SubGraph(i) => {
+                let subgraph = lsg.subgraph(*i);
                 let node_index = random.random_range(0..subgraph.graph.node_count());
                 &subgraph.graph[NodeIndex::new(node_index)]
             }
-            LSGPart::Path(path) => {
+            LSGPart::Path(i) => {
+                let path = lsg.path(*i);
                 let node_index = random.random_range(0..path.path.state_len());
                 &path.path.states[node_index]
             }
+        }
+    }
+
+    pub fn size(&self, lsg: &LinearSubGraph) -> usize {
+        match self {
+            LSGPart::SubGraph(i) => lsg.subgraph(*i).graph.node_count(),
+            LSGPart::Path(i) => lsg.path(*i).path.state_len(),
         }
     }
 
@@ -369,16 +398,30 @@ impl LSGPart {
         matches!(self, LSGPart::SubGraph(_))
     }
 
-    pub fn unwrap_path(&self) -> &LSGPath {
+    pub fn as_path<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> Option<&'a LSGPath> {
         match self {
-            LSGPart::Path(path) => path,
+            LSGPart::Path(i) => Some(lsg.path(*i)),
+            LSGPart::SubGraph(_) => None,
+        }
+    }
+
+    pub fn as_subgraph<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> Option<&'a LSGGraph> {
+        match self {
+            LSGPart::SubGraph(i) => Some(lsg.subgraph(*i)),
+            LSGPart::Path(_) => None,
+        }
+    }
+
+    pub fn unwrap_path<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a LSGPath {
+        match self {
+            LSGPart::Path(i) => lsg.path(*i),
             LSGPart::SubGraph(_) => panic!("Called unwrap_path on a SubGraph part"),
         }
     }
 
-    pub fn unwrap_subgraph(&self) -> &LSGGraph {
+    pub fn unwrap_subgraph<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a LSGGraph {
         match self {
-            LSGPart::SubGraph(subgraph) => subgraph,
+            LSGPart::SubGraph(i) => lsg.subgraph(*i),
             LSGPart::Path(_) => panic!("Called unwrap_subgraph on a Path part"),
         }
     }

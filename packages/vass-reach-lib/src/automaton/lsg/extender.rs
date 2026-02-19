@@ -83,6 +83,8 @@ impl<'a> LSGExtender<'a> {
     /// until no more nodes can be added or the maximum number of refinements is
     /// reached.
     pub fn run(&mut self) -> VASSCFG<()> {
+        tracing::span!(tracing::Level::DEBUG, "LSGExtender::run");
+
         let mut refinement_step = 0;
 
         loop {
@@ -92,6 +94,11 @@ impl<'a> LSGExtender<'a> {
 
             match &solver_result.status {
                 SolverStatus::True(solution) => {
+                    tracing::debug!(
+                        "LSGExtender step {}: LSG became reachable, rolling back",
+                        refinement_step
+                    );
+
                     // we became reachable, so we need to remove the last extension
                     let old = self.old_lsg.take();
                     self.lsg = old.expect("LSGExtender: Something went wrong, we became reachable but have no old LSG to backtrack to. Maybe the initial LSG was already reachable?");
@@ -99,15 +106,36 @@ impl<'a> LSGExtender<'a> {
                     self.strategy.on_rollback(solution);
                 }
                 SolverStatus::False(_) => {
+                    tracing::debug!(
+                        "LSGExtender step {}: LSG is still unreachable, trying to extend",
+                        refinement_step
+                    );
+
                     // we are still unreachable, so we can try to extend the LSG
                     if let Some(extended) = self.strategy.extend(&self.lsg, refinement_step) {
+                        tracing::debug!(
+                            "LSGExtender step {}: Strategy provided extended LSG with {} states",
+                            refinement_step,
+                            extended.size()
+                        );
+
                         self.old_lsg = Some(std::mem::replace(&mut self.lsg, extended));
                     } else {
+                        tracing::debug!(
+                            "LSGExtender step {}: Strategy did not provide extended LSG, stopping",
+                            refinement_step
+                        );
+
                         // No more nodes to extend, we can stop
                         break;
                     }
                 }
                 SolverStatus::Unknown(_) => {
+                    tracing::debug!(
+                        "LSGExtender step {}: Solver returned unknown, stopping",
+                        refinement_step
+                    );
+
                     // Solver returned unknown, we just stop here
                     break;
                 }
@@ -115,6 +143,10 @@ impl<'a> LSGExtender<'a> {
 
             refinement_step += 1;
             if refinement_step >= self.max_refinements {
+                tracing::debug!(
+                    "LSGExtender step {}: Reached max refinement steps, stopping",
+                    refinement_step
+                );
                 break;
             }
         }
@@ -192,7 +224,7 @@ impl ExtensionStrategy for RandomNodeStrategy {
         for _ in 0..self.max_retries {
             let parts_len = lsg.parts.len();
             let part_index = self.random.random_range(0..parts_len);
-            let state = lsg.parts[part_index].random_node(&mut self.random);
+            let state = lsg.parts[part_index].random_node(lsg, &mut self.random);
 
             let neighbors: Vec<_> = lsg.product.undirected_neighbors(state);
 
@@ -248,14 +280,15 @@ impl ExtensionStrategy for RandomSCCStrategy {
             let paths = lsg
                 .parts
                 .iter()
-                .filter_map(|p| {
-                    if let LSGPart::Path(path) = p
-                        && path.path.len() > 1
-                    {
-                        Some(path)
-                    } else {
-                        None
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    if let LSGPart::Path(path_idx) = p {
+                        let path = lsg.path(*path_idx);
+                        if path.path.len() > 1 {
+                            return Some((i, *path_idx));
+                        }
                     }
+                    None
                 })
                 .collect::<Vec<_>>();
 
@@ -264,8 +297,8 @@ impl ExtensionStrategy for RandomSCCStrategy {
             }
 
             for _ in 0..self.max_retries {
-                let path_index = self.random.random_range(0..paths.len());
-                let path = &paths[path_index];
+                let (part_index, path_idx) = paths[self.random.random_range(0..paths.len())];
+                let path = lsg.path(path_idx);
 
                 let state_index = self.random.random_range(0..path.path.state_len());
                 let state = &path.path.states[state_index];
@@ -275,7 +308,7 @@ impl ExtensionStrategy for RandomSCCStrategy {
                 }
 
                 self.last_added.push(state.clone());
-                return Some(lsg.add_scc_around_node(state.clone()));
+                return Some(lsg.add_scc_around_position(part_index, state_index));
             }
         }
 

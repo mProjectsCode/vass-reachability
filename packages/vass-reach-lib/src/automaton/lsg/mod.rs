@@ -23,6 +23,8 @@ pub mod part;
 #[derive(Debug, Clone)]
 pub struct LinearSubGraph<'a> {
     pub parts: Vec<LSGPart>,
+    pub subgraphs: Vec<LSGGraph>,
+    pub paths: Vec<LSGPath>,
     pub product: &'a ImplicitCFGProduct,
     pub dimension: usize,
 }
@@ -33,11 +35,39 @@ impl<'a> LinearSubGraph<'a> {
         product: &'a ImplicitCFGProduct,
         dimension: usize,
     ) -> Self {
+        let mut instance = Self::empty(product, dimension);
+        instance.add_path(path.into());
+        instance
+    }
+
+    pub fn empty(product: &'a ImplicitCFGProduct, dimension: usize) -> Self {
         LinearSubGraph {
-            parts: vec![LSGPart::Path(path.into())],
+            parts: Vec::new(),
+            subgraphs: Vec::new(),
+            paths: Vec::new(),
             product,
             dimension,
         }
+    }
+
+    pub fn add_subgraph(&mut self, subgraph: LSGGraph) {
+        let index = self.subgraphs.len();
+        self.subgraphs.push(subgraph);
+        self.parts.push(LSGPart::SubGraph(index));
+    }
+
+    pub fn add_path(&mut self, path: LSGPath) {
+        let index = self.paths.len();
+        self.paths.push(path);
+        self.parts.push(LSGPart::Path(index));
+    }
+
+    pub fn subgraph(&self, index: usize) -> &LSGGraph {
+        &self.subgraphs[index]
+    }
+
+    pub fn path(&self, index: usize) -> &LSGPath {
+        &self.paths[index]
     }
 
     /// Adds a node from the CFG to the LSG. The node needs to be connected to
@@ -57,39 +87,39 @@ impl<'a> LinearSubGraph<'a> {
         // dbg!(&self.parts);
         // dbg!(node);
 
+        let mut result = LinearSubGraph::empty(self.product, self.dimension);
         let neighbors = self.product.undirected_neighbors(&node);
 
         // first we split all paths at the given node
-        let mut new_parts = self
-            .parts
-            .iter()
-            .flat_map(|part| match part {
-                LSGPart::Path(path) => path
-                    .path
-                    .clone()
-                    .split_at(|s| neighbors.contains(s))
-                    .into_iter()
-                    .map(|p| LSGPart::Path(p.into()))
-                    .collect_vec(),
-                LSGPart::SubGraph(_) => vec![part.clone()],
-            })
-            .collect_vec();
+        for part in &self.parts {
+            match part {
+                LSGPart::Path(idx) => {
+                    let path = self.path(*idx);
+                    for split in path.path.clone().split_at(|s, _| neighbors.contains(s)) {
+                        result.add_path(split.into());
+                    }
+                }
+                LSGPart::SubGraph(idx) => {
+                    result.add_subgraph(self.subgraph(*idx).clone());
+                }
+            }
+        }
 
         // then we find all parts that contain a neighbor of the node
         // the second boolean in the tuple indicates whether the neighbor is at the
         // start or end of the part (true) or inside the part (false)
         let mut neighbor_parts_indices = vec![];
 
-        for (i, part) in new_parts.iter().enumerate() {
+        for (i, part) in result.parts.iter().enumerate() {
             for neighbor in &neighbors {
                 match part {
                     LSGPart::SubGraph(_) => {
-                        if part.start() == neighbor || part.end() == neighbor {
+                        if part.start(&result) == neighbor || part.end(&result) == neighbor {
                             neighbor_parts_indices.push((i, true));
                             break;
                         }
 
-                        if part.contains_node(neighbor) {
+                        if part.contains_node(&result, neighbor) {
                             neighbor_parts_indices.push((i, false));
                             break;
                         }
@@ -97,7 +127,7 @@ impl<'a> LinearSubGraph<'a> {
                     LSGPart::Path(_) => {
                         // since we split the paths beforehand, we only need to check the start and
                         // end nodes
-                        if part.start() == neighbor || part.end() == neighbor {
+                        if part.start(&result) == neighbor || part.end(&result) == neighbor {
                             neighbor_parts_indices.push((i, true));
                             break;
                         }
@@ -120,19 +150,21 @@ impl<'a> LinearSubGraph<'a> {
         let first_part_index = first_part.0 + usize::from(first_part.1);
         let last_part_index = last_part.0 - usize::from(last_part.1);
 
-        let start_node = new_parts[first_part_index].start().clone();
-        let end_node = new_parts[last_part_index].end().clone();
+        let start_node = result.parts[first_part_index].start(&result).clone();
+        let end_node = result.parts[last_part_index].end(&result).clone();
 
-        let mut cut_sequence = new_parts
+        let mut cut_sequence = result
+            .parts
             .drain(first_part_index..=last_part_index)
             .collect_vec();
 
         if cut_sequence.is_empty() {
             assert_eq!(start_node, end_node);
 
-            cut_sequence.push(LSGPart::Path(
-                MultiGraphPath::new(start_node.clone()).into(),
-            ));
+            cut_sequence.push(LSGPart::Path(result.paths.len()));
+            result
+                .paths
+                .push(MultiGraphPath::new(start_node.clone()).into());
         }
 
         let mut new_subgraph = DiGraph::<MultiGraphState, CFGCounterUpdate>::new();
@@ -140,25 +172,25 @@ impl<'a> LinearSubGraph<'a> {
 
         // add all nodes from the cut sequence to the new subgraph
         for part in &cut_sequence {
-            for node in part.iter_nodes() {
+            for node in part.iter_nodes(&result) {
                 // we may have already added this node, because start and end nodes overlap
-                if node_map.contains_key(&node) {
+                if node_map.contains_key(node) {
                     continue;
                 }
 
                 let new_node = new_subgraph.add_node(node.clone());
-                node_map.insert(node, new_node);
+                node_map.insert(node.clone(), new_node);
             }
         }
 
         // add the new node
         let new_node = new_subgraph.add_node(node.clone());
-        node_map.insert(&node, new_node);
+        node_map.insert(node, new_node);
 
         // now we add all edges between the nodes in the new subgraph
         for (product_state, new_node) in &node_map {
-            for letter in self.product.alphabet() {
-                let Some(successor) = self.product.successor(product_state, letter) else {
+            for letter in result.product.alphabet() {
+                let Some(successor) = result.product.successor(product_state, letter) else {
                     continue;
                 };
 
@@ -180,16 +212,16 @@ impl<'a> LinearSubGraph<'a> {
             new_subgraph,
             new_start_node,
             new_end_node,
-            self.product.alphabet().to_vec(),
+            result.product.alphabet().to_vec(),
         );
 
-        new_parts.insert(first_part_index, LSGPart::SubGraph(graph));
+        let subgraph_index = result.subgraphs.len();
+        result.subgraphs.push(graph);
+        result
+            .parts
+            .insert(first_part_index, LSGPart::SubGraph(subgraph_index));
 
-        LinearSubGraph {
-            parts: new_parts,
-            product: self.product,
-            dimension: self.dimension,
-        }
+        result
     }
 
     /// Finds the strongly connected component around the given node in the main
@@ -205,51 +237,93 @@ impl<'a> LinearSubGraph<'a> {
         let scc_nodes_vec = scc_nodes.into_iter().collect_vec();
         let scc = LSGGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
 
+        let mut result = LinearSubGraph::empty(self.product, self.dimension);
+
         // first we split all paths at the given node
-        let split_parts = self
-            .parts
-            .iter()
-            .flat_map(|part| match part {
-                LSGPart::Path(path) => path
-                    .path
-                    .clone()
-                    .split_at(|s| s == &state)
-                    .into_iter()
-                    .map(|p| LSGPart::Path(p.into()))
-                    .collect_vec(),
-                LSGPart::SubGraph(_) => vec![part.clone()],
-            })
-            .collect_vec();
+        for part in &self.parts {
+            match part {
+                LSGPart::Path(idx) => {
+                    let path = self.path(*idx);
+                    for split in path.path.clone().split_at(|s, _| s == &state) {
+                        result.add_path(split.into());
+                    }
+                }
+                LSGPart::SubGraph(idx) => {
+                    result.add_subgraph(self.subgraph(*idx).clone());
+                }
+            }
+        }
 
-        let mut new_parts = Vec::with_capacity(split_parts.len());
+        let mut final_result = LinearSubGraph::empty(self.product, self.dimension);
+        let scc_idx = final_result.subgraphs.len();
+        final_result.subgraphs.push(scc);
 
-        for part in split_parts {
-            let ends_at_node = part.end() == &state;
-            new_parts.push(part);
+        for part in &result.parts {
+            let ends_at_node = part.end(&result) == &state;
+            match part {
+                LSGPart::Path(idx) => final_result.add_path(result.paths[*idx].clone()),
+                LSGPart::SubGraph(idx) => final_result.add_subgraph(result.subgraphs[*idx].clone()),
+            }
 
             if ends_at_node {
                 // we found a part that ends at node, so now we need to insert the SCC before
                 // continuing with the rest
-                new_parts.push(LSGPart::SubGraph(scc.clone()));
+                final_result.parts.push(LSGPart::SubGraph(scc_idx));
             }
         }
 
-        LinearSubGraph {
-            parts: new_parts,
-            product: self.product,
-            dimension: self.dimension,
+        final_result
+    }
+
+    pub fn add_scc_around_position(&self, path_index: usize, node_index: usize) -> Self {
+        let LSGPart::Path(path_idx) = self.parts[path_index] else {
+            panic!("Part must be a path");
+        };
+        let state = &self.paths[path_idx].path.states[node_index];
+
+        let scc_nodes = self.product.find_scc_surrounding(state.clone());
+        let scc_nodes_vec = scc_nodes.into_iter().collect_vec();
+        let scc = LSGGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
+
+        let mut result = LinearSubGraph::empty(self.product, self.dimension);
+
+        for (i, part) in self.parts.iter().enumerate() {
+            if i == path_index {
+                if node_index == 0 {
+                    result.add_subgraph(scc.clone());
+                    result.add_path(self.paths[path_idx].clone());
+                } else {
+                    let mut path = self.paths[path_idx].clone();
+                    let after = path.path.split_off(node_index - 1);
+
+                    result.add_path(path);
+                    result.add_subgraph(scc.clone());
+                    result.add_path(after.into());
+                }
+            } else {
+                match part {
+                    LSGPart::Path(idx) => result.add_path(self.paths[*idx].clone()),
+                    LSGPart::SubGraph(idx) => result.add_subgraph(self.subgraphs[*idx].clone()),
+                }
+            }
         }
+
+        result
     }
 
     /// Checks if the LSG contains the given state from the product.
     pub fn contains_state(&self, state: &MultiGraphState) -> bool {
         for part in &self.parts {
-            if part.contains_node(state) {
+            if part.contains_node(self, state) {
                 return true;
             }
         }
 
         false
+    }
+
+    pub fn size(&self) -> usize {
+        self.parts.iter().map(|part| part.size(self)).sum()
     }
 
     /// Converts the LSG into an NFA over CFGCounterUpdate.
@@ -264,7 +338,8 @@ impl<'a> LinearSubGraph<'a> {
 
         for part in &self.parts {
             match part {
-                LSGPart::Path(path) => {
+                LSGPart::Path(idx) => {
+                    let path = self.path(*idx);
                     for update in path.path.iter() {
                         let next_state = nfa.add_node(DfaNode::non_accepting(()));
 
@@ -274,7 +349,8 @@ impl<'a> LinearSubGraph<'a> {
 
                     state_offset += path.path.len();
                 }
-                LSGPart::SubGraph(subgraph) => {
+                LSGPart::SubGraph(idx) => {
+                    let subgraph = self.subgraph(*idx);
                     // first add all states
                     for _ in subgraph.graph.node_indices() {
                         nfa.add_node(DfaNode::non_accepting(()));
@@ -322,7 +398,13 @@ impl<'a> LinearSubGraph<'a> {
     }
 
     pub fn to_cfg(&self) -> VASSCFG<()> {
+        tracing::debug!("Converting LSG to NFA");
         let nfa = self.to_nfa();
+        tracing::debug!(
+            "Converting NFA with {} states and {} edges to CFG",
+            nfa.graph.node_count(),
+            nfa.graph.edge_count()
+        );
         nfa.determinize()
     }
 
@@ -332,14 +414,14 @@ impl<'a> LinearSubGraph<'a> {
 
     pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGPath> + 'b {
         self.parts.iter().filter_map(|part| match part {
-            LSGPart::Path(path) => Some(path),
+            LSGPart::Path(idx) => Some(self.path(*idx)),
             LSGPart::SubGraph(_) => None,
         })
     }
 
     pub fn iter_subgraph_parts<'b>(&'b self) -> impl Iterator<Item = &'b LSGGraph> + 'b {
         self.parts.iter().filter_map(|part| match part {
-            LSGPart::SubGraph(subgraph) => Some(subgraph),
+            LSGPart::SubGraph(idx) => Some(self.subgraph(*idx)),
             LSGPart::Path(_) => None,
         })
     }
@@ -417,8 +499,8 @@ impl<'a> Language for LinearSubGraph<'a> {
         let mut input = input.into_iter().peekable();
         for part in self.parts.iter() {
             let success = match part {
-                LSGPart::Path(path) => partial_accept_path(path, &mut input),
-                LSGPart::SubGraph(subgraph) => partial_accept_subgraph(subgraph, &mut input),
+                LSGPart::Path(idx) => partial_accept_path(self.path(*idx), &mut input),
+                LSGPart::SubGraph(idx) => partial_accept_subgraph(self.subgraph(*idx), &mut input),
             };
 
             if !success {

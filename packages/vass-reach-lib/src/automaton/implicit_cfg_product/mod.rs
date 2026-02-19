@@ -18,6 +18,16 @@ use crate::automaton::{
 pub mod path;
 pub mod state;
 
+/// An implicit representation of the product of multiple CFGs, where we only
+/// store the individual CFGs and compute the product on the fly when needed.
+///
+/// - The main cfg is stored in the first position of the `cfgs` vector.
+/// - Then come `dimension` many modulo counting CFGs, one for each counter.
+///   (index `1..dimension+1`)
+/// - Then come `dimension` many forward bounded counting CFGs (index
+///   `dimension+1...dimension*2+1`)
+/// - Then come `dimension` many backward bounded counting CFGs (index
+///   `dimension*2+1...dimension*3+1`)
 #[derive(Debug)]
 pub struct ImplicitCFGProduct {
     pub dimension: usize,
@@ -213,6 +223,12 @@ impl ImplicitCFGProduct {
             "CFGs must have the same alphabet"
         );
         assert!(other.is_complete(), "CFG must be complete");
+
+        tracing::debug!(
+            "Adding new CFG with {} nodes and {} edges to the product",
+            other.node_count(),
+            other.edge_count()
+        );
 
         self.reset_explicit();
 

@@ -58,7 +58,7 @@ pub enum ExtensionStrategyConfig {
 config! {
     pub struct LSGConfig {
         enabled: bool = true,
-        max_refinement_steps: u64 = 20,
+        max_refinement_steps: u64 = 5,
         strategy: ExtensionStrategyConfig = ExtensionStrategyConfig::RandomSCC,
     }
 }
