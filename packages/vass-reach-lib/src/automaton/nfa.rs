@@ -70,6 +70,10 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
         // First we need to create the start state.
         let mut start_state_set = vec![nfa_start];
         self.extend_to_e_closure(&mut start_state_set);
+
+        start_state_set.sort();
+        start_state_set.dedup();
+
         let dfa_start = dfa.add_node(self.state_from_set(&start_state_set));
         dfa.set_initial(dfa_start);
         state_map.insert(start_state_set.clone(), dfa_start);
@@ -88,7 +92,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> NFA<N, E> {
 
                 for &node in &state {
                     for edge in self.graph.edges_directed(node, Direction::Outgoing) {
-                        if edge.weight().matches(symbol) {
+                        if edge.weight().matches(symbol) && !target_state.contains(&edge.target()) {
                             target_state.push(edge.target());
                         }
                     }

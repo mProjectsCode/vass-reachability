@@ -5,9 +5,10 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 use crate::{
     automaton::{
         TransitionSystem,
-        cfg::vasscfg::VASSCFG,
-        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath, state::MultiGraphState},
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
         lsg::{LinearSubGraph, part::LSGPart},
+        path::Path,
         vass::counter::VASSCounterValuation,
     },
     config::ExtensionStrategyConfig,
@@ -16,6 +17,8 @@ use crate::{
         lsg_reach::{LSGReachSolverOptions, LSGSolution},
     },
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 /// Struct to iteratively extend a Linear Subgraph (LSG) by adding nodes chosen
 /// by a `NodeChooser`, while keeping the LSG unreachable.

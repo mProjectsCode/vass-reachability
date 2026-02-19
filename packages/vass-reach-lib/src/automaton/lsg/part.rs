@@ -1,4 +1,4 @@
-use itertools::Itertools;
+use hashbrown::HashMap;
 use petgraph::{
     Direction, Graph,
     graph::{DiGraph, EdgeIndex, NodeIndex},
@@ -10,10 +10,12 @@ use crate::automaton::{
     Alphabet, Automaton, AutomatonIterators, Deterministic, ExplicitEdgeAutomaton, Frozen,
     InitializedAutomaton, Language, ModifiableAutomaton, SingleFinalStateAutomaton,
     cfg::{CFG, update::CFGCounterUpdate},
-    implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath, state::MultiGraphState},
+    implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
     lsg::LinearSubGraph,
     path::Path,
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 // TODO: die sollten auch nicht determistisch sein können
 #[derive(Debug, Clone)]
@@ -73,7 +75,7 @@ impl LSGGraph {
         );
 
         let mut graph: Graph<MultiGraphState, CFGCounterUpdate> = DiGraph::new();
-        let mut node_map = std::collections::HashMap::new();
+        let mut node_map = HashMap::new();
 
         // Add nodes to the LSG graph
         for state in nodes {
@@ -303,35 +305,25 @@ pub enum LSGPart {
 }
 
 impl LSGPart {
-    fn process<T>(
-        &self,
-        lsg: &LinearSubGraph,
-        subgraph_fn: impl Fn(&LSGGraph) -> T,
-        path_fn: impl Fn(&LSGPath) -> T,
-    ) -> T {
-        match self {
-            LSGPart::SubGraph(i) => subgraph_fn(lsg.subgraph(*i)),
-            LSGPart::Path(i) => path_fn(lsg.path(*i)),
-        }
-    }
-
     /// Checks if the part contains the given node.
     /// The node index is in the context of the CFG, not the part itself.
     pub fn contains_node(&self, lsg: &LinearSubGraph, node: &MultiGraphState) -> bool {
-        self.process(
-            lsg,
-            |subgraph| subgraph.graph.node_weights().contains(node),
-            |path| path.path.contains_state(node),
-        )
+        match self {
+            LSGPart::SubGraph(i) => lsg.subgraph(*i).graph.node_weights().any(|n| n == node),
+            LSGPart::Path(i) => lsg.path(*i).path.contains_state(node),
+        }
     }
 
     // Checks if the part has the given node as start or end node.
     pub fn has_node_as_extremal(&self, lsg: &LinearSubGraph, node: &MultiGraphState) -> bool {
-        self.process(
-            &lsg,
-            |subgraph| subgraph.product_start() == node || subgraph.product_end() == node,
-            |path| path.path.start() == node || path.path.end() == node,
-        )
+        match self {
+            LSGPart::SubGraph(i) => {
+                lsg.subgraph(*i).product_start() == node || lsg.subgraph(*i).product_end() == node
+            }
+            LSGPart::Path(i) => {
+                lsg.path(*i).path.start() == node || lsg.path(*i).path.end() == node
+            }
+        }
     }
 
     /// Iters the nodes in this part.

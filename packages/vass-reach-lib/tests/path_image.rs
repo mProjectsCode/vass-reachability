@@ -1,9 +1,11 @@
 use petgraph::graph::NodeIndex;
 use vass_reach_lib::automaton::{
     cfg::update::CFGCounterUpdate,
-    implicit_cfg_product::{path::MultiGraphPath, state::MultiGraphState},
+    implicit_cfg_product::state::MultiGraphState,
     path::{Path, parikh_image::ParikhImage},
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 #[test]
 fn test_path_basics() {
@@ -74,7 +76,7 @@ fn test_path_slice() {
     path.add('b', NodeIndex::from(2u32));
     path.add('c', NodeIndex::from(3u32));
 
-    let s1 = path.slice(1); // indices 0..=1 -> (a,1), (b,2)
+    let s1 = path.slice(0..2); // indices 0..1 -> (a,1), (b,2)
     assert_eq!(s1.len(), 2);
     assert_eq!(s1.get_letter(0), &'a');
     assert_eq!(s1.get_letter(1), &'b');
@@ -166,7 +168,7 @@ fn test_multi_graph_path_more() {
     mgp.add(CFGCounterUpdate::new(0, true), s1.clone());
     mgp.add(CFGCounterUpdate::new(1, true), s2.clone());
 
-    assert_eq!(mgp.to_fancy_string(), "+c0 +c1");
+    assert_eq!(mgp.to_compact_string(), "+c0 +c1");
     assert!(mgp.contains_state(&s1));
     assert!(!mgp.contains_state(&MultiGraphState::from(vec![NodeIndex::from(3u32)])));
 
@@ -212,4 +214,16 @@ fn test_multi_graph_path_pumping() {
     mgp.add(CFGCounterUpdate::new(0, true), s0.clone());
 
     assert!(mgp.is_counter_forwards_pumped(1, 0.into(), 1));
+}
+
+#[test]
+fn test_path_iterator_rev() {
+    let mut path = Path::new(NodeIndex::from(0u32));
+    path.add('a', NodeIndex::from(1u32));
+    path.add('b', NodeIndex::from(2u32));
+
+    let rev: Vec<_> = path.iter().rev().collect();
+    assert_eq!(rev.len(), 2);
+    assert_eq!(rev[0], (&'b', &NodeIndex::from(2u32)));
+    assert_eq!(rev[1], (&'a', &NodeIndex::from(1u32)));
 }

@@ -1,0 +1,216 @@
+LinearSubGraph {
+    parts: [
+        Path(
+            0,
+        ),
+        SubGraph(
+            1,
+        ),
+        Path(
+            2,
+        ),
+    ],
+    subgraphs: [
+        LSGGraph {
+            graph: Graph {
+                Ty: "Directed",
+                node_count: 2,
+                edge_count: 1,
+                edges: (0, 1),
+                node weights: {
+                    0: MultiGraphState {
+                        states: [
+                            NodeIndex(1),
+                        ],
+                    },
+                    1: MultiGraphState {
+                        states: [
+                            NodeIndex(2),
+                        ],
+                    },
+                },
+                edge weights: {
+                    0: +c0,
+                },
+            },
+            start: NodeIndex(0),
+            end: NodeIndex(0),
+            alphabet: [
+                +c0,
+                -c0,
+            ],
+        },
+        LSGGraph {
+            graph: Graph {
+                Ty: "Directed",
+                node_count: 3,
+                edge_count: 3,
+                edges: (2, 0), (0, 1), (1, 2),
+                node weights: {
+                    0: MultiGraphState {
+                        states: [
+                            NodeIndex(1),
+                        ],
+                    },
+                    1: MultiGraphState {
+                        states: [
+                            NodeIndex(2),
+                        ],
+                    },
+                    2: MultiGraphState {
+                        states: [
+                            NodeIndex(3),
+                        ],
+                    },
+                },
+                edge weights: {
+                    0: -c0,
+                    1: +c0,
+                    2: +c0,
+                },
+            },
+            start: NodeIndex(0),
+            end: NodeIndex(0),
+            alphabet: [
+                +c0,
+                -c0,
+            ],
+        },
+    ],
+    paths: [
+        LSGPath {
+            path: Path {
+                states: [
+                    MultiGraphState {
+                        states: [
+                            NodeIndex(0),
+                        ],
+                    },
+                    MultiGraphState {
+                        states: [
+                            NodeIndex(1),
+                        ],
+                    },
+                ],
+                transitions: [
+                    +c0,
+                ],
+            },
+        },
+        LSGPath {
+            path: Path {
+                states: [
+                    MultiGraphState {
+                        states: [
+                            NodeIndex(1),
+                        ],
+                    },
+                ],
+                transitions: [],
+            },
+        },
+        LSGPath {
+            path: Path {
+                states: [
+                    MultiGraphState {
+                        states: [
+                            NodeIndex(1),
+                        ],
+                    },
+                    MultiGraphState {
+                        states: [
+                            NodeIndex(4),
+                        ],
+                    },
+                ],
+                transitions: [
+                    -c0,
+                ],
+            },
+        },
+    ],
+    product: ImplicitCFGProduct {
+        dimension: 1,
+        initial_valuation: VASSCounterValuation {
+            values: [
+                0,
+            ],
+        },
+        final_valuation: VASSCounterValuation {
+            values: [
+                0,
+            ],
+        },
+        mu: [
+            2,
+        ],
+        forward_bound: [
+            2,
+        ],
+        backward_bound: [
+            2,
+        ],
+        cfgs: [
+            DFA {
+                alphabet: [
+                    +c0,
+                    -c0,
+                ],
+                state_count: 5,
+                states: [
+                    (
+                        (),
+                        NodeIndex(0),
+                    ),
+                    (
+                        (),
+                        NodeIndex(1),
+                    ),
+                    (
+                        (),
+                        NodeIndex(2),
+                    ),
+                    (
+                        (),
+                        NodeIndex(3),
+                    ),
+                    (
+                        (),
+                        NodeIndex(4),
+                    ),
+                ],
+                initial_state: Some(
+                    NodeIndex(0),
+                ),
+                final_states: [
+                    NodeIndex(4),
+                ],
+                edge_count: 5,
+                edges: [
+                    (
+                        "NodeIndex(0) --- +c0 --> NodeIndex(1)",
+                        EdgeIndex(0),
+                    ),
+                    (
+                        "NodeIndex(1) --- -c0 --> NodeIndex(4)",
+                        EdgeIndex(1),
+                    ),
+                    (
+                        "NodeIndex(1) --- +c0 --> NodeIndex(2)",
+                        EdgeIndex(2),
+                    ),
+                    (
+                        "NodeIndex(2) --- +c0 --> NodeIndex(3)",
+                        EdgeIndex(3),
+                    ),
+                    (
+                        "NodeIndex(3) --- -c0 --> NodeIndex(1)",
+                        EdgeIndex(4),
+                    ),
+                ],
+            },
+        ],
+        explicit: None,
+    },
+    dimension: 1,
+}

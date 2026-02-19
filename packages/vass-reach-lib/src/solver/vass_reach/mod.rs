@@ -5,16 +5,19 @@ use crate::{
     automaton::{
         Automaton, AutomatonEdge, AutomatonNode, FromLetter,
         algorithms::EdgeAutomatonAlgorithms,
-        cfg::vasscfg::VASSCFG,
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
-        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
+        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
         lsg::extender::{ExtensionStrategyEnum, LSGExtender},
         ltc::{LTC, translation::LTCTranslation},
+        path::Path,
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
     config::{ModuloMode, VASSReachConfig},
     solver::{SolverResult, SolverStatus},
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 /// Enum representing the different refinement actions that the algorithm can
 /// do.

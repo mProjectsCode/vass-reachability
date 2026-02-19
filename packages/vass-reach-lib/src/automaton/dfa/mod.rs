@@ -481,9 +481,7 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
                     continue;
                 }
 
-                if !path.transitions_contain_node(&target)
-                    && path.len() < length_limit.unwrap_or(usize::MAX)
-                {
+                if !path.contains_node(&target) && path.len() < length_limit.unwrap_or(usize::MAX) {
                     let mut new_path = path.clone();
                     new_path.add(edge.id(), target);
                     stack.push_back(new_path);

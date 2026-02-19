@@ -11,12 +11,14 @@ use crate::automaton::{
             build_rev_bounded_counting_cfg,
         },
     },
-    implicit_cfg_product::{path::MultiGraphPath, state::MultiGraphState},
+    implicit_cfg_product::state::MultiGraphState,
+    path::Path,
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
-pub mod path;
 pub mod state;
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 /// An implicit representation of the product of multiple CFGs, where we only
 /// store the individual CFGs and compute the product on the fly when needed.

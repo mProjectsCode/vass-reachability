@@ -1,43 +1,31 @@
-use std::{fmt::Display, vec::IntoIter};
-
-use hashbrown::HashSet;
+use std::fmt::Display;
 
 use crate::automaton::{
     AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, GIndex, Letter, TransitionSystem,
-    path::transition_sequence::TransitionSequence,
+    cfg::update::{CFGCounterUpdatable, CFGCounterUpdate},
+    vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
 pub mod parikh_image;
-pub mod transition_sequence;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Path<NIndex: GIndex, L: Letter> {
-    transitions: TransitionSequence<NIndex, L>,
-    start: NIndex,
+pub struct Path<N: GIndex, L: Letter> {
+    pub states: Vec<N>,
+    pub transitions: Vec<L>,
 }
 
-impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
-    pub fn new(start_index: NIndex) -> Self {
+impl<N: GIndex, L: Letter> Path<N, L> {
+    pub fn new(start_index: N) -> Self {
         Path {
-            transitions: TransitionSequence::new(),
-            start: start_index,
-        }
-    }
-
-    pub fn new_from_sequence(
-        start_index: NIndex,
-        transitions: TransitionSequence<NIndex, L>,
-    ) -> Self {
-        Path {
-            transitions,
-            start: start_index,
+            states: vec![start_index],
+            transitions: vec![],
         }
     }
 
     pub fn from_word<'a>(
-        start_index: NIndex,
+        start_index: N,
         word: impl IntoIterator<Item = &'a L>,
-        graph: &impl TransitionSystem<Deterministic, NIndex = NIndex, Letter = L>,
+        graph: &impl TransitionSystem<Deterministic, NIndex = N, Letter = L>,
     ) -> anyhow::Result<Self>
     where
         L: 'a,
@@ -51,14 +39,15 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         Ok(path)
     }
 
-    pub fn add(&mut self, letter: L, node: NIndex) {
-        self.transitions.add(letter, node);
+    pub fn add(&mut self, letter: L, node: N) {
+        self.transitions.push(letter);
+        self.states.push(node);
     }
 
     pub fn take_edge(
         &mut self,
         letter: L,
-        graph: &impl TransitionSystem<Deterministic, NIndex = NIndex, Letter = L>,
+        graph: &impl TransitionSystem<Deterministic, NIndex = N, Letter = L>,
     ) -> anyhow::Result<()> {
         let successor = graph.successor(self.end(), &letter).ok_or_else(|| {
             anyhow::anyhow!(format!(
@@ -71,34 +60,105 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         Ok(())
     }
 
-    /// Checks if a path has a loop by checking if an edge in taken twice
+    /// Checks if a path has a loop by checking if a node is visited twice
     pub fn has_loop(&self) -> bool {
-        self.transitions.has_loop()
+        let mut visited = hashbrown::HashSet::new();
+        for node in &self.states {
+            if !visited.insert(node) {
+                return true;
+            }
+        }
+        false
     }
 
-    pub fn start(&self) -> &NIndex {
-        &self.start
+    pub fn start(&self) -> &N {
+        &self.states[0]
     }
 
-    pub fn end(&self) -> &NIndex {
-        self.transitions.end().unwrap_or(&self.start)
+    pub fn end(&self) -> &N {
+        self.states.last().unwrap()
     }
 
-    /// Whether the path contains a specific node.
-    /// This does **not** check the start node.
-    pub fn transitions_contain_node(&self, node: &NIndex) -> bool {
-        self.transitions.contains_node(node)
+    pub fn len(&self) -> usize {
+        debug_assert!(self.states.len() == self.transitions.len() + 1);
+        self.transitions.len()
     }
 
-    pub fn split_at_node(self, node: &NIndex) -> Vec<Self> {
+    pub fn is_empty(&self) -> bool {
+        self.transitions.is_empty()
+    }
+
+    pub fn contains_node(&self, node: &N) -> bool {
+        self.states.contains(node)
+    }
+
+    pub fn contains_state(&self, state: &N) -> bool {
+        self.states.contains(state)
+    }
+
+    pub fn has_node(&self, node: &N) -> bool {
+        self.contains_node(node)
+    }
+
+    pub fn state_len(&self) -> usize {
+        self.states.len()
+    }
+
+    pub fn get_node(&self, index: usize) -> &N {
+        &self.states[index + 1]
+    }
+
+    pub fn get_letter(&self, index: usize) -> &L {
+        &self.transitions[index]
+    }
+
+    pub fn iter_letters(&self) -> impl Iterator<Item = &L> {
+        self.transitions.iter()
+    }
+
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &N> {
+        self.states.iter()
+    }
+
+    pub fn iter_states(&self) -> impl Iterator<Item = &N> {
+        self.states.iter()
+    }
+
+    pub fn iter<'a>(&'a self) -> impl DoubleEndedIterator<Item = (&'a L, &'a N)>
+    where
+        L: 'a,
+        N: 'a,
+    {
+        self.transitions.iter().zip(self.states.iter().skip(1))
+    }
+
+    pub fn first(&self) -> Option<(&L, &N)> {
+        self.transitions.first().zip(self.states.get(1))
+    }
+
+    pub fn last(&self) -> Option<(&L, &N)> {
+        self.transitions.last().zip(self.states.last())
+    }
+
+    pub fn concat(&mut self, mut other: Self) {
+        assert_eq!(
+            self.end(),
+            other.start(),
+            "Paths can only be concatenated if the end of the first matches the start of the second"
+        );
+        self.transitions.append(&mut other.transitions);
+        self.states.append(&mut other.states[1..].to_vec());
+    }
+
+    pub fn split_at_node(self, node: &N) -> Vec<Self> {
         if self.transitions.is_empty() || !self.contains_node(node) {
             return vec![self];
         }
 
         let mut parts = vec![];
-        let mut current_part = Path::new(self.start);
+        let mut current_part = Path::new(self.start().clone());
 
-        for (letter, target) in self.transitions.iter() {
+        for (letter, target) in self.iter() {
             current_part.add(letter.clone(), target.clone());
 
             if target == node {
@@ -114,17 +174,15 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         parts
     }
 
-    pub fn split_at_nodes(self, nodes: &[NIndex]) -> Vec<Self> {
-        // for splitting to have an effect, the path needs to be non-empty and contain
-        // at least one of the nodes
+    pub fn split_at_nodes(self, nodes: &[N]) -> Vec<Self> {
         if self.transitions.is_empty() || nodes.iter().all(|n| !self.contains_node(n)) {
             return vec![self];
         }
 
         let mut parts = vec![];
-        let mut current_part = Path::new(self.start);
+        let mut current_part = Path::new(self.start().clone());
 
-        for (letter, target) in self.transitions.iter() {
+        for (letter, target) in self.iter() {
             current_part.add(letter.clone(), target.clone());
 
             for node in nodes {
@@ -136,51 +194,64 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
             }
         }
 
-        // if !current_part.is_empty() {
         parts.push(current_part);
-        // }
 
         parts
     }
 
-    pub fn to_fancy_string(&self) -> String {
-        format!("{:?} {}", self.start, self.transitions.to_fancy_string())
+    pub fn split_at(self, f: impl Fn(&N, usize) -> bool) -> Vec<Self> {
+        let mut parts = vec![];
+        let mut current_part = Path::new(self.start().clone());
+
+        for (i, (letter, state)) in self.iter().enumerate() {
+            current_part.add(letter.clone(), state.clone());
+
+            if f(state, i) {
+                parts.push(current_part);
+                current_part = Path::new(state.clone());
+            }
+        }
+
+        parts.push(current_part);
+
+        parts
     }
 
-    pub fn concat(&mut self, other: Self) {
-        assert_eq!(
-            self.end(),
-            &other.start,
-            "Paths can only be concatenated if the end of the first matches the start of the second"
-        );
-        self.transitions.append(other.transitions);
+    pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
+        Self {
+            transitions: self.transitions[range.clone()].to_vec(),
+            states: self.states[range.start..=range.end].to_vec(),
+        }
     }
 
-    pub fn iter_letters(&self) -> impl Iterator<Item = &L> {
-        self.transitions.iter_letters()
+    pub fn slice_end(&self, start: usize) -> Self {
+        self.slice(start..self.len())
     }
 
-    pub fn iter_nodes(&self) -> impl Iterator<Item = &NIndex> {
-        vec![&self.start]
-            .into_iter()
-            .chain(self.transitions.iter_nodes())
-    }
+    pub fn split_off(&mut self, i: usize) -> Self {
+        debug_assert!(i < self.transitions.len());
 
-    pub fn has_node(&self, node: &NIndex) -> bool {
-        &self.start == node || self.transitions.contains_node(node)
+        let mut new_path = Path::new(self.states[i + 1].clone());
+        new_path.transitions = self.transitions.split_off(i);
+        new_path.states.extend(self.states.split_off(i + 1));
+
+        debug_assert!(self.states.len() == self.transitions.len() + 1);
+        debug_assert!(new_path.states.len() == new_path.transitions.len() + 1);
+
+        new_path
     }
 
     pub fn visited_edges<
         E: AutomatonEdge<Letter = L>,
-        A: ExplicitEdgeAutomaton<Deterministic, NIndex = NIndex, Letter = L, E = E>,
+        A: ExplicitEdgeAutomaton<Deterministic, NIndex = N, Letter = L, E = E>,
     >(
         &self,
         graph: &A,
-    ) -> HashSet<A::EIndex> {
-        let mut edges = HashSet::new();
-        let mut current_node = &self.start;
+    ) -> hashbrown::HashSet<A::EIndex> {
+        let mut edges = hashbrown::HashSet::new();
+        let mut current_node = self.start();
 
-        for (letter, target) in self.transitions.iter() {
+        for (letter, target) in self.iter() {
             let con_edges: Vec<_> = graph
                 .connecting_edge_indices_with_letter(current_node, target, letter)
                 .collect();
@@ -204,87 +275,278 @@ impl<NIndex: GIndex, L: Letter> Path<NIndex, L> {
         edges
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (L, NIndex)>
-    where
-        L: 'a,
-        NIndex: 'a,
-    {
-        self.transitions.iter()
-    }
-
-    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut (L, NIndex)>
-    where
-        L: 'a,
-        NIndex: 'a,
-    {
-        self.transitions.iter_mut()
-    }
-
-    pub fn first(&self) -> Option<&(L, NIndex)> {
-        self.transitions.first()
-    }
-
-    pub fn last(&self) -> Option<&(L, NIndex)> {
-        self.transitions.last()
-    }
-
-    pub fn split_off(&mut self, index: usize) -> Self {
-        Path {
-            transitions: self.transitions.split_off(index),
-            start: self.start.clone(),
-        }
-    }
-
-    pub fn slice(&self, index: usize) -> Self {
-        Path {
-            transitions: self.transitions.slice(index),
-            start: self.start.clone(),
-        }
-    }
-
-    pub fn slice_end(&self, index: usize) -> Self {
-        Path {
-            transitions: self.transitions.slice_end(index),
-            start: self.start.clone(),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.transitions.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.transitions.is_empty()
-    }
-
-    pub fn contains_node(&self, node: &NIndex) -> bool {
-        self.start == *node || self.transitions.contains_node(node)
-    }
-
-    pub fn get(&self, index: usize) -> &(L, NIndex) {
-        self.transitions.get(index)
-    }
-
-    pub fn get_node(&self, index: usize) -> &NIndex {
-        self.transitions.get_node(index)
-    }
-
-    pub fn get_letter(&self, index: usize) -> &L {
-        self.transitions.get_letter(index)
+    pub fn to_fancy_string(&self) -> String {
+        format!("{}", self)
     }
 }
 
-impl<NIndex: GIndex, L: Letter> Display for Path<NIndex, L> {
+impl<N: GIndex, L: Letter> Path<N, L>
+where
+    L: IntoIterator<Item = CFGCounterUpdate> + Clone,
+{
+    /// Checks if a path is N-reaching.
+    pub fn is_n_reaching(
+        &self,
+        initial_valuation: &VASSCounterValuation,
+        final_valuation: &VASSCounterValuation,
+    ) -> bool {
+        let mut counters = initial_valuation.clone();
+
+        for edge in &self.transitions {
+            for update in edge.clone() {
+                counters.apply_cfg_update(update);
+
+                if counters.has_negative_counter() {
+                    return false;
+                }
+            }
+        }
+
+        &counters == final_valuation
+    }
+}
+
+impl<N: GIndex> Path<N, CFGCounterUpdate> {
+    /// Checks if a path is N-reaching.
+    pub fn is_n_reaching(
+        &self,
+        initial_valuation: &VASSCounterValuation,
+        final_valuation: &VASSCounterValuation,
+    ) -> bool {
+        let mut counters = initial_valuation.clone();
+
+        for edge in &self.transitions {
+            counters.apply_cfg_update(*edge);
+
+            if counters.has_negative_counter() {
+                return false;
+            }
+        }
+
+        &counters == final_valuation
+    }
+
+    pub fn get_path_final_valuation(
+        &self,
+        initial_valuation: &VASSCounterValuation,
+    ) -> VASSCounterValuation {
+        let mut counters = initial_valuation.clone();
+        for edge in &self.transitions {
+            counters.apply_cfg_update(*edge);
+        }
+        counters
+    }
+
+    pub fn find_negative_counter_forward(
+        &self,
+        initial_valuation: &VASSCounterValuation,
+    ) -> Option<(VASSCounterIndex, usize)> {
+        let mut counters = initial_valuation.clone();
+
+        for (i, edge) in self.transitions.iter().enumerate() {
+            counters.apply_cfg_update(*edge);
+
+            if let Some(counter) = counters.find_negative_counter() {
+                return Some((counter, i));
+            }
+        }
+
+        None
+    }
+
+    pub fn find_negative_counter_backward(
+        &self,
+        final_valuation: &VASSCounterValuation,
+    ) -> Option<(VASSCounterIndex, usize)> {
+        let mut counters = final_valuation.clone();
+
+        for (i, edge) in self.transitions.iter().enumerate().rev() {
+            counters.apply_cfg_update(edge.reverse());
+
+            if let Some(counter) = counters.find_negative_counter() {
+                return Some((counter, i));
+            }
+        }
+
+        None
+    }
+
+    pub fn max_counter_value(
+        &self,
+        initial_valuation: &VASSCounterValuation,
+        counter: VASSCounterIndex,
+    ) -> i32 {
+        let counter_updates = self
+            .transitions
+            .iter()
+            .filter(|update| update.counter() == counter);
+
+        let mut value = initial_valuation[counter];
+        let mut max_value = initial_valuation[counter];
+        for update in counter_updates {
+            value += update.op();
+            max_value = max_value.max(value);
+        }
+
+        max_value
+    }
+
+    pub fn max_counter_value_from_back(
+        &self,
+        final_valuation: &VASSCounterValuation,
+        counter: VASSCounterIndex,
+    ) -> i32 {
+        let counter_updates = self
+            .transitions
+            .iter()
+            .rev()
+            .filter(|update| update.counter() == counter);
+
+        let mut value = final_valuation[counter];
+        let mut max_value = final_valuation[counter];
+        for update in counter_updates {
+            value -= update.op();
+            max_value = max_value.max(value);
+        }
+
+        max_value
+    }
+
+    pub fn visits_node_multiple_times(&self, limit: u32) -> bool {
+        let mut visited = hashbrown::HashMap::new();
+        visited.insert(self.states[0].clone(), 1);
+
+        for state in self.states.iter().skip(1) {
+            let value = visited.entry(state.clone()).or_insert(0);
+            *value += 1;
+            if *value > limit {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+use crate::automaton::implicit_cfg_product::state::MultiGraphState;
+
+impl Path<MultiGraphState, CFGCounterUpdate> {
+    pub fn to_path_in_cfg(
+        &self,
+        cfg_index: usize,
+    ) -> Path<petgraph::graph::NodeIndex, CFGCounterUpdate> {
+        let mut path = Path::new(self.states[0].cfg_state(cfg_index));
+
+        for (update, state) in self.iter() {
+            path.add(*update, state.cfg_state(cfg_index));
+        }
+
+        path
+    }
+
+    pub fn is_counter_forwards_pumped(
+        &self,
+        dimension: usize,
+        counter: VASSCounterIndex,
+        limit: u32,
+    ) -> bool {
+        let mut visited = hashbrown::HashMap::new();
+        let mut counters = VASSCounterValuation::zero(dimension);
+        let mut start = self.states[0].clone();
+
+        // clear the indices corresponding to the modulo and bounded counting
+        // separators, since they don't matter for pumping
+        start.clear_indices(1..dimension * 3 + 1);
+
+        visited.insert(start, (1, counters.clone()));
+
+        for (update, state) in self.iter() {
+            counters.apply_cfg_update(*update);
+
+            // clear the indices corresponding to the modulo and bounded counting
+            // separators, since they don't matter for pumping
+            let mut state = state.clone();
+            state.clear_indices(1..dimension * 3 + 1);
+
+            let entry = visited
+                .entry(state)
+                .or_insert((0, VASSCounterValuation::zero(dimension)));
+
+            // check that we have pumped and that we pumped the counter we care about
+            if counters >= entry.1 && counters[counter] > entry.1[counter] {
+                entry.0 += 1;
+                entry.1 = counters.clone();
+                if entry.0 > limit {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn is_counter_backwards_pumped(
+        &self,
+        dimension: usize,
+        counter: VASSCounterIndex,
+        limit: u32,
+    ) -> bool {
+        let mut visited = hashbrown::HashMap::new();
+        let mut counters = VASSCounterValuation::zero(dimension);
+        visited.insert(self.states[0].clone(), (1, counters.clone()));
+
+        // iterate in reverse order
+        for (update, state) in self.iter().rev() {
+            // apply the reverse update since we are going backwards
+            counters.apply_cfg_update(update.reverse());
+
+            let entry = visited
+                .entry(state.clone())
+                .or_insert((0, VASSCounterValuation::zero(dimension)));
+
+            // check that we have pumped and that we pumped the counter we care about
+            if counters >= entry.1 && counters[counter] > entry.1[counter] {
+                entry.0 += 1;
+                entry.1 = counters.clone();
+                if entry.0 > limit {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+}
+
+impl<N: GIndex, L: Letter> Display for Path<N, L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {}", self.start, self.transitions)
+        write!(f, "{:?}", self.start())?;
+        for (letter, target) in self.iter() {
+            write!(f, " --({:?})-> {:?}", letter, target)?;
+        }
+        Ok(())
     }
 }
 
-impl<NIndex: GIndex, L: Letter> IntoIterator for Path<NIndex, L> {
-    type Item = (L, NIndex);
-    type IntoIter = IntoIter<(L, NIndex)>;
+impl<N: GIndex> Path<N, CFGCounterUpdate> {
+    pub fn to_compact_string(&self) -> String {
+        self.transitions
+            .iter()
+            .map(|u| format!("{}", u))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+impl<N: GIndex, L: Letter> IntoIterator for Path<N, L> {
+    type Item = (L, N);
+    type IntoIter = std::iter::Zip<std::vec::IntoIter<L>, std::vec::IntoIter<N>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.transitions.into_iter()
+        let mut states = self.states;
+        if !states.is_empty() {
+            states.remove(0);
+        }
+        self.transitions.into_iter().zip(states)
     }
 }

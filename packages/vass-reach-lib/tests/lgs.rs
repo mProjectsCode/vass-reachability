@@ -1,17 +1,21 @@
+use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use vass_reach_lib::{
     automaton::{
         Language, ModifiableAutomaton,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
-        implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath},
-        lsg::LinearSubGraph,
+        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
+        lsg::{LinearSubGraph, part::LSGGraph},
+        path::Path,
         vass::{VASS, VASSEdge},
     },
     cfg_dec, cfg_inc,
     solver::lsg_reach::LSGReachSolverOptions,
     validation::same_language::assert_same_language,
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 #[test]
 fn lgs_1() {
@@ -30,7 +34,8 @@ fn lgs_1() {
 
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
-    let path = MultiGraphPath::from_word(product.initial(), [cfg_inc!(0), cfg_dec!(0)], &product);
+    let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
+        .unwrap();
     let lsg = LinearSubGraph::from_path(path, &product, 1);
 
     // we assume the lsg has one path part
@@ -104,7 +109,8 @@ fn lgs_2() {
 
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
-    let path = MultiGraphPath::from_word(product.initial(), [cfg_inc!(0), cfg_dec!(0)], &product);
+    let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
+        .unwrap();
     let lsg = LinearSubGraph::from_path(path, &product, 1);
 
     // Initial path should have one part
@@ -204,7 +210,7 @@ fn lsg_3() {
 
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(2, vec![0, 0].into(), vec![0, 0].into(), cfg);
-    let path = MultiGraphPath::from_word(product.initial(), word.clone(), &product);
+    let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
     let lsg = LinearSubGraph::from_path(path, &product, 2);
 
     lsg.add_node(NodeIndex::from(15).into());
@@ -231,7 +237,8 @@ fn lsg_reach() {
 
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
-    let path = MultiGraphPath::from_word(product.initial(), [cfg_inc!(0), cfg_dec!(0)], &product);
+    let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
+        .unwrap();
 
     let lsg = LinearSubGraph::from_path(path, &product, 1);
 
@@ -284,7 +291,8 @@ fn lsg_reach2() {
 
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
-    let path = MultiGraphPath::from_word(product.initial(), [cfg_inc!(0), cfg_dec!(0)], &product);
+    let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
+        .unwrap();
 
     let lsg = LinearSubGraph::from_path(path, &product, 1);
 
@@ -316,4 +324,52 @@ fn lsg_reach2() {
 
     assert!(res.is_success());
     assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
+}
+
+#[test]
+fn lsg_determinize_invariant_to_scc_node_order() {
+    // build a small CFG with an SCC (s1 <-> s2)
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    let _e1 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    let _e2 = cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    let _e3 = cfg.add_edge(&s2, &s1, cfg_dec!(0));
+    let _e4 = cfg.add_edge(&s1, &s3, cfg_dec!(0));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
+
+    // pick a node that lies inside the SCC (s1)
+    let node: MultiGraphState = NodeIndex::from(1).into();
+    let scc_set = product.find_scc_surrounding(node.clone());
+
+    let scc_vec1: Vec<_> = scc_set.iter().cloned().collect_vec();
+    let mut scc_vec2 = scc_vec1.clone();
+    scc_vec2.reverse(); // different insertion order
+
+    let g1 = LSGGraph::from_subset(&product, &scc_vec1, node.clone(), node.clone());
+    let g2 = LSGGraph::from_subset(&product, &scc_vec2, node.clone(), node.clone());
+
+    let mut l1 = LinearSubGraph::empty(&product, 1);
+    l1.add_subgraph(g1.clone());
+    let mut l2 = LinearSubGraph::empty(&product, 1);
+    l2.add_subgraph(g2.clone());
+
+    let nfa1 = l1.to_nfa();
+    let nfa2 = l2.to_nfa();
+
+    let cfg1 = nfa1.determinize();
+    let cfg2 = nfa2.determinize();
+
+    // determinized CFG/DFA sizes must be the same and languages equal
+    assert_eq!(cfg1.graph.node_count(), cfg2.graph.node_count());
+    assert_eq!(cfg1.graph.edge_count(), cfg2.graph.edge_count());
+
+    assert_same_language(&cfg1, &cfg2, 8);
 }

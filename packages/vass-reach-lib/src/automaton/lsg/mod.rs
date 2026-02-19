@@ -12,10 +12,13 @@ use crate::automaton::{
     Alphabet, Language, ModifiableAutomaton, TransitionSystem,
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
-    implicit_cfg_product::{ImplicitCFGProduct, path::MultiGraphPath, state::MultiGraphState},
+    implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
     lsg::part::{LSGGraph, LSGPart, LSGPath},
     nfa::NFA,
+    path::Path,
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 pub mod extender;
 pub mod part;
@@ -234,7 +237,9 @@ impl<'a> LinearSubGraph<'a> {
         );
 
         let scc_nodes = self.product.find_scc_surrounding(state.clone());
-        let scc_nodes_vec = scc_nodes.into_iter().collect_vec();
+        let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
+        // make deterministic: sort the SCC nodes before building the LSG graph
+        scc_nodes_vec.sort_unstable();
         let scc = LSGGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
 
         let mut result = LinearSubGraph::empty(self.product, self.dimension);
@@ -282,7 +287,9 @@ impl<'a> LinearSubGraph<'a> {
         let state = &self.paths[path_idx].path.states[node_index];
 
         let scc_nodes = self.product.find_scc_surrounding(state.clone());
-        let scc_nodes_vec = scc_nodes.into_iter().collect_vec();
+        let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
+        // make deterministic: sort the SCC nodes before building the LSG graph
+        scc_nodes_vec.sort_unstable();
         let scc = LSGGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
 
         let mut result = LinearSubGraph::empty(self.product, self.dimension);
@@ -333,25 +340,25 @@ impl<'a> LinearSubGraph<'a> {
         let start_state = nfa.add_node(DfaNode::non_accepting(()));
         nfa.set_initial(start_state);
 
-        let mut state_offset = 0;
         let mut prev_state = start_state;
 
         for part in &self.parts {
             match part {
                 LSGPart::Path(idx) => {
                     let path = self.path(*idx);
-                    for update in path.path.iter() {
+                    for update in &path.path.transitions {
                         let next_state = nfa.add_node(DfaNode::non_accepting(()));
 
-                        nfa.add_edge(&prev_state, &next_state, NFAEdge::Symbol(update));
+                        nfa.add_edge(&prev_state, &next_state, NFAEdge::Symbol(*update));
                         prev_state = next_state;
                     }
-
-                    state_offset += path.path.len();
                 }
                 LSGPart::SubGraph(idx) => {
                     let subgraph = self.subgraph(*idx);
-                    // first add all states
+                    // compute base index in the NFA for the first node of this subgraph
+                    let base = nfa.graph.node_count() as u32;
+
+                    // first add all states (they will get indices base..)
                     for _ in subgraph.graph.node_indices() {
                         nfa.add_node(DfaNode::non_accepting(()));
                     }
@@ -359,7 +366,7 @@ impl<'a> LinearSubGraph<'a> {
                     // then connect the previous part to the start of the subgraph
                     for i in subgraph.graph.node_indices() {
                         if i == subgraph.start {
-                            let end_index = (i.index() + state_offset) as u32;
+                            let end_index = base + i.index() as u32;
                             nfa.add_edge(
                                 &prev_state,
                                 &NodeIndex::from(end_index),
@@ -371,23 +378,19 @@ impl<'a> LinearSubGraph<'a> {
                     // then set the prev_state to the end of the subgraph
                     for i in subgraph.graph.node_indices() {
                         if i == subgraph.end {
-                            let end_index = (i.index() + state_offset) as u32;
+                            let end_index = base + i.index() as u32;
                             prev_state = end_index.into();
                         }
                     }
 
-                    // add all edges
+                    // add all edges (map subgraph node indices -> NFA indices using base)
                     for edge_ref in subgraph.graph.edge_references() {
-                        let src =
-                            NodeIndex::from((edge_ref.source().index() + state_offset) as u32);
-                        let dst =
-                            NodeIndex::from((edge_ref.target().index() + state_offset) as u32);
+                        let src = NodeIndex::from(base + edge_ref.source().index() as u32);
+                        let dst = NodeIndex::from(base + edge_ref.target().index() as u32);
                         let weight = *edge_ref.weight();
 
                         nfa.add_edge(&src, &dst, NFAEdge::Symbol(weight));
                     }
-
-                    state_offset += subgraph.graph.node_count();
                 }
             }
         }
@@ -398,8 +401,13 @@ impl<'a> LinearSubGraph<'a> {
     }
 
     pub fn to_cfg(&self) -> VASSCFG<()> {
+        // persist self to a file for debugging
+        let serialized = format!("{:#?}", self);
+        std::fs::write("lsg_debug.txt", serialized).expect("Failed to write LSG debug file");
+
         tracing::debug!("Converting LSG to NFA");
         let nfa = self.to_nfa();
+
         tracing::debug!(
             "Converting NFA with {} states and {} edges to CFG",
             nfa.graph.node_count(),
@@ -438,9 +446,9 @@ fn partial_accept_path<'a>(
     }
 
     while let Some(symbol) = input.peek() {
-        let update = path.path.updates[index];
+        let update = path.path.transitions[index];
 
-        if &update == *symbol {
+        if update == **symbol {
             index += 1;
             input.next();
         } else {

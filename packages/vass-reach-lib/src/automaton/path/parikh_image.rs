@@ -8,7 +8,7 @@ use crate::automaton::{
         update::{CFGCounterUpdatable, CFGCounterUpdate},
     },
     index_map::{IndexMap, IndexSet},
-    path::{Path, transition_sequence::TransitionSequence},
+    path::Path,
     vass::counter::{VASSCounterUpdate, VASSCounterValuation},
 };
 
@@ -77,7 +77,7 @@ impl<EIndex: CompactGIndex> ParikhImage<EIndex> {
     pub fn from_path<NIndex: GIndex>(path: &Path<NIndex, EIndex>, edge_count: usize) -> Self {
         let mut map = IndexMap::new(edge_count);
 
-        for (edge, _) in &path.transitions {
+        for edge in &path.transitions {
             let entry = map.get_mut(*edge);
             *entry += 1;
         }
@@ -219,7 +219,7 @@ impl ParikhImage<EdgeIndex> {
     ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
         let valuation = initial_valuation.clone();
 
-        let ts = rec_build_run(
+        let res = rec_build_run(
             self.clone(),
             cfg,
             cfg.get_initial(),
@@ -228,12 +228,14 @@ impl ParikhImage<EdgeIndex> {
             n_run,
         );
 
-        if let Some(mut transition_sequence) = ts {
-            transition_sequence.reverse();
-            Some(Path::new_from_sequence(
-                cfg.get_initial(),
-                transition_sequence,
-            ))
+        if let Some((mut transitions, mut states)) = res {
+            transitions.reverse();
+            states.reverse();
+            let mut path = Path::new(cfg.get_initial());
+            for (t, s) in transitions.into_iter().zip(states.into_iter()) {
+                path.add(t, s);
+            }
+            Some(path)
         } else {
             None
         }
@@ -263,13 +265,13 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
     valuation: VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
     n_run: bool,
-) -> Option<TransitionSequence<NodeIndex, CFGCounterUpdate>> {
+) -> Option<(Vec<CFGCounterUpdate>, Vec<NodeIndex>)> {
     // if the parikh image is empty, we have reached the end of the path, which also
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {
         assert_eq!(&valuation, final_valuation);
         return if cfg.is_accepting(&node_index) {
-            Some(TransitionSequence::new())
+            Some((vec![], vec![]))
         } else {
             None
         };
@@ -301,9 +303,10 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
         let res = rec_build_run(parikh, cfg, target, valuation, final_valuation, n_run);
 
         match res {
-            Some(mut seq) => {
-                seq.add(*update, target);
-                return Some(seq);
+            Some((mut transitions, mut states)) => {
+                transitions.push(*update);
+                states.push(target);
+                return Some((transitions, states));
             }
             None => {
                 // try next edge

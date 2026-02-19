@@ -13,13 +13,14 @@ use z3::{Config, Context, Solver, ast::Int, with_z3_config};
 use crate::{
     automaton::{
         AutomatonIterators, ExplicitEdgeAutomaton,
-        implicit_cfg_product::path::MultiGraphPath,
+        cfg::update::CFGCounterUpdate,
+        implicit_cfg_product::state::MultiGraphState,
         index_map::OptionIndexMap,
         lsg::{
             LinearSubGraph,
             part::{LSGGraph, LSGPart, LSGPath},
         },
-        path::parikh_image::ParikhImage,
+        path::{Path, parikh_image::ParikhImage},
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
         vass::counter::VASSCounterValuation,
     },
@@ -28,6 +29,8 @@ use crate::{
         utils::{forbid_parikh_image, parikh_image_from_edge_map},
     },
 };
+
+type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 #[derive(Debug, Default)]
 pub struct LSGReachSolverOptions {
@@ -122,7 +125,10 @@ impl LSGSolution {
                     let path = lsg_part.unwrap_path(lsg);
 
                     // we need to update the current valuation for possible following subgraphs
-                    let update = cfg_updates_to_counter_update(path.path.iter(), dimension);
+                    let update = cfg_updates_to_counter_update(
+                        path.path.transitions.iter().cloned(),
+                        dimension,
+                    );
 
                     current_valuation.apply_update(&update);
 
@@ -368,7 +374,10 @@ impl<'g> LSGReachSolver<'g> {
     }
 
     fn build_path_constraints(&self, path: &LSGPath, solver: &Solver, sums: &mut Box<[Int]>) {
-        let path_updates = cfg_updates_to_counter_updates(path.path.iter(), self.lsg.dimension);
+        let path_updates = cfg_updates_to_counter_updates(
+            path.path.transitions.iter().cloned(),
+            self.lsg.dimension,
+        );
 
         // first subtract the minimums
         for (update, sum) in path_updates.0.iter().zip(sums.iter_mut()) {
