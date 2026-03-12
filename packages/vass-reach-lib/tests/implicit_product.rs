@@ -1,13 +1,15 @@
 use hashbrown::HashSet;
 use vass_reach_lib::{
     automaton::{
-        ModifiableAutomaton, TransitionSystem,
+        Automaton, InitializedAutomaton, ModifiableAutomaton, TransitionSystem,
         cfg::{
             update::CFGCounterUpdate,
             vasscfg::{VASSCFG, build_bounded_counting_cfg, build_rev_bounded_counting_cfg},
         },
         dfa::node::DfaNode,
-        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
+        implicit_cfg_product::{
+            ImplicitCFGProduct, bounded_counting_indices, state::MultiGraphState,
+        },
         vass::counter::{VASSCounterIndex, VASSCounterValuation},
     },
     cfg_dec, cfg_inc,
@@ -41,8 +43,13 @@ fn implicit_product_test() {
 
     let inter = cfg.intersect(&lim_cfg).intersect(&rev_lim_cfg);
 
-    let implicit_product =
-        ImplicitCFGProduct::new(1, initial_valuation.clone(), final_valuation.clone(), cfg);
+    let implicit_product = ImplicitCFGProduct::new(
+        1,
+        initial_valuation.clone(),
+        final_valuation.clone(),
+        cfg,
+        true,
+    );
 
     let path = implicit_product.reach();
 
@@ -99,4 +106,37 @@ fn implicit_product_predecessors() {
     expected.insert(MultiGraphState::from(vec![a1, b1]));
 
     assert_eq!(predecessors, expected);
+}
+
+#[test]
+fn implicit_product_can_disable_bounded_counting() {
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+
+    let q0 = cfg.add_node(DfaNode::accepting(()));
+    let q1 = cfg.add_node(DfaNode::non_accepting(()));
+    let q2 = cfg.add_node(DfaNode::non_accepting(()));
+
+    cfg.set_initial(q0);
+
+    cfg.add_edge(&q0, &q0, cfg_inc!(0));
+    cfg.add_edge(&q0, &q1, cfg_dec!(0));
+    cfg.add_edge(&q1, &q2, cfg_dec!(0));
+    cfg.add_edge(&q2, &q0, cfg_inc!(0));
+
+    cfg.make_complete(());
+
+    let initial_valuation = VASSCounterValuation::from(vec![1]);
+    let final_valuation = VASSCounterValuation::from(vec![0]);
+
+    let implicit_product =
+        ImplicitCFGProduct::new(1, initial_valuation, final_valuation, cfg, false);
+
+    assert!(implicit_product.reach().is_some());
+
+    for index in bounded_counting_indices(1) {
+        let counting_cfg = &implicit_product.cfgs[index];
+
+        assert_eq!(counting_cfg.node_count(), 1);
+        assert!(counting_cfg.is_accepting(&counting_cfg.get_initial()));
+    }
 }

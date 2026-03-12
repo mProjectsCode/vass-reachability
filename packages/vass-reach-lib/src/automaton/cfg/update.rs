@@ -142,8 +142,7 @@ impl FromStr for CFGCounterUpdate {
         }
 
         let mut number = 0;
-        let mut index = 2;
-        for char in chars {
+        for (index, char) in (2..).zip(chars) {
             if let Some(digit) = char.to_digit(10) {
                 number = number * 10 + digit;
             } else {
@@ -153,8 +152,6 @@ impl FromStr for CFGCounterUpdate {
                     char
                 )
             }
-
-            index += 1;
         }
 
         Ok(CFGCounterUpdate::new(number, positive))

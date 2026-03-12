@@ -7,41 +7,41 @@ use crate::{
         TransitionSystem,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        lsg::{LinearSubGraph, part::LSGPart},
+        mgts::{MGTS, part::MGTSPart},
         path::Path,
         vass::counter::VASSCounterValuation,
     },
     config::ExtensionStrategyConfig,
     solver::{
         SolverStatus,
-        lsg_reach::{LSGReachSolverOptions, LSGSolution},
+        mgts_reach::{MGTSReachSolverOptions, MGTSSolution},
     },
 };
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
-/// Struct to iteratively extend a Linear Subgraph (LSG) by adding nodes chosen
-/// by a `NodeChooser`, while keeping the LSG unreachable.
+/// Struct to iteratively extend an MGTS by adding nodes chosen
+/// by a `NodeChooser`, while keeping the MGTS unreachable.
 #[derive(Debug)]
-pub struct LSGExtender<'a> {
-    /// The current Linear Subgraph being extended.
-    pub lsg: LinearSubGraph<'a>,
-    /// The previous Linear Subgraph before the last extension.
-    /// This is used to backtrack if the current LSG becomes reachable.
-    pub old_lsg: Option<LinearSubGraph<'a>>,
+pub struct MGTSExtender<'a> {
+    /// The current MGTS being extended.
+    pub mgts: MGTS<'a>,
+    /// The previous MGTS before the last extension.
+    /// This is used to backtrack if the current MGTS becomes reachable.
+    pub old_mgts: Option<MGTS<'a>>,
     /// Reference to the underlying CFG.
     pub product: &'a ImplicitCFGProduct,
     /// Dimension of the CFG.
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
-    /// The strategy used to select nodes to add to the LSG.
+    /// The strategy used to extend the MGTS.
     pub strategy: ExtensionStrategyEnum,
     /// Maximum number of refinement steps to perform.
     pub max_refinements: u64,
 }
 
-impl<'a> LSGExtender<'a> {
+impl<'a> MGTSExtender<'a> {
     pub fn new(
         path: MultiGraphPath,
         product: &'a ImplicitCFGProduct,
@@ -51,11 +51,11 @@ impl<'a> LSGExtender<'a> {
         final_valuation: VASSCounterValuation,
         max_refinements: u64,
     ) -> Self {
-        let lsg = LinearSubGraph::from_path(path, product, dimension);
+        let mgts = MGTS::from_path(path, product, dimension);
 
-        LSGExtender {
-            old_lsg: None,
-            lsg,
+        MGTSExtender {
+            old_mgts: None,
+            mgts,
             dimension,
             product,
             strategy,
@@ -82,50 +82,50 @@ impl<'a> LSGExtender<'a> {
         )
     }
 
-    /// Refines `self.lsg` by trying to extend it using the `node_chooser`
+    /// Refines `self.mgts` by trying to extend it using the `node_chooser`
     /// until no more nodes can be added or the maximum number of refinements is
     /// reached.
     pub fn run(&mut self) -> VASSCFG<()> {
-        tracing::span!(tracing::Level::DEBUG, "LSGExtender::run");
+        tracing::span!(tracing::Level::DEBUG, "MGTSExtender::run");
 
         let mut refinement_step = 0;
 
         loop {
-            let solver_result = LSGReachSolverOptions::default()
-                .to_solver(&self.lsg, &self.initial_valuation, &self.final_valuation)
+            let solver_result = MGTSReachSolverOptions::default()
+                .to_solver(&self.mgts, &self.initial_valuation, &self.final_valuation)
                 .solve();
 
             match &solver_result.status {
                 SolverStatus::True(solution) => {
                     tracing::debug!(
-                        "LSGExtender step {}: LSG became reachable, rolling back",
+                        "MGTSExtender step {}: MGTS became reachable, rolling back",
                         refinement_step
                     );
 
                     // we became reachable, so we need to remove the last extension
-                    let old = self.old_lsg.take();
-                    self.lsg = old.expect("LSGExtender: Something went wrong, we became reachable but have no old LSG to backtrack to. Maybe the initial LSG was already reachable?");
+                    let old = self.old_mgts.take();
+                    self.mgts = old.expect("MGTSExtender: Something went wrong, we became reachable but have no old MGTS to backtrack to. Maybe the initial MGTS was already reachable?");
 
                     self.strategy.on_rollback(solution);
                 }
                 SolverStatus::False(_) => {
                     tracing::debug!(
-                        "LSGExtender step {}: LSG is still unreachable, trying to extend",
+                        "MGTSExtender step {}: MGTS is still unreachable, trying to extend",
                         refinement_step
                     );
 
-                    // we are still unreachable, so we can try to extend the LSG
-                    if let Some(extended) = self.strategy.extend(&self.lsg, refinement_step) {
+                    // we are still unreachable, so we can try to extend the MGTS
+                    if let Some(extended) = self.strategy.extend(&self.mgts, refinement_step) {
                         tracing::debug!(
-                            "LSGExtender step {}: Strategy provided extended LSG with {} states",
+                            "MGTSExtender step {}: Strategy provided extended MGTS with {} states",
                             refinement_step,
                             extended.size()
                         );
 
-                        self.old_lsg = Some(std::mem::replace(&mut self.lsg, extended));
+                        self.old_mgts = Some(std::mem::replace(&mut self.mgts, extended));
                     } else {
                         tracing::debug!(
-                            "LSGExtender step {}: Strategy did not provide extended LSG, stopping",
+                            "MGTSExtender step {}: Strategy did not provide extended MGTS, stopping",
                             refinement_step
                         );
 
@@ -135,7 +135,7 @@ impl<'a> LSGExtender<'a> {
                 }
                 SolverStatus::Unknown(_) => {
                     tracing::debug!(
-                        "LSGExtender step {}: Solver returned unknown, stopping",
+                        "MGTSExtender step {}: Solver returned unknown, stopping",
                         refinement_step
                     );
 
@@ -147,21 +147,21 @@ impl<'a> LSGExtender<'a> {
             refinement_step += 1;
             if refinement_step >= self.max_refinements {
                 tracing::debug!(
-                    "LSGExtender step {}: Reached max refinement steps, stopping",
+                    "MGTSExtender step {}: Reached max refinement steps, stopping",
                     refinement_step
                 );
                 break;
             }
         }
 
-        self.lsg.to_cfg()
+        self.mgts.to_cfg()
     }
 }
 
 pub trait ExtensionStrategy {
-    fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, step: u64) -> Option<LinearSubGraph<'a>>;
+    fn extend<'a>(&mut self, mgts: &MGTS<'a>, step: u64) -> Option<MGTS<'a>>;
 
-    fn on_rollback(&mut self, solution: &LSGSolution);
+    fn on_rollback(&mut self, solution: &MGTSSolution);
 }
 
 #[derive(Debug)]
@@ -182,18 +182,14 @@ impl ExtensionStrategyEnum {
         }
     }
 
-    pub fn extend<'a>(
-        &mut self,
-        lsg: &LinearSubGraph<'a>,
-        step: u64,
-    ) -> Option<LinearSubGraph<'a>> {
+    pub fn extend<'a>(&mut self, mgts: &MGTS<'a>, step: u64) -> Option<MGTS<'a>> {
         match self {
-            ExtensionStrategyEnum::RandomNode(strategy) => strategy.extend(lsg, step),
-            ExtensionStrategyEnum::RandomSCC(strategy) => strategy.extend(lsg, step),
+            ExtensionStrategyEnum::RandomNode(strategy) => strategy.extend(mgts, step),
+            ExtensionStrategyEnum::RandomSCC(strategy) => strategy.extend(mgts, step),
         }
     }
 
-    pub fn on_rollback(&mut self, solution: &LSGSolution) {
+    pub fn on_rollback(&mut self, solution: &MGTSSolution) {
         match self {
             ExtensionStrategyEnum::RandomNode(strategy) => strategy.on_rollback(solution),
             ExtensionStrategyEnum::RandomSCC(strategy) => strategy.on_rollback(solution),
@@ -223,28 +219,28 @@ impl RandomNodeStrategy {
 }
 
 impl ExtensionStrategy for RandomNodeStrategy {
-    fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, _step: u64) -> Option<LinearSubGraph<'a>> {
+    fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {
         for _ in 0..self.max_retries {
-            let parts_len = lsg.parts.len();
+            let parts_len = mgts.sequence.len();
             let part_index = self.random.random_range(0..parts_len);
-            let state = lsg.parts[part_index].random_node(lsg, &mut self.random);
+            let state = mgts.sequence[part_index].random_node(mgts, &mut self.random);
 
-            let neighbors: Vec<_> = lsg.product.undirected_neighbors(state);
+            let neighbors: Vec<_> = mgts.product.undirected_neighbors(state);
 
             let selected = neighbors
                 .iter()
-                .find(|n| !lsg.contains_state(n) && !self.blacklist.contains(n));
+                .find(|n| !mgts.contains_state(n) && !self.blacklist.contains(n));
 
             if let Some(selected) = selected {
                 self.last_added = Some(selected.clone());
-                return Some(lsg.add_node(selected.clone()));
+                return Some(mgts.add_node(selected.clone()));
             }
         }
 
         None
     }
 
-    fn on_rollback(&mut self, _solution: &LSGSolution) {
+    fn on_rollback(&mut self, _solution: &MGTSSolution) {
         if let Some(last_node) = self.last_added.take() {
             self.blacklist.push(last_node);
         }
@@ -274,19 +270,42 @@ impl RandomSCCStrategy {
 
 // Idea: chance based on how often a SCC was visited, when long in SCC, then
 // maybe more safe?
+// Done: Due to the way we choose SCCs to add, we do this implicitly.
 
-// Idea: Sub SCC, we look at strongly connected subsets of SCCs
+// Idea: Sub SCC, we look at strongly connected subsets of SCCs.
+// Probably the easiest would be to look at the path through the SCC (or just
+// the parikh image) if it is reachable, then do a sub-refinement step where we
+// don't disregard the SCC, but instead look if we can remove some edge or node
+// from the SCC to make it unreachable again.
+
+// Idea:
+// Why are we including the modulo automatons in the MGTS?
+// 1. they do influence SCCs, but we can probably work around that, capturing
+//    the relevant nodes with the modulo automatons, but then when translating
+//    to a MGTS, we can disregard them and get smaller automatons
+// 2. when solving the MGTS, the modulo automatons are strictly weaker than the
+//    Z-Reachability we search for, so we can disregard them as well.
+// 3. When building the automaton in the end we want to construct it in a way
+//    that we restrict as much as possible. But the current way we construct
+//    them (just take the MGTS and invert it) means that by restricting the MGTS
+//    more, we make the rejected language by the final automaton smaller (and
+//    the automaton bigger). This is not great, as yeah, we are more precise,
+//    but we already have the precision in the MGTS. We are just adding more
+//    states to the automaton, which makes it harder to handle.
+
+// ignore some maybe not all LGS. (maybe sleep some MGTSs)
+// build MGTS graphs from edges, not full SCCs
 
 impl ExtensionStrategy for RandomSCCStrategy {
-    fn extend<'a>(&mut self, lsg: &LinearSubGraph<'a>, _step: u64) -> Option<LinearSubGraph<'a>> {
+    fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {
         for _ in 0..self.max_retries {
-            let paths = lsg
-                .parts
+            let paths = mgts
+                .sequence
                 .iter()
                 .enumerate()
                 .filter_map(|(i, p)| {
-                    if let LSGPart::Path(path_idx) = p {
-                        let path = lsg.path(*path_idx);
+                    if let MGTSPart::Path(path_idx) = p {
+                        let path = mgts.path(*path_idx);
                         if path.path.len() > 1 {
                             return Some((i, *path_idx));
                         }
@@ -301,7 +320,7 @@ impl ExtensionStrategy for RandomSCCStrategy {
 
             for _ in 0..self.max_retries {
                 let (part_index, path_idx) = paths[self.random.random_range(0..paths.len())];
-                let path = lsg.path(path_idx);
+                let path = mgts.path(path_idx);
 
                 let state_index = self.random.random_range(0..path.path.state_len());
                 let state = &path.path.states[state_index];
@@ -311,14 +330,14 @@ impl ExtensionStrategy for RandomSCCStrategy {
                 }
 
                 self.last_added.push(state.clone());
-                return Some(lsg.add_scc_around_position(part_index, state_index));
+                return Some(mgts.add_scc_around_position(part_index, state_index));
             }
         }
 
         None
     }
 
-    fn on_rollback(&mut self, _solution: &LSGSolution) {
+    fn on_rollback(&mut self, _solution: &MGTSSolution) {
         for last_node in self.last_added.drain(..) {
             self.blacklist.push(last_node);
         }

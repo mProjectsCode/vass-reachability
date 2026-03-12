@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub mod lsg_reach;
+pub mod mgts_reach;
 mod utils;
 pub mod vass_reach;
 pub mod vass_z_reach;

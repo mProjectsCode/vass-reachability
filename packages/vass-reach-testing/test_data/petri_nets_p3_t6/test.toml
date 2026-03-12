@@ -13,6 +13,12 @@ tool = "vass-reach"
 config = "./vass_reach_scc.toml"
 max_parallel = 8
 
+[[runs]]
+name = "vass-reach-scc-consider-modulo"
+tool = "vass-reach"
+config = "./vass_reach_scc_consider_modulo.toml"
+max_parallel = 8
+
 # [[runs]]
 # name = "vass-reach-inc-old"
 # tool = "vass-reach"

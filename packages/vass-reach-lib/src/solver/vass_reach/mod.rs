@@ -8,8 +8,8 @@ use crate::{
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        lsg::extender::{ExtensionStrategyEnum, LSGExtender},
         ltc::{LTC, translation::LTCTranslation},
+        mgts::extender::{ExtensionStrategyEnum, MGTSExtender},
         path::Path,
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
@@ -31,7 +31,7 @@ pub enum VASSReachRefinementAction {
     /// Increase the backward counting bound for the given counter to the given
     /// value.
     IncreaseBackwardsBound(VASSCounterIndex, u32),
-    /// Build some automaton (LTC, LSG, ...?) to cut away the spurious path.
+    /// Build some automaton (LTC, MGTS, ...?) to cut away the spurious path.
     BuildAutomaton,
 }
 
@@ -95,11 +95,14 @@ impl VASSReachSolver {
 
         tracing::debug!("{}", cfg.to_graphviz(None, None));
 
+        let bounded_counting_enabled = *config.get_bounded_counting_enabled();
+
         let state = ImplicitCFGProduct::new(
             ivass.dimension(),
             ivass.initial_valuation.clone(),
             ivass.final_valuation.clone(),
             cfg,
+            bounded_counting_enabled,
         );
 
         VASSReachSolver {
@@ -235,17 +238,17 @@ impl VASSReachSolver {
                     None
                 };
 
-                let lsg_automaton = if *self.config.get_lsg().get_enabled() {
-                    tracing::debug!("Building and checking LSG");
+                let mgts_automaton = if *self.config.get_mgts().get_enabled() {
+                    tracing::debug!("Building and checking MGTS");
 
-                    let mut extender = LSGExtender::from_cfg_product(
+                    let mut extender = MGTSExtender::from_cfg_product(
                         path,
                         &self.state,
                         ExtensionStrategyEnum::from_config(
-                            *self.config.get_lsg().get_strategy(),
+                            *self.config.get_mgts().get_strategy(),
                             self.step_count,
                         ),
-                        *self.config.get_lsg().get_max_refinement_steps(),
+                        *self.config.get_mgts().get_max_refinement_steps(),
                     );
                     let mut cfg = extender.run();
                     cfg.invert_mut();
@@ -254,19 +257,19 @@ impl VASSReachSolver {
                     None
                 };
 
-                match (ltc_automaton, lsg_automaton) {
-                    (Some(ltc_cfg), Some(lsg_cfg)) => {
+                match (ltc_automaton, mgts_automaton) {
+                    (Some(ltc_cfg), Some(mgts_cfg)) => {
                         // We would expect both automata to be somewhat similar, they are built
                         // from the same path at least. So we would
                         // expect their intersection to not blow up too much.
-                        let product = ltc_cfg.intersect(&lsg_cfg);
+                        let product = ltc_cfg.intersect(&mgts_cfg);
                         self.state.add_cfg(product);
                     }
                     (Some(ltc_cfg), None) => {
                         self.state.add_cfg(ltc_cfg);
                     }
-                    (None, Some(lsg_cfg)) => {
-                        self.state.add_cfg(lsg_cfg);
+                    (None, Some(mgts_cfg)) => {
+                        self.state.add_cfg(mgts_cfg);
                     }
                     (None, None) => {}
                 }
@@ -285,7 +288,12 @@ impl VASSReachSolver {
         // we find a counter that turns negative
         if let Some((counter, path_index)) =
             path.find_negative_counter_forward(&self.state.initial_valuation)
-            && !path.is_counter_forwards_pumped(self.state.dimension, counter, 3)
+            && !path.is_counter_forwards_pumped(
+                self.state.dimension,
+                counter,
+                3,
+                *self.config.get_consider_modulo_for_pumping(),
+            )
         {
             let segment = path.slice(0..path_index);
             // if the path before wasn't pumped, we increase the bound we count up to, to
@@ -303,7 +311,12 @@ impl VASSReachSolver {
         // same as above, but from the back of the path
         if let Some((counter, path_index)) =
             path.find_negative_counter_backward(&self.state.final_valuation)
-            && !path.is_counter_backwards_pumped(self.state.dimension, counter, 3)
+            && !path.is_counter_backwards_pumped(
+                self.state.dimension,
+                counter,
+                3,
+                *self.config.get_consider_modulo_for_pumping(),
+            )
         {
             let segment = path.slice(path_index..path.len());
 

@@ -10,8 +10,8 @@ pub mod cfg;
 pub mod dfa;
 pub mod implicit_cfg_product;
 pub mod index_map;
-pub mod lsg;
 pub mod ltc;
+pub mod mgts;
 pub mod nfa;
 pub mod path;
 pub mod petri_net;
@@ -96,6 +96,8 @@ impl<T: AutomatonEdge + FromLetter> AutomatonEdge for VASSEdge<T> {
         self.data.matches(letter)
     }
 }
+
+// MARK: GIndex
 
 /// This trait represents node or edge indices in an automaton.
 pub trait GIndex: Debug + Clone + PartialEq + Eq + Hash + Ord {}

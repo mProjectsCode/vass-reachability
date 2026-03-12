@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::automaton::{
     AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, GIndex, Letter, TransitionSystem,
     cfg::update::{CFGCounterUpdatable, CFGCounterUpdate},
+    implicit_cfg_product::{all_approximation_indices, bounded_counting_indices},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
 
@@ -435,20 +436,30 @@ impl Path<MultiGraphState, CFGCounterUpdate> {
         &self,
         cfg_index: usize,
     ) -> Path<petgraph::graph::NodeIndex, CFGCounterUpdate> {
-        let mut path = Path::new(self.states[0].cfg_state(cfg_index));
+        let mut path = Path::new(self.start().cfg_state(cfg_index));
 
         for (update, state) in self.iter() {
             path.add(*update, state.cfg_state(cfg_index));
         }
 
+        debug_assert_eq!(path.start(), &self.start().cfg_state(cfg_index));
+        debug_assert_eq!(path.end(), &self.end().cfg_state(cfg_index));
+
         path
     }
 
+    /// Checks if a path is forwards-pumped for a given counter, meaning that it
+    /// visits a state with a higher value for the counter more than `limit`
+    /// times.
+    ///
+    /// This check disregards the bounded counting but not the modulo
+    /// approximations.
     pub fn is_counter_forwards_pumped(
         &self,
         dimension: usize,
         counter: VASSCounterIndex,
         limit: u32,
+        consider_modulo: bool,
     ) -> bool {
         let mut visited = hashbrown::HashMap::new();
         let mut counters = VASSCounterValuation::zero(dimension);
@@ -456,7 +467,11 @@ impl Path<MultiGraphState, CFGCounterUpdate> {
 
         // clear the indices corresponding to the modulo and bounded counting
         // separators, since they don't matter for pumping
-        start.clear_indices(1..dimension * 3 + 1);
+        if consider_modulo {
+            start.clear_indices(bounded_counting_indices(dimension));
+        } else {
+            start.clear_indices(all_approximation_indices(dimension));
+        }
 
         visited.insert(start, (1, counters.clone()));
 
@@ -466,7 +481,11 @@ impl Path<MultiGraphState, CFGCounterUpdate> {
             // clear the indices corresponding to the modulo and bounded counting
             // separators, since they don't matter for pumping
             let mut state = state.clone();
-            state.clear_indices(1..dimension * 3 + 1);
+            if consider_modulo {
+                state.clear_indices(bounded_counting_indices(dimension));
+            } else {
+                state.clear_indices(all_approximation_indices(dimension));
+            }
 
             let entry = visited
                 .entry(state)
@@ -485,23 +504,46 @@ impl Path<MultiGraphState, CFGCounterUpdate> {
         false
     }
 
+    /// Checks if a path is backwards-pumped for a given counter, meaning that
+    /// it visits a state with a higher value for the counter more than `limit`
+    /// times when iterating the path backwards.
+    ///
+    /// This check disregards the bounded counting but not the modulo
+    /// approximations.
     pub fn is_counter_backwards_pumped(
         &self,
         dimension: usize,
         counter: VASSCounterIndex,
         limit: u32,
+
+        consider_modulo: bool,
     ) -> bool {
         let mut visited = hashbrown::HashMap::new();
         let mut counters = VASSCounterValuation::zero(dimension);
-        visited.insert(self.states[0].clone(), (1, counters.clone()));
+        let mut start = self.states[0].clone();
+
+        if consider_modulo {
+            start.clear_indices(bounded_counting_indices(dimension));
+        } else {
+            start.clear_indices(all_approximation_indices(dimension));
+        }
+
+        visited.insert(start, (1, counters.clone()));
 
         // iterate in reverse order
         for (update, state) in self.iter().rev() {
             // apply the reverse update since we are going backwards
             counters.apply_cfg_update(update.reverse());
 
+            let mut state = state.clone();
+            if consider_modulo {
+                state.clear_indices(bounded_counting_indices(dimension));
+            } else {
+                state.clear_indices(all_approximation_indices(dimension));
+            }
+
             let entry = visited
-                .entry(state.clone())
+                .entry(state)
                 .or_insert((0, VASSCounterValuation::zero(dimension)));
 
             // check that we have pumped and that we pumped the counter we care about

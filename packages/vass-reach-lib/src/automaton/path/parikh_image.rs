@@ -232,7 +232,7 @@ impl ParikhImage<EdgeIndex> {
             transitions.reverse();
             states.reverse();
             let mut path = Path::new(cfg.get_initial());
-            for (t, s) in transitions.into_iter().zip(states.into_iter()) {
+            for (t, s) in transitions.into_iter().zip(states) {
                 path.add(t, s);
             }
             Some(path)
@@ -270,6 +270,7 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {
         assert_eq!(&valuation, final_valuation);
+
         return if cfg.is_accepting(&node_index) {
             Some((vec![], vec![]))
         } else {

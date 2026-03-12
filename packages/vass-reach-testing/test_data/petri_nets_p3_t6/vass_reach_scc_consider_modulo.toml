@@ -1,0 +1,2 @@
+mgts.strategy = "randomscc"
+consider_modulo_for_pumping = true

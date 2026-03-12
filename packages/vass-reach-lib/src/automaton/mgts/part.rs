@@ -11,7 +11,7 @@ use crate::automaton::{
     InitializedAutomaton, Language, ModifiableAutomaton, SingleFinalStateAutomaton,
     cfg::{CFG, update::CFGCounterUpdate},
     implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-    lsg::LinearSubGraph,
+    mgts::MGTS,
     path::Path,
 };
 
@@ -19,7 +19,7 @@ type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 // TODO: die sollten auch nicht determistisch sein können
 #[derive(Debug, Clone)]
-pub struct LSGGraph {
+pub struct MarkedGraph {
     pub graph: DiGraph<MultiGraphState, CFGCounterUpdate>,
     // start index in the graph, this index refers to the node in the StableDiGraph, not the CFG
     pub start: NodeIndex,
@@ -28,7 +28,7 @@ pub struct LSGGraph {
     pub alphabet: Vec<CFGCounterUpdate>,
 }
 
-impl LSGGraph {
+impl MarkedGraph {
     pub fn new(
         graph: DiGraph<MultiGraphState, CFGCounterUpdate>,
         start: NodeIndex,
@@ -46,7 +46,7 @@ impl LSGGraph {
             end
         );
 
-        LSGGraph {
+        MarkedGraph {
             graph,
             start,
             end,
@@ -54,7 +54,7 @@ impl LSGGraph {
         }
     }
 
-    /// Creates an LSGGraph from a subset of nodes of a given CFG.
+    /// Creates an MarkedGraph from a subset of nodes of a given CFG.
     /// The start and end nodes must be part of the subset.
     /// All indices are in the context of the CFG.
     pub fn from_subset(
@@ -77,27 +77,27 @@ impl LSGGraph {
         let mut graph: Graph<MultiGraphState, CFGCounterUpdate> = DiGraph::new();
         let mut node_map = HashMap::new();
 
-        // Add nodes to the LSG graph
+        // Add nodes to the MGTS graph
         for state in nodes {
-            let lsg_node = graph.add_node(state.clone());
-            node_map.insert(state, lsg_node);
+            let g_node = graph.add_node(state.clone());
+            node_map.insert(state, g_node);
         }
 
-        // Add edges to the LSG graph
+        // Add edges to the MGTS graph
         for state in nodes {
-            let lsg_node = node_map[state];
+            let g_node = node_map[state];
             for letter in product.alphabet() {
                 let target = state.take_letter(&product.cfgs, letter);
                 if let Some(target) = target
                     && nodes.contains(&target)
                 {
-                    let lsg_target = node_map[&target];
-                    graph.add_edge(lsg_node, lsg_target, *letter);
+                    let g_target = node_map[&target];
+                    graph.add_edge(g_node, g_target, *letter);
                 }
             }
         }
 
-        LSGGraph {
+        MarkedGraph {
             graph,
             start: node_map[&start],
             end: node_map[&end],
@@ -113,7 +113,7 @@ impl LSGGraph {
         self.get_node_unchecked(&self.end)
     }
 
-    /// Maps a path in the LSG back to a path in the CFG.
+    /// Maps a path in the MGTS back to a path in the CFG.
     pub fn map_path_to_product(&self, path: &Path<NodeIndex, CFGCounterUpdate>) -> MultiGraphPath {
         let mut mapped_path = MultiGraphPath::new(self.map_node_to_product(*path.start()).clone());
 
@@ -130,7 +130,7 @@ impl LSGGraph {
     }
 }
 
-impl Alphabet for LSGGraph {
+impl Alphabet for MarkedGraph {
     type Letter = CFGCounterUpdate;
 
     fn alphabet(&self) -> &[CFGCounterUpdate] {
@@ -138,7 +138,7 @@ impl Alphabet for LSGGraph {
     }
 }
 
-impl Automaton<Deterministic> for LSGGraph {
+impl Automaton<Deterministic> for MarkedGraph {
     type NIndex = NodeIndex;
     type N = MultiGraphState;
 
@@ -155,7 +155,7 @@ impl Automaton<Deterministic> for LSGGraph {
     }
 }
 
-impl ExplicitEdgeAutomaton<Deterministic> for LSGGraph {
+impl ExplicitEdgeAutomaton<Deterministic> for MarkedGraph {
     type EIndex = EdgeIndex;
     type E = CFGCounterUpdate;
 
@@ -202,7 +202,7 @@ impl ExplicitEdgeAutomaton<Deterministic> for LSGGraph {
     }
 }
 
-impl ModifiableAutomaton<Deterministic> for LSGGraph {
+impl ModifiableAutomaton<Deterministic> for MarkedGraph {
     fn add_node(&mut self, data: MultiGraphState) -> Self::NIndex {
         self.graph.add_node(data)
     }
@@ -250,7 +250,7 @@ impl ModifiableAutomaton<Deterministic> for LSGGraph {
     }
 }
 
-impl InitializedAutomaton<Deterministic> for LSGGraph {
+impl InitializedAutomaton<Deterministic> for MarkedGraph {
     fn get_initial(&self) -> Self::NIndex {
         self.start
     }
@@ -260,7 +260,7 @@ impl InitializedAutomaton<Deterministic> for LSGGraph {
     }
 }
 
-impl SingleFinalStateAutomaton<Deterministic> for LSGGraph {
+impl SingleFinalStateAutomaton<Deterministic> for MarkedGraph {
     fn get_final(&self) -> Self::NIndex {
         self.end
     }
@@ -270,7 +270,7 @@ impl SingleFinalStateAutomaton<Deterministic> for LSGGraph {
     }
 }
 
-impl Language for LSGGraph {
+impl Language for MarkedGraph {
     fn accepts<'a>(&self, _input: impl IntoIterator<Item = &'a CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'a,
@@ -279,49 +279,49 @@ impl Language for LSGGraph {
     }
 }
 
-impl CFG for LSGGraph {}
+impl CFG for MarkedGraph {}
 
 #[derive(Debug, Clone)]
-pub struct LSGPath {
+pub struct MarkedPath {
     pub path: MultiGraphPath,
 }
 
-impl LSGPath {
+impl MarkedPath {
     pub fn new(path: MultiGraphPath) -> Self {
-        LSGPath { path }
+        MarkedPath { path }
     }
 }
 
-impl From<MultiGraphPath> for LSGPath {
+impl From<MultiGraphPath> for MarkedPath {
     fn from(path: MultiGraphPath) -> Self {
-        LSGPath::new(path)
+        MarkedPath::new(path)
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum LSGPart {
-    SubGraph(usize),
+#[derive(Debug, Copy, Clone)]
+pub enum MGTSPart {
+    Graph(usize),
     Path(usize),
 }
 
-impl LSGPart {
+impl MGTSPart {
     /// Checks if the part contains the given node.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn contains_node(&self, lsg: &LinearSubGraph, node: &MultiGraphState) -> bool {
+    pub fn contains_node(&self, mgts: &MGTS, node: &MultiGraphState) -> bool {
         match self {
-            LSGPart::SubGraph(i) => lsg.subgraph(*i).graph.node_weights().any(|n| n == node),
-            LSGPart::Path(i) => lsg.path(*i).path.contains_state(node),
+            MGTSPart::Graph(i) => mgts.graph(*i).graph.node_weights().any(|n| n == node),
+            MGTSPart::Path(i) => mgts.path(*i).path.contains_state(node),
         }
     }
 
     // Checks if the part has the given node as start or end node.
-    pub fn has_node_as_extremal(&self, lsg: &LinearSubGraph, node: &MultiGraphState) -> bool {
+    pub fn has_node_as_extremal(&self, mgts: &MGTS, node: &MultiGraphState) -> bool {
         match self {
-            LSGPart::SubGraph(i) => {
-                lsg.subgraph(*i).product_start() == node || lsg.subgraph(*i).product_end() == node
+            MGTSPart::Graph(i) => {
+                mgts.graph(*i).product_start() == node || mgts.graph(*i).product_end() == node
             }
-            LSGPart::Path(i) => {
-                lsg.path(*i).path.start() == node || lsg.path(*i).path.end() == node
+            MGTSPart::Path(i) => {
+                mgts.path(*i).path.start() == node || mgts.path(*i).path.end() == node
             }
         }
     }
@@ -330,91 +330,91 @@ impl LSGPart {
     /// The node indices are in the context of the CFG, not the part itself.
     pub fn iter_nodes<'a>(
         &'a self,
-        lsg: &'a LinearSubGraph<'a>,
+        mgts: &'a MGTS<'a>,
     ) -> Box<dyn Iterator<Item = &'a MultiGraphState> + 'a> {
         match self {
-            LSGPart::SubGraph(i) => Box::new(lsg.subgraph(*i).graph.node_weights()),
-            LSGPart::Path(i) => Box::new(lsg.path(*i).path.iter_states()),
+            MGTSPart::Graph(i) => Box::new(mgts.graph(*i).graph.node_weights()),
+            MGTSPart::Path(i) => Box::new(mgts.path(*i).path.iter_states()),
         }
     }
 
     /// Returns the start node of the part.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn start<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a MultiGraphState {
+    pub fn start<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MultiGraphState {
         match self {
-            LSGPart::SubGraph(i) => lsg.subgraph(*i).product_start(),
-            LSGPart::Path(i) => lsg.path(*i).path.start(),
+            MGTSPart::Graph(i) => mgts.graph(*i).product_start(),
+            MGTSPart::Path(i) => mgts.path(*i).path.start(),
         }
     }
 
     /// Returns the end node of the part.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn end<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a MultiGraphState {
+    pub fn end<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MultiGraphState {
         match self {
-            LSGPart::SubGraph(i) => lsg.subgraph(*i).product_end(),
-            LSGPart::Path(i) => lsg.path(*i).path.end(),
+            MGTSPart::Graph(i) => mgts.graph(*i).product_end(),
+            MGTSPart::Path(i) => mgts.path(*i).path.end(),
         }
     }
 
     pub fn random_node<'a, T: Rng>(
         &self,
-        lsg: &'a LinearSubGraph<'a>,
+        mgts: &'a MGTS<'a>,
         random: &mut T,
     ) -> &'a MultiGraphState {
         match self {
-            LSGPart::SubGraph(i) => {
-                let subgraph = lsg.subgraph(*i);
-                let node_index = random.random_range(0..subgraph.graph.node_count());
-                &subgraph.graph[NodeIndex::new(node_index)]
+            MGTSPart::Graph(i) => {
+                let graph = mgts.graph(*i);
+                let node_index = random.random_range(0..graph.graph.node_count());
+                &graph.graph[NodeIndex::new(node_index)]
             }
-            LSGPart::Path(i) => {
-                let path = lsg.path(*i);
+            MGTSPart::Path(i) => {
+                let path = mgts.path(*i);
                 let node_index = random.random_range(0..path.path.state_len());
                 &path.path.states[node_index]
             }
         }
     }
 
-    pub fn size(&self, lsg: &LinearSubGraph) -> usize {
+    pub fn size(&self, mgts: &MGTS) -> usize {
         match self {
-            LSGPart::SubGraph(i) => lsg.subgraph(*i).graph.node_count(),
-            LSGPart::Path(i) => lsg.path(*i).path.state_len(),
+            MGTSPart::Graph(i) => mgts.graph(*i).graph.node_count(),
+            MGTSPart::Path(i) => mgts.path(*i).path.state_len(),
         }
     }
 
     pub fn is_path(&self) -> bool {
-        matches!(self, LSGPart::Path(_))
+        matches!(self, MGTSPart::Path(_))
     }
 
-    pub fn is_subgraph(&self) -> bool {
-        matches!(self, LSGPart::SubGraph(_))
+    pub fn is_graph(&self) -> bool {
+        matches!(self, MGTSPart::Graph(_))
     }
 
-    pub fn as_path<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> Option<&'a LSGPath> {
+    pub fn as_path<'a>(&self, mgts: &'a MGTS<'a>) -> Option<&'a MarkedPath> {
         match self {
-            LSGPart::Path(i) => Some(lsg.path(*i)),
-            LSGPart::SubGraph(_) => None,
+            MGTSPart::Path(i) => Some(mgts.path(*i)),
+            MGTSPart::Graph(_) => None,
         }
     }
 
-    pub fn as_subgraph<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> Option<&'a LSGGraph> {
+    pub fn as_graph<'a>(&self, mgts: &'a MGTS<'a>) -> Option<&'a MarkedGraph> {
         match self {
-            LSGPart::SubGraph(i) => Some(lsg.subgraph(*i)),
-            LSGPart::Path(_) => None,
+            MGTSPart::Graph(i) => Some(mgts.graph(*i)),
+            MGTSPart::Path(_) => None,
         }
     }
 
-    pub fn unwrap_path<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a LSGPath {
+    pub fn unwrap_path<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MarkedPath {
         match self {
-            LSGPart::Path(i) => lsg.path(*i),
-            LSGPart::SubGraph(_) => panic!("Called unwrap_path on a SubGraph part"),
+            MGTSPart::Path(i) => mgts.path(*i),
+            MGTSPart::Graph(_) => panic!("Called unwrap_path on a Graph part"),
         }
     }
 
-    pub fn unwrap_subgraph<'a>(&self, lsg: &'a LinearSubGraph<'a>) -> &'a LSGGraph {
+    pub fn unwrap_graph<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MarkedGraph {
         match self {
-            LSGPart::SubGraph(i) => lsg.subgraph(*i),
-            LSGPart::Path(_) => panic!("Called unwrap_subgraph on a Path part"),
+            MGTSPart::Graph(i) => mgts.graph(*i),
+            MGTSPart::Path(_) => panic!("Called unwrap_graph on a Path part"),
         }
     }
 }

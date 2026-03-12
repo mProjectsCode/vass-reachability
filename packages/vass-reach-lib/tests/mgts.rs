@@ -6,12 +6,12 @@ use vass_reach_lib::{
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        lsg::{LinearSubGraph, part::LSGGraph},
+        mgts::{MGTS, part::MarkedGraph},
         path::Path,
         vass::{VASS, VASSEdge},
     },
     cfg_dec, cfg_inc,
-    solver::lsg_reach::LSGReachSolverOptions,
+    solver::mgts_reach::MGTSReachSolverOptions,
     validation::same_language::assert_same_language,
 };
 
@@ -36,31 +36,31 @@ fn lgs_1() {
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
     let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
         .unwrap();
-    let lsg = LinearSubGraph::from_path(path, &product, 1);
+    let mgts = MGTS::from_path(path, &product, 1);
 
-    // we assume the lsg has one path part
-    assert_eq!(lsg.parts.len(), 1);
-    assert!(lsg.parts[0].is_path());
+    // we assume the MGTS has one path part
+    assert_eq!(mgts.sequence.len(), 1);
+    assert!(mgts.sequence[0].is_path());
     // we check that the path behaves as expected
-    assert!(lsg.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
-    assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
+    assert!(mgts.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!mgts.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
 
-    let cfg = lsg.to_cfg();
-    assert_same_language(&lsg, &cfg, 8);
+    let cfg = mgts.to_cfg();
+    assert_same_language(&mgts, &cfg, 8);
 
     // now we add the node s2
-    // we assume that the lgs now contains a subgraph part which allows it to accept
+    // we assume that the lgs now contains a graph part which allows it to accept
     // a wider range of inputs
-    let lsg2 = lsg.add_node(s2.into());
+    let mgts2 = mgts.add_node(s2.into());
 
-    assert_eq!(lsg2.parts.len(), 3);
-    assert!(lsg2.parts[0].is_path());
-    assert!(lsg2.parts[1].is_subgraph());
-    assert!(lsg2.parts[2].is_path());
+    assert_eq!(mgts2.sequence.len(), 3);
+    assert!(mgts2.sequence[0].is_path());
+    assert!(mgts2.sequence[1].is_graph());
+    assert!(mgts2.sequence[2].is_path());
 
-    // we check that the lsg now accepts more inputs
-    assert!(lsg2.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
-    assert!(lsg2.accepts(&[
+    // we check that the MGTS now accepts more inputs
+    assert!(mgts2.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
+    assert!(mgts2.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_dec!(0),
@@ -68,14 +68,14 @@ fn lgs_1() {
         cfg_dec!(0),
         cfg_dec!(0)
     ]));
-    assert!(!lsg2.accepts(&[
+    assert!(!mgts2.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_dec!(0),
         cfg_inc!(0),
         cfg_dec!(0)
     ]));
-    assert!(!lsg2.accepts(&[
+    assert!(!mgts2.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_dec!(0),
@@ -85,8 +85,8 @@ fn lgs_1() {
         cfg_inc!(0)
     ]));
 
-    let cfg2 = lsg2.to_cfg();
-    assert_same_language(&lsg2, &cfg2, 8);
+    let cfg2 = mgts2.to_cfg();
+    assert_same_language(&mgts2, &cfg2, 8);
 }
 
 #[test]
@@ -111,45 +111,45 @@ fn lgs_2() {
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
     let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
         .unwrap();
-    let lsg = LinearSubGraph::from_path(path, &product, 1);
+    let mgts = MGTS::from_path(path, &product, 1);
 
     // Initial path should have one part
-    assert_eq!(lsg.parts.len(), 1);
-    assert!(lsg.parts[0].is_path());
+    assert_eq!(mgts.sequence.len(), 1);
+    assert!(mgts.sequence[0].is_path());
 
-    assert!(lsg.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
-    assert!(!lsg.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
+    assert!(mgts.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!mgts.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
 
-    let cfg = lsg.to_cfg();
-    assert_same_language(&lsg, &cfg, 8);
+    let cfg = mgts.to_cfg();
+    assert_same_language(&mgts, &cfg, 8);
 
-    // we add node s2, this should successfully add the node and create a subgraph
+    // we add node s2, this should successfully add the node and create a graph
     // part but not yet any looping behavior, as the loop requires s3 as well
-    let lsg2 = lsg.add_node(s2.into());
+    let mgts2 = mgts.add_node(s2.into());
 
-    assert_eq!(lsg2.parts.len(), 3);
-    assert!(lsg2.parts[0].is_path());
-    assert!(lsg2.parts[1].is_subgraph());
-    assert!(lsg2.parts[2].is_path());
+    assert_eq!(mgts2.sequence.len(), 3);
+    assert!(mgts2.sequence[0].is_path());
+    assert!(mgts2.sequence[1].is_graph());
+    assert!(mgts2.sequence[2].is_path());
 
-    assert!(lsg2.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
-    assert!(!lsg2.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
+    assert!(mgts2.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!mgts2.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
 
-    let cfg2 = lsg2.to_cfg();
-    assert_same_language(&lsg2, &cfg2, 8);
+    let cfg2 = mgts2.to_cfg();
+    assert_same_language(&mgts2, &cfg2, 8);
 
     // we add s3 to complete the loop
-    let lsg3 = lsg2.add_node(s3.into());
+    let mgts3 = mgts2.add_node(s3.into());
 
-    assert_eq!(lsg3.parts.len(), 3);
-    assert!(lsg3.parts[0].is_path());
-    assert!(lsg3.parts[1].is_subgraph());
-    assert!(lsg3.parts[2].is_path());
+    assert_eq!(mgts3.sequence.len(), 3);
+    assert!(mgts3.sequence[0].is_path());
+    assert!(mgts3.sequence[1].is_graph());
+    assert!(mgts3.sequence[2].is_path());
 
-    assert!(lsg3.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(mgts3.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
 
     // loop once: s0 -> s1 -> s2 -> s3 -> s1 -> s4
-    assert!(lsg3.accepts(&[
+    assert!(mgts3.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_inc!(0),
@@ -158,7 +158,7 @@ fn lgs_2() {
     ]));
 
     // loop twice: so -> s1 -> s2 -> s3 -> s1 -> s2 -> s3 -> s1 -> s4
-    assert!(lsg3.accepts(&[
+    assert!(mgts3.accepts(&[
         cfg_inc!(0),
         cfg_inc!(0),
         cfg_inc!(0),
@@ -170,15 +170,15 @@ fn lgs_2() {
     ]));
 
     // we still reject other sequences
-    assert!(!lsg3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0)]));
-    assert!(!lsg3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!mgts3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0)]));
+    assert!(!mgts3.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
 
-    let cfg3 = lsg3.to_cfg();
-    assert_same_language(&lsg3, &cfg3, 8);
+    let cfg3 = mgts3.to_cfg();
+    assert_same_language(&mgts3, &cfg3, 8);
 }
 
 #[test]
-fn lsg_3() {
+fn mgts_3() {
     // Note: this test is from a crash
     let mut vass = VASS::new(2, (0..10).collect());
 
@@ -211,17 +211,17 @@ fn lsg_3() {
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(2, vec![0, 0].into(), vec![0, 0].into(), cfg);
     let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
-    let lsg = LinearSubGraph::from_path(path, &product, 2);
+    let mgts = MGTS::from_path(path, &product, 2);
 
-    lsg.add_node(NodeIndex::from(15).into());
+    mgts.add_node(NodeIndex::from(15).into());
     // In the crash, this panic-ed
-    lsg.add_node(NodeIndex::from(11).into());
+    mgts.add_node(NodeIndex::from(11).into());
 
-    assert!(lsg.accepts(&word));
+    assert!(mgts.accepts(&word));
 }
 
 #[test]
-fn lsg_reach() {
+fn mgts_reach() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
     let s1 = cfg.add_node(DfaNode::non_accepting(()));
@@ -240,39 +240,39 @@ fn lsg_reach() {
     let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
         .unwrap();
 
-    let lsg = LinearSubGraph::from_path(path, &product, 1);
+    let mgts = MGTS::from_path(path, &product, 1);
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg, &vec![0].into(), &vec![0].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts, &vec![0].into(), &vec![0].into())
         .solve();
 
     assert!(res.is_success());
-    assert!(res.unwrap_success().build_run(&lsg, false).is_some());
+    assert!(res.unwrap_success().build_run(&mgts, false).is_some());
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg, &vec![1].into(), &vec![0].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts, &vec![1].into(), &vec![0].into())
         .solve();
 
     assert!(res.is_failure());
 
-    let lsg2 = lsg.add_node(s2.into());
+    let mgts2 = mgts.add_node(s2.into());
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg2, &vec![0].into(), &vec![0].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts2, &vec![0].into(), &vec![0].into())
         .solve();
 
     assert!(res.is_success());
-    assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
+    assert!(res.unwrap_success().build_run(&mgts2, false).is_some());
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg2, &vec![1].into(), &vec![0].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts2, &vec![1].into(), &vec![0].into())
         .solve();
 
     assert!(res.is_failure());
 }
 
 #[test]
-fn lsg_reach2() {
+fn mgts_reach2() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
     let s1 = cfg.add_node(DfaNode::non_accepting(()));
@@ -294,40 +294,40 @@ fn lsg_reach2() {
     let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
         .unwrap();
 
-    let lsg = LinearSubGraph::from_path(path, &product, 1);
+    let mgts = MGTS::from_path(path, &product, 1);
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg, &vec![0].into(), &vec![0].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts, &vec![0].into(), &vec![0].into())
         .solve();
 
     assert!(res.is_success());
-    assert!(res.unwrap_success().build_run(&lsg, false).is_some());
+    assert!(res.unwrap_success().build_run(&mgts, false).is_some());
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg, &vec![0].into(), &vec![1].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts, &vec![0].into(), &vec![1].into())
         .solve();
 
     assert!(res.is_failure());
 
-    let lsg2 = lsg.add_node(s2.into()).add_node(s3.into());
+    let mgts2 = mgts.add_node(s2.into()).add_node(s3.into());
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg2, &vec![0].into(), &vec![0].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts2, &vec![0].into(), &vec![0].into())
         .solve();
 
     assert!(res.is_success());
-    assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
+    assert!(res.unwrap_success().build_run(&mgts2, false).is_some());
 
-    let res = LSGReachSolverOptions::default()
-        .to_solver(&lsg2, &vec![0].into(), &vec![1].into())
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(&mgts2, &vec![0].into(), &vec![1].into())
         .solve();
 
     assert!(res.is_success());
-    assert!(res.unwrap_success().build_run(&lsg2, false).is_some());
+    assert!(res.unwrap_success().build_run(&mgts2, false).is_some());
 }
 
 #[test]
-fn lsg_determinize_invariant_to_scc_node_order() {
+fn mgts_determinize_invariant_to_scc_node_order() {
     // build a small CFG with an SCC (s1 <-> s2)
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
@@ -353,13 +353,13 @@ fn lsg_determinize_invariant_to_scc_node_order() {
     let mut scc_vec2 = scc_vec1.clone();
     scc_vec2.reverse(); // different insertion order
 
-    let g1 = LSGGraph::from_subset(&product, &scc_vec1, node.clone(), node.clone());
-    let g2 = LSGGraph::from_subset(&product, &scc_vec2, node.clone(), node.clone());
+    let g1 = MarkedGraph::from_subset(&product, &scc_vec1, node.clone(), node.clone());
+    let g2 = MarkedGraph::from_subset(&product, &scc_vec2, node.clone(), node.clone());
 
-    let mut l1 = LinearSubGraph::empty(&product, 1);
-    l1.add_subgraph(g1.clone());
-    let mut l2 = LinearSubGraph::empty(&product, 1);
-    l2.add_subgraph(g2.clone());
+    let mut l1 = MGTS::empty(&product, 1);
+    l1.add_graph(g1.clone());
+    let mut l2 = MGTS::empty(&product, 1);
+    l2.add_graph(g2.clone());
 
     let nfa1 = l1.to_nfa();
     let nfa2 = l2.to_nfa();

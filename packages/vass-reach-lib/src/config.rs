@@ -24,9 +24,11 @@ config! {
     pub struct VASSReachConfig {
         timeout: Option<std::time::Duration> = None,
         max_iterations: Option<u64> = None,
+        consider_modulo_for_pumping: bool = false,
+        bounded_counting_enabled: bool = true,
         modulo: ModuloConfig (Option<PartialModuloConfig> = ModuloConfig::default()),
         lts: LTSConfig (Option<PartialLTSConfig> = LTSConfig::default()),
-        lsg: LSGConfig (Option<PartialLSGConfig> = LSGConfig::default()),
+        mgts: MGTSConfig (Option<PartialMGTSConfig> = MGTSConfig::default()),
     }
 }
 
@@ -56,9 +58,9 @@ pub enum ExtensionStrategyConfig {
 }
 
 config! {
-    pub struct LSGConfig {
+    pub struct MGTSConfig {
         enabled: bool = true,
-        max_refinement_steps: u64 = 5,
+        max_refinement_steps: u64 = 10,
         strategy: ExtensionStrategyConfig = ExtensionStrategyConfig::RandomSCC,
     }
 }

@@ -3,7 +3,7 @@ use itertools::Itertools;
 
 use crate::automaton::{
     Alphabet, Automaton, AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, InitializedAutomaton,
-    TransitionSystem,
+    ModifiableAutomaton, TransitionSystem,
     cfg::{
         update::CFGCounterUpdate,
         vasscfg::{
@@ -11,6 +11,7 @@ use crate::automaton::{
             build_rev_bounded_counting_cfg,
         },
     },
+    dfa::node::DfaNode,
     implicit_cfg_product::state::MultiGraphState,
     path::Path,
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
@@ -19,6 +20,36 @@ use crate::automaton::{
 pub mod state;
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
+
+/// Returns the range of indices in the implicit product that correspond to the
+/// modulo counting CFGs.
+pub fn modulo_indices(dimension: usize) -> std::ops::Range<usize> {
+    1..(dimension + 1)
+}
+
+/// Returns the range of indices in the implicit product that correspond to the
+/// forward bounded counting CFGs.
+pub fn forward_bounded_counting_indices(dimension: usize) -> std::ops::Range<usize> {
+    (dimension + 1)..(dimension * 2 + 1)
+}
+
+/// Returns the range of indices in the implicit product that correspond to the
+/// backward bounded counting CFGs.
+pub fn backward_bounded_counting_indices(dimension: usize) -> std::ops::Range<usize> {
+    (dimension * 2 + 1)..(dimension * 3 + 1)
+}
+
+/// Returns the range of indices in the implicit product that correspond to all
+/// bounded counting CFGs (forward and backward).
+pub fn bounded_counting_indices(dimension: usize) -> std::ops::Range<usize> {
+    (dimension + 1)..(dimension * 3 + 1)
+}
+
+/// Returns the range of indices in the implicit product that correspond to all
+/// bounded counting and modulo CFGs.
+pub fn all_approximation_indices(dimension: usize) -> std::ops::Range<usize> {
+    1..(dimension * 3 + 1)
+}
 
 /// An implicit representation of the product of multiple CFGs, where we only
 /// store the individual CFGs and compute the product on the fly when needed.
@@ -35,6 +66,7 @@ pub struct ImplicitCFGProduct {
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
+    pub bounded_counting_enabled: bool,
     pub mu: Box<[i32]>,
     pub forward_bound: Box<[u32]>,
     pub backward_bound: Box<[u32]>,
@@ -48,6 +80,7 @@ impl ImplicitCFGProduct {
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         cfg: VASSCFG<()>,
+        bounded_counting_enabled: bool,
     ) -> Self {
         let mu = vec![2; dimension];
         let forward_bound = vec![2; dimension];
@@ -74,6 +107,7 @@ impl ImplicitCFGProduct {
                 dimension,
                 initial_valuation[i],
                 final_valuation[i],
+                bounded_counting_enabled,
             ));
         }
         for i in 0..dimension {
@@ -84,6 +118,7 @@ impl ImplicitCFGProduct {
                 dimension,
                 initial_valuation[i],
                 final_valuation[i],
+                bounded_counting_enabled,
             ));
         }
 
@@ -91,6 +126,7 @@ impl ImplicitCFGProduct {
             dimension,
             initial_valuation,
             final_valuation,
+            bounded_counting_enabled,
             mu: mu.into_boxed_slice(),
             forward_bound: forward_bound.into_boxed_slice(),
             backward_bound: backward_bound.into_boxed_slice(),
@@ -112,16 +148,15 @@ impl ImplicitCFGProduct {
         let forward_bound = vec![2; dimension];
         let backward_bound = vec![2; dimension];
 
-        let cfgs = vec![cfg];
-
         ImplicitCFGProduct {
             dimension,
             initial_valuation,
             final_valuation,
+            bounded_counting_enabled: false,
             mu: mu.into_boxed_slice(),
             forward_bound: forward_bound.into_boxed_slice(),
             backward_bound: backward_bound.into_boxed_slice(),
-            cfgs,
+            cfgs: vec![cfg],
             explicit: None,
         }
     }
@@ -184,6 +219,7 @@ impl ImplicitCFGProduct {
             self.dimension,
             self.initial_valuation[counter],
             self.final_valuation[counter],
+            self.bounded_counting_enabled,
         );
     }
 
@@ -200,6 +236,7 @@ impl ImplicitCFGProduct {
             self.dimension,
             self.initial_valuation[counter],
             self.final_valuation[counter],
+            self.bounded_counting_enabled,
         );
     }
 
@@ -505,7 +542,12 @@ fn build_counting_automaton(
     dimension: usize,
     initial_valuation: i32,
     final_valuation: i32,
+    bounded_counting_enabled: bool,
 ) -> VASSCFG<()> {
+    if !bounded_counting_enabled {
+        return build_accepting_single_state_cfg(dimension);
+    }
+
     let min_bound = bound
         .max(initial_valuation.unsigned_abs())
         .max(final_valuation.unsigned_abs());
@@ -526,6 +568,20 @@ fn build_counting_automaton(
             final_valuation,
         ),
     }
+}
+
+fn build_accepting_single_state_cfg(dimension: usize) -> VASSCFG<()> {
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(dimension));
+    let state = cfg.add_node(DfaNode::accepting(()));
+    cfg.set_initial(state);
+
+    for letter in CFGCounterUpdate::alphabet(dimension) {
+        cfg.add_edge(&state, &state, letter);
+    }
+
+    cfg.set_complete_unchecked();
+
+    cfg
 }
 
 pub struct MultiGraphTraversalState {

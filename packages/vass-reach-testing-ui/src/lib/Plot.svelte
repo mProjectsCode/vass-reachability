@@ -91,6 +91,8 @@
         { x: min_max, y: min_max },
     ]);
 
+    const SAME_MARGIN_PCT = 5; // percentage margin to consider two runs "the same"
+
     // Comparison summary for the two selected runs
     let {
         compare_total,
@@ -126,12 +128,12 @@
 
             total += 1;
             let max = Math.max(x, y);
-            const pct = ((y - x) / max) * 100; // positive => Y slower, negative => Y faster
+            const pct = ((x - y) / max) * 100; // positive => Y slower, negative => Y faster
             pctSum += pct;
 
-            if (Math.abs(pct) <= 5) {
+            if (Math.abs(pct) <= SAME_MARGIN_PCT) {
                 same += 1;
-            } else if (pct < -5) {
+            } else if (pct < -SAME_MARGIN_PCT) {
                 slower += 1;
             } else {
                 faster += 1;
@@ -246,15 +248,15 @@
                 class="compare-overview"
                 style="font-size:0.95rem; line-height:1.3"
             >
-                <div><strong>{compare_run_x}</strong></div>
+                <div><strong>{compare_run_y}</strong></div>
                 <div>
                     {compare_faster} faster • {compare_slower} slower • {compare_same}
-                    same (±5%)
+                    same (±{SAME_MARGIN_PCT}%)
                 </div>
                 <div>
                     Average shift: {compare_avg_pct.toFixed(1)}%
-                    <small style="color:#666"
-                        >(negative = {compare_run_y} faster)</small
+                    <small style="color:#888"
+                        >(negative = {compare_run_x} faster)</small
                     >
                 </div>
             </div>
