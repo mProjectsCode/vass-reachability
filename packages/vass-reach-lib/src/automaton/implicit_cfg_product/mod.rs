@@ -1,9 +1,11 @@
 use hashbrown::HashSet;
 use itertools::Itertools;
+use petgraph::graph::NodeIndex;
 
 use crate::automaton::{
     Alphabet, Automaton, AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, InitializedAutomaton,
     ModifiableAutomaton, TransitionSystem,
+    algorithms::AutomatonAlgorithms,
     cfg::{
         update::CFGCounterUpdate,
         vasscfg::{
@@ -325,48 +327,49 @@ impl ImplicitCFGProduct {
     }
 
     pub fn find_scc_surrounding(&self, node: MultiGraphState) -> HashSet<MultiGraphState> {
-        let mut stack = vec![];
-        let mut current_path = vec![];
-        let mut scc = HashSet::new();
-        let mut visited = HashSet::new();
+        AutomatonAlgorithms::<Deterministic>::find_scc_surrounding(self, node)
+            .into_iter()
+            .collect()
+    }
 
-        stack.push(node.clone());
-        current_path.push(node.clone());
-        scc.insert(node);
+    /// Constructs the explicit product CFG, but only for the given subset of
+    /// nodes.
+    pub fn explicit_subset(
+        &self,
+        nodes: &HashSet<MultiGraphState>,
+        initial: MultiGraphState,
+        final_fn: impl Fn(&MultiGraphState) -> bool,
+    ) -> VASSCFG<()> {
+        let mut explicit = VASSCFG::new(self.alphabet().to_vec());
 
-        while let Some(current) = stack.last().cloned() {
-            if !visited.contains(&current) {
-                visited.insert(current.clone());
-            }
+        let mut state_to_node = std::collections::HashMap::<MultiGraphState, NodeIndex>::new();
 
-            let mut found_unvisited = false;
+        for node in nodes {
+            let new_node = explicit.add_node(DfaNode::non_accepting(()));
+            state_to_node.insert(node.clone(), new_node);
+        }
+
+        for node in nodes {
+            let source_node = state_to_node[node];
+
             for letter in self.alphabet() {
-                let successor = current.take_letter(&self.cfgs, letter);
-                let Some(successor) = successor else {
-                    continue;
-                };
-
-                if !visited.contains(&successor) {
-                    stack.push(successor.clone());
-                    current_path.push(successor);
-                    found_unvisited = true;
-                    break;
-                } else if scc.contains(&successor) {
-                    for node in &current_path {
-                        scc.insert(node.clone());
-                    }
-                }
-            }
-
-            if !found_unvisited {
-                stack.pop();
-                if !current_path.is_empty() && current_path.last() == Some(&current) {
-                    current_path.pop();
+                if let Some(target) = node.take_letter(&self.cfgs, letter)
+                    && nodes.contains(&target)
+                {
+                    let target_node = state_to_node[&target];
+                    explicit.add_edge(&source_node, &target_node, *letter);
                 }
             }
         }
 
-        scc
+        explicit.set_initial(state_to_node[&initial]);
+        for node in nodes {
+            if final_fn(node) {
+                explicit.set_accepting(state_to_node[node]);
+            }
+        }
+
+        explicit
     }
 
     fn is_accepting(&self, state: &MultiGraphState) -> bool {
@@ -483,7 +486,7 @@ impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
         //
         // This avoids constructing the explicit product; it only touches the relevant
         // incoming edges.
-        let mut result = Vec::new();
+        let mut result = HashSet::new();
 
         for letter in self.alphabet() {
             // gather predecessors for each component under `letter`
@@ -492,11 +495,13 @@ impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
 
             for (i, cfg) in self.cfgs.iter().enumerate() {
                 let target = node[i];
-                let preds: Vec<_> = cfg
+                let mut preds: Vec<_> = cfg
                     .incoming_edge_indices(&target)
                     .filter(|e| cfg.get_edge_unchecked(e).matches(letter))
                     .map(|e| cfg.edge_source_unchecked(&e))
                     .collect();
+                preds.sort_unstable();
+                preds.dedup();
 
                 if preds.is_empty() {
                     empty = true;
@@ -511,10 +516,12 @@ impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
 
             // produce Cartesian product of per-component predecessor lists
             for combo in per_comp_preds.into_iter().multi_cartesian_product() {
-                result.push(MultiGraphState::from(combo.into_boxed_slice()));
+                result.insert(MultiGraphState::from(combo.into_boxed_slice()));
             }
         }
 
+        let mut result = result.into_iter().collect_vec();
+        result.sort_unstable();
         Box::new(result.into_iter())
     }
 }

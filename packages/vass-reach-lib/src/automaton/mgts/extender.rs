@@ -51,7 +51,7 @@ impl<'a> MGTSExtender<'a> {
         final_valuation: VASSCounterValuation,
         max_refinements: u64,
     ) -> Self {
-        let mgts = MGTS::from_path(path, product, dimension);
+        let mgts = MGTS::from_path_roll_up(path, product, dimension);
 
         MGTSExtender {
             old_mgts: None,
@@ -295,6 +295,8 @@ impl RandomSCCStrategy {
 
 // ignore some maybe not all LGS. (maybe sleep some MGTSs)
 // build MGTS graphs from edges, not full SCCs
+
+// TODO: find difficult to solve instances
 
 impl ExtensionStrategy for RandomSCCStrategy {
     fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {

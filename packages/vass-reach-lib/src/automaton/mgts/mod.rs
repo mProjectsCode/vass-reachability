@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use petgraph::{
     graph::{DiGraph, EdgeIndex, NodeIndex},
@@ -10,6 +10,7 @@ use petgraph::{
 use super::nfa::NFAEdge;
 use crate::automaton::{
     Alphabet, Automaton, ExplicitEdgeAutomaton, Language, ModifiableAutomaton, TransitionSystem,
+    algorithms::{AutomatonAlgorithms, SCC, SCCTree},
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
@@ -47,6 +48,25 @@ impl<'a> MGTS<'a> {
         instance
     }
 
+    /// The idea here is to take the subgraph of nodes that is visited in the
+    /// path (including non visited edges between those nodes).
+    /// Then we calculate the scc tree of that subgraph and build the MGTS from
+    /// that.
+    pub fn from_path_roll_up(
+        path: MultiGraphPath,
+        product: &'a ImplicitCFGProduct,
+        dimension: usize,
+    ) -> Self {
+        let visited = path.states.iter().cloned().collect::<HashSet<_>>();
+        let tree = product
+            .find_scc_tree_in_subgraph(path.start().clone(), &visited, |node| node == path.end());
+
+        Self::from_scc_tree(&tree, product, dimension)
+            .into_iter()
+            .find(|mgts| mgts.accepts(path.transitions.iter()))
+            .expect("The SCC roll-up must produce an MGTS that still accepts the original path")
+    }
+
     pub fn empty(product: &'a ImplicitCFGProduct, dimension: usize) -> Self {
         MGTS {
             sequence: Vec::new(),
@@ -55,6 +75,28 @@ impl<'a> MGTS<'a> {
             product,
             dimension,
         }
+    }
+
+    pub fn from_scc_tree(
+        tree: &SCCTree<MultiGraphState, CFGCounterUpdate>,
+        product: &'a ImplicitCFGProduct,
+        dimension: usize,
+    ) -> Vec<Self> {
+        let initial = tree
+            .scc
+            .nodes
+            .iter()
+            .find(|node| **node == product.initial())
+            .cloned()
+            .expect("SCC tree root must contain the product initial state");
+
+        enumerate_scc_tree_mgts(
+            tree,
+            initial.clone(),
+            MGTS::empty(product, dimension),
+            MultiGraphPath::new(product.initial()),
+            product,
+        )
     }
 
     /// Debug-only invariant check for the internal part storage.
@@ -106,6 +148,31 @@ impl<'a> MGTS<'a> {
                 *uses, 1,
                 "Path {} must be referenced exactly once, found {} uses",
                 index, uses
+            );
+        }
+
+        for (index, graph) in self.graphs.iter().enumerate() {
+            assert!(
+                graph.graph.node_weight(graph.start).is_some(),
+                "Graph {} start marker {:?} is not a live node",
+                index,
+                graph.start
+            );
+            assert!(
+                graph.graph.node_weight(graph.end).is_some(),
+                "Graph {} end marker {:?} is not a live node",
+                index,
+                graph.end
+            );
+        }
+
+        for window in self.sequence.windows(2) {
+            let left = &window[0];
+            let right = &window[1];
+            assert_eq!(
+                left.end(self),
+                right.start(self),
+                "Adjacent MGTS parts must share a boundary"
             );
         }
     }
@@ -410,7 +477,7 @@ impl<'a> MGTS<'a> {
                     result.add_path(self.paths[path_idx].clone());
                 } else {
                     let mut path = self.paths[path_idx].clone();
-                    let after = path.path.split_off(node_index - 1);
+                    let after = path.path.split_off(node_index);
 
                     result.add_path(path);
                     result.add_graph(scc.clone());
@@ -429,6 +496,8 @@ impl<'a> MGTS<'a> {
         result
     }
 
+    /// Removes the given node from the graph. The node must be in the graph,
+    /// otherwise the function will panic.
     pub fn remove_node_from_graph(&mut self, graph_index: usize, node_index: NodeIndex) {
         let graph = &mut self.graphs[graph_index];
         if graph.node_count() <= node_index.index() {
@@ -439,6 +508,8 @@ impl<'a> MGTS<'a> {
         self.assert_consistent();
     }
 
+    /// Removes the given edge from the graph. The edge must be in the graph,
+    /// otherwise the function will panic.
     pub fn remove_edge_from_graph(&mut self, graph_index: usize, edge_index: EdgeIndex) {
         let graph = &mut self.graphs[graph_index];
         if graph.edge_count() <= edge_index.index() {
@@ -446,6 +517,17 @@ impl<'a> MGTS<'a> {
         }
 
         graph.remove_edge(&edge_index);
+        self.assert_consistent();
+    }
+
+    /// Removes all nodes from the graph except the given ones.
+    pub fn restrict_graph_to_subset(
+        &mut self,
+        graph_index: usize,
+        nodes_to_keep: HashSet<NodeIndex>,
+    ) {
+        let graph = &mut self.graphs[graph_index];
+        graph.retain_nodes(|_, node| nodes_to_keep.contains(&node));
         self.assert_consistent();
     }
 
@@ -562,6 +644,80 @@ impl<'a> MGTS<'a> {
             MGTSPart::Path(_) => None,
         })
     }
+}
+
+fn enumerate_scc_tree_mgts<'a>(
+    tree: &SCCTree<MultiGraphState, CFGCounterUpdate>,
+    entry: MultiGraphState,
+    mut mgts: MGTS<'a>,
+    mut current_path: MultiGraphPath,
+    product: &'a ImplicitCFGProduct,
+) -> Vec<MGTS<'a>> {
+    if !tree.scc.is_trivial() && !current_path.is_empty() {
+        mgts.add_path(current_path.clone().into());
+        current_path = MultiGraphPath::new(entry.clone());
+    }
+
+    let mut results = Vec::new();
+
+    for accepting in &tree.scc.accepting_nodes {
+        let mut terminal_mgts = mgts.clone();
+
+        if tree.scc.is_trivial() {
+            if !current_path.is_empty() {
+                terminal_mgts.add_path(current_path.clone().into());
+            }
+        } else {
+            terminal_mgts.add_graph(marked_graph_from_scc(&tree.scc, &entry, accepting, product));
+        }
+
+        results.push(terminal_mgts);
+    }
+
+    for child in &tree.children {
+        let mut next_mgts = mgts.clone();
+
+        if tree.scc.is_trivial() {
+            let mut next_path = current_path.clone();
+            next_path.concat(child.path.clone());
+
+            results.extend(enumerate_scc_tree_mgts(
+                &child.child,
+                child.path.end().clone(),
+                next_mgts,
+                next_path,
+                product,
+            ));
+        } else {
+            next_mgts.add_graph(marked_graph_from_scc(
+                &tree.scc,
+                &entry,
+                child.path.start(),
+                product,
+            ));
+
+            results.extend(enumerate_scc_tree_mgts(
+                &child.child,
+                child.path.end().clone(),
+                next_mgts,
+                child.path.clone(),
+                product,
+            ));
+        }
+    }
+
+    results
+}
+
+fn marked_graph_from_scc(
+    scc: &SCC<MultiGraphState>,
+    start: &MultiGraphState,
+    end: &MultiGraphState,
+    product: &ImplicitCFGProduct,
+) -> MarkedGraph {
+    let mut nodes = scc.nodes.clone();
+    nodes.sort_unstable();
+    MarkedGraph::from_subset(product, &nodes, start.clone(), end.clone())
 }
 
 fn partial_accept_path<'a>(

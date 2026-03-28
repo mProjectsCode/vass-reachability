@@ -286,8 +286,9 @@ impl VASSReachSolver {
         tracing::debug!("Path final valuation: {:?}", path_final_valuation);
 
         // we find a counter that turns negative
-        if let Some((counter, path_index)) =
-            path.find_negative_counter_forward(&self.state.initial_valuation)
+        if *self.config.get_bounded_counting_enabled()
+            && let Some((counter, path_index)) =
+                path.find_negative_counter_forward(&self.state.initial_valuation)
             && !path.is_counter_forwards_pumped(
                 self.state.dimension,
                 counter,
@@ -309,8 +310,9 @@ impl VASSReachSolver {
         }
 
         // same as above, but from the back of the path
-        if let Some((counter, path_index)) =
-            path.find_negative_counter_backward(&self.state.final_valuation)
+        if *self.config.get_bounded_counting_enabled()
+            && let Some((counter, path_index)) =
+                path.find_negative_counter_backward(&self.state.final_valuation)
             && !path.is_counter_backwards_pumped(
                 self.state.dimension,
                 counter,

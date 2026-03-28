@@ -128,7 +128,9 @@ fn test_path_concat_and_slicing() {
     assert_eq!(p_split.len(), 1);
     assert_eq!(p_off.len(), 1);
     assert_eq!(p_split.start(), &NodeIndex::from(0u32));
-    assert_eq!(p_off.start(), &NodeIndex::from(2u32));
+    assert_eq!(p_split.end(), &NodeIndex::from(1u32));
+    assert_eq!(p_off.start(), &NodeIndex::from(1u32));
+    assert_eq!(p_off.end(), &NodeIndex::from(2u32));
 }
 
 #[test]

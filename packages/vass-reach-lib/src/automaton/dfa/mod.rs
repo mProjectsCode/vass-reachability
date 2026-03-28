@@ -182,6 +182,10 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> DFA<N, E> {
         self.graph.retain_nodes(|_, n| !trapping.contains(&n));
     }
 
+    pub fn set_accepting(&mut self, node: NodeIndex) {
+        self.graph[node].accepting = true;
+    }
+
     /// Inverts self, creating a new DFA where the accepting states are
     /// inverted. The DFA must have a start state and be complete.
     ///

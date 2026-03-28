@@ -3,6 +3,7 @@ use petgraph::graph::NodeIndex;
 use vass_reach_lib::{
     automaton::{
         Language, ModifiableAutomaton,
+        algorithms::AutomatonAlgorithms,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
@@ -272,6 +273,42 @@ fn mgts_reach() {
 }
 
 #[test]
+fn add_scc_around_position_keeps_parts_connected() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    let _e0 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    let _e1 = cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    let _e2 = cfg.add_edge(&s2, &s1, cfg_dec!(0));
+    let _e3 = cfg.add_edge(&s1, &s3, cfg_dec!(0));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
+    let path = MultiGraphPath::from_word(product.initial(), &[cfg_inc!(0), cfg_dec!(0)], &product)
+        .unwrap();
+    let mgts = MGTS::from_path(path, &product, 1);
+
+    let refined = mgts.add_scc_around_position(0, 1);
+    refined.assert_consistent();
+
+    assert_eq!(refined.sequence.len(), 3);
+    assert!(refined.sequence[0].is_path());
+    assert!(refined.sequence[1].is_graph());
+    assert!(refined.sequence[2].is_path());
+
+    assert!(refined.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(refined.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
+
+    let cfg = refined.to_cfg();
+    assert_same_language(&refined, &cfg, 8);
+}
+
+#[test]
 fn mgts_reach2() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
@@ -372,4 +409,108 @@ fn mgts_determinize_invariant_to_scc_node_order() {
     assert_eq!(cfg1.graph.edge_count(), cfg2.graph.edge_count());
 
     assert_same_language(&cfg1, &cfg2, 8);
+}
+
+#[test]
+fn mgts_from_scc_tree() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
+    let s4 = cfg.add_node(DfaNode::non_accepting(()));
+    let s5 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    let _e0 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    let _e1 = cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    let _e2 = cfg.add_edge(&s2, &s1, cfg_dec!(0));
+    let _e3 = cfg.add_edge(&s1, &s3, cfg_dec!(0));
+    let _e4 = cfg.add_edge(&s2, &s4, cfg_inc!(0));
+    let _e5 = cfg.add_edge(&s4, &s4, cfg_inc!(0));
+    let _e6 = cfg.add_edge(&s4, &s5, cfg_dec!(0));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
+    let tree = product.find_scc_tree();
+    let mgts_list = MGTS::from_scc_tree(&tree, &product, 1);
+
+    assert_eq!(mgts_list.len(), 2);
+
+    let first = &mgts_list[0];
+    assert_eq!(first.sequence.len(), 3);
+    assert!(first.sequence[0].is_path());
+    assert!(first.sequence[1].is_graph());
+    assert!(first.sequence[2].is_path());
+    assert!(first.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(first.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
+    assert!(!first.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
+
+    let second = &mgts_list[1];
+    assert_eq!(second.sequence.len(), 5);
+    assert!(second.sequence[0].is_path());
+    assert!(second.sequence[1].is_graph());
+    assert!(second.sequence[2].is_path());
+    assert!(second.sequence[3].is_graph());
+    assert!(second.sequence[4].is_path());
+    assert!(second.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
+    assert!(second.accepts(&[
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_dec!(0)
+    ]));
+    assert!(!second.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+}
+
+#[test]
+fn mgts_from_path_roll_up() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::non_accepting(()));
+    let s4 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    let _e1 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    let _e2 = cfg.add_edge(&s1, &s4, cfg_dec!(0));
+    let _e3 = cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    let _e4 = cfg.add_edge(&s2, &s3, cfg_inc!(0));
+    let _e5 = cfg.add_edge(&s3, &s1, cfg_dec!(0));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
+    let word = [
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_dec!(0),
+        cfg_dec!(0),
+    ];
+    let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
+
+    let mgts = MGTS::from_path_roll_up(path, &product, 1);
+
+    assert_eq!(mgts.sequence.len(), 3);
+    assert!(mgts.sequence[0].is_path());
+    assert!(mgts.sequence[1].is_graph());
+    assert!(mgts.sequence[2].is_path());
+
+    assert!(mgts.accepts(&word));
+    assert!(mgts.accepts(&[
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_dec!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_dec!(0),
+        cfg_dec!(0),
+    ]));
+    assert!(mgts.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+    assert!(!mgts.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
 }

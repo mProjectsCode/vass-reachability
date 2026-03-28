@@ -232,9 +232,13 @@ impl<N: GIndex, L: Letter> Path<N, L> {
     pub fn split_off(&mut self, i: usize) -> Self {
         debug_assert!(i < self.transitions.len());
 
-        let mut new_path = Path::new(self.states[i + 1].clone());
+        let suffix_start = self.states[i].clone();
+        let suffix_states = self.states.split_off(i);
+        self.states.push(suffix_start.clone());
+
+        let mut new_path = Path::new(suffix_start);
         new_path.transitions = self.transitions.split_off(i);
-        new_path.states.extend(self.states.split_off(i + 1));
+        new_path.states = suffix_states;
 
         debug_assert!(self.states.len() == self.transitions.len() + 1);
         debug_assert!(new_path.states.len() == new_path.transitions.len() + 1);

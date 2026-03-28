@@ -96,10 +96,6 @@ impl MGTSSolution {
 
         let mut current_valuation = self.initial_valuation.clone();
 
-        dbg!(&mgts.sequence);
-        dbg!(mgts.graphs.len());
-        dbg!(self.sub_graph_parikh_images.len());
-
         // TODO: this does not work at all with inconsistent LGSs. If we have an unused
         // path or graph we are in trouble. First we do more solving and then we also
         // run into index errors here.
@@ -323,9 +319,6 @@ impl<'g> MGTSReachSolver<'g> {
                             (graph, map, main_component, components)
                         })
                         .collect::<Vec<_>>();
-
-                    dbg!(&parikh_image_components.len());
-                    dbg!(&self.mgts.graphs.len());
 
                     if parikh_image_components
                         .iter()
