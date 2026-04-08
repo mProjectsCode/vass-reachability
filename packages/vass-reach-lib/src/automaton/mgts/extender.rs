@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use hashbrown::HashSet;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
@@ -7,7 +8,10 @@ use crate::{
         TransitionSystem,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        mgts::{MGTS, part::MGTSPart},
+        mgts::{
+            MGTS,
+            part::{MGTSPart, MarkedGraph},
+        },
         path::Path,
         vass::counter::VASSCounterValuation,
     },
@@ -168,6 +172,7 @@ pub trait ExtensionStrategy {
 pub enum ExtensionStrategyEnum {
     RandomNode(RandomNodeStrategy),
     RandomSCC(RandomSCCStrategy),
+    CompletePartialSCC(CompletePartialSCCStrategy),
 }
 
 impl ExtensionStrategyEnum {
@@ -179,6 +184,9 @@ impl ExtensionStrategyEnum {
             ExtensionStrategyConfig::RandomSCC => {
                 ExtensionStrategyEnum::RandomSCC(RandomSCCStrategy::new(20, seed))
             }
+            ExtensionStrategyConfig::CompletePartialSCC => {
+                ExtensionStrategyEnum::CompletePartialSCC(CompletePartialSCCStrategy::new())
+            }
         }
     }
 
@@ -186,6 +194,7 @@ impl ExtensionStrategyEnum {
         match self {
             ExtensionStrategyEnum::RandomNode(strategy) => strategy.extend(mgts, step),
             ExtensionStrategyEnum::RandomSCC(strategy) => strategy.extend(mgts, step),
+            ExtensionStrategyEnum::CompletePartialSCC(strategy) => strategy.extend(mgts, step),
         }
     }
 
@@ -193,8 +202,67 @@ impl ExtensionStrategyEnum {
         match self {
             ExtensionStrategyEnum::RandomNode(strategy) => strategy.on_rollback(solution),
             ExtensionStrategyEnum::RandomSCC(strategy) => strategy.on_rollback(solution),
+            ExtensionStrategyEnum::CompletePartialSCC(strategy) => strategy.on_rollback(solution),
         }
     }
+}
+
+#[derive(Debug, Default)]
+pub struct CompletePartialSCCStrategy;
+
+impl CompletePartialSCCStrategy {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ExtensionStrategy for CompletePartialSCCStrategy {
+    fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {
+        for part in &mgts.sequence {
+            let MGTSPart::Graph(graph_idx) = part else {
+                continue;
+            };
+
+            let graph = mgts.graph(*graph_idx);
+            let start = graph.product_start().clone();
+            let end = graph.product_end().clone();
+
+            let full_scc_set = mgts.product.find_scc_surrounding(start.clone());
+            tracing::debug!(
+                "CompletePartialSCCStrategy: Found SCC of size {} around node {:?}",
+                full_scc_set.len(),
+                start
+            );
+            let mut full_scc = full_scc_set.iter().cloned().collect::<Vec<_>>();
+            full_scc.sort_unstable();
+            let current_set = graph
+                .graph
+                .node_weights()
+                .cloned()
+                .collect::<HashSet<MultiGraphState>>();
+
+            // Only treat this as a partial SCC when the graph is a true SCC
+            // subset. Other graph shapes are left untouched by this strategy.
+            if !current_set.is_subset(&full_scc_set) {
+                continue;
+            }
+
+            if current_set == full_scc_set {
+                continue;
+            }
+
+            let mut extended = mgts.clone();
+            extended.graphs[*graph_idx] =
+                MarkedGraph::from_subset(mgts.product, &full_scc, start, end);
+            extended.assert_consistent();
+
+            return Some(extended);
+        }
+
+        None
+    }
+
+    fn on_rollback(&mut self, _solution: &MGTSSolution) {}
 }
 
 #[derive(Debug)]
@@ -267,36 +335,6 @@ impl RandomSCCStrategy {
         }
     }
 }
-
-// Idea: chance based on how often a SCC was visited, when long in SCC, then
-// maybe more safe?
-// Done: Due to the way we choose SCCs to add, we do this implicitly.
-
-// Idea: Sub SCC, we look at strongly connected subsets of SCCs.
-// Probably the easiest would be to look at the path through the SCC (or just
-// the parikh image) if it is reachable, then do a sub-refinement step where we
-// don't disregard the SCC, but instead look if we can remove some edge or node
-// from the SCC to make it unreachable again.
-
-// Idea:
-// Why are we including the modulo automatons in the MGTS?
-// 1. they do influence SCCs, but we can probably work around that, capturing
-//    the relevant nodes with the modulo automatons, but then when translating
-//    to a MGTS, we can disregard them and get smaller automatons
-// 2. when solving the MGTS, the modulo automatons are strictly weaker than the
-//    Z-Reachability we search for, so we can disregard them as well.
-// 3. When building the automaton in the end we want to construct it in a way
-//    that we restrict as much as possible. But the current way we construct
-//    them (just take the MGTS and invert it) means that by restricting the MGTS
-//    more, we make the rejected language by the final automaton smaller (and
-//    the automaton bigger). This is not great, as yeah, we are more precise,
-//    but we already have the precision in the MGTS. We are just adding more
-//    states to the automaton, which makes it harder to handle.
-
-// ignore some maybe not all LGS. (maybe sleep some MGTSs)
-// build MGTS graphs from edges, not full SCCs
-
-// TODO: find difficult to solve instances
 
 impl ExtensionStrategy for RandomSCCStrategy {
     fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {

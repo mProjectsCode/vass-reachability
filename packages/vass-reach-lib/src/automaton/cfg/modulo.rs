@@ -148,7 +148,10 @@ impl TransitionSystem<Deterministic> for ModuloCFG {
         Some(self.counter_to_index(&valuation))
     }
 
-    fn successors(&self, node: &Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn successors<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         let valuation = self.index_to_counter(*node);
 
         Box::new(self.alphabet.iter().map(move |letter| {
@@ -158,7 +161,10 @@ impl TransitionSystem<Deterministic> for ModuloCFG {
         }))
     }
 
-    fn predecessors(&self, node: &Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn predecessors<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         let valuation = self.index_to_counter(*node);
 
         Box::new(self.alphabet.iter().map(move |letter| {

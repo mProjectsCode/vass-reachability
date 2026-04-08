@@ -254,11 +254,17 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<Dete
         self.vass.edge_endpoints_unchecked(edge)
     }
 
-    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn outgoing_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a> {
         self.vass.outgoing_edge_indices(node)
     }
 
-    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
+    fn incoming_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a> {
         self.vass.incoming_edge_indices(node)
     }
 

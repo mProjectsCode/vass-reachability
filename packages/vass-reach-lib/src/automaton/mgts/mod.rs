@@ -10,7 +10,7 @@ use petgraph::{
 use super::nfa::NFAEdge;
 use crate::automaton::{
     Alphabet, Automaton, ExplicitEdgeAutomaton, Language, ModifiableAutomaton, TransitionSystem,
-    algorithms::{AutomatonAlgorithms, SCC, SCCTree},
+    algorithms::{SCC, SCCAlgorithms, SCCDag},
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
@@ -50,7 +50,7 @@ impl<'a> MGTS<'a> {
 
     /// The idea here is to take the subgraph of nodes that is visited in the
     /// path (including non visited edges between those nodes).
-    /// Then we calculate the scc tree of that subgraph and build the MGTS from
+    /// Then we calculate the SCC DAG of that subgraph and build the MGTS from
     /// that.
     pub fn from_path_roll_up(
         path: MultiGraphPath,
@@ -58,13 +58,10 @@ impl<'a> MGTS<'a> {
         dimension: usize,
     ) -> Self {
         let visited = path.states.iter().cloned().collect::<HashSet<_>>();
-        let tree = product
-            .find_scc_tree_in_subgraph(path.start().clone(), &visited, |node| node == path.end());
+        let dag = product
+            .find_scc_dag_in_subgraph(path.start().clone(), &visited, |node| node == path.end());
 
-        Self::from_scc_tree(&tree, product, dimension)
-            .into_iter()
-            .find(|mgts| mgts.accepts(path.transitions.iter()))
-            .expect("The SCC roll-up must produce an MGTS that still accepts the original path")
+        mgts_from_scc_dag_guided_path(&dag, &path, product, dimension)
     }
 
     pub fn empty(product: &'a ImplicitCFGProduct, dimension: usize) -> Self {
@@ -75,28 +72,6 @@ impl<'a> MGTS<'a> {
             product,
             dimension,
         }
-    }
-
-    pub fn from_scc_tree(
-        tree: &SCCTree<MultiGraphState, CFGCounterUpdate>,
-        product: &'a ImplicitCFGProduct,
-        dimension: usize,
-    ) -> Vec<Self> {
-        let initial = tree
-            .scc
-            .nodes
-            .iter()
-            .find(|node| **node == product.initial())
-            .cloned()
-            .expect("SCC tree root must contain the product initial state");
-
-        enumerate_scc_tree_mgts(
-            tree,
-            initial.clone(),
-            MGTS::empty(product, dimension),
-            MultiGraphPath::new(product.initial()),
-            product,
-        )
     }
 
     /// Debug-only invariant check for the internal part storage.
@@ -475,6 +450,9 @@ impl<'a> MGTS<'a> {
                 if node_index == 0 {
                     result.add_graph(scc.clone());
                     result.add_path(self.paths[path_idx].clone());
+                } else if node_index == self.paths[path_idx].path.states.len() - 1 {
+                    result.add_path(self.paths[path_idx].clone());
+                    result.add_graph(scc.clone());
                 } else {
                     let mut path = self.paths[path_idx].clone();
                     let after = path.path.split_off(node_index);
@@ -646,67 +624,83 @@ impl<'a> MGTS<'a> {
     }
 }
 
-fn enumerate_scc_tree_mgts<'a>(
-    tree: &SCCTree<MultiGraphState, CFGCounterUpdate>,
-    entry: MultiGraphState,
-    mut mgts: MGTS<'a>,
-    mut current_path: MultiGraphPath,
+fn mgts_from_scc_dag_guided_path<'a>(
+    dag: &SCCDag<MultiGraphState, CFGCounterUpdate>,
+    path: &MultiGraphPath,
     product: &'a ImplicitCFGProduct,
-) -> Vec<MGTS<'a>> {
-    if !tree.scc.is_trivial() && !current_path.is_empty() {
-        mgts.add_path(current_path.clone().into());
-        current_path = MultiGraphPath::new(entry.clone());
+    dimension: usize,
+) -> MGTS<'a> {
+    let dag = dag.with_rolled_trivial_paths();
+
+    let component_of_state = dag
+        .components
+        .iter()
+        .enumerate()
+        .flat_map(|(component, scc)| scc.nodes.iter().cloned().map(move |node| (node, component)))
+        .collect::<HashMap<_, _>>();
+
+    for state in &path.states {
+        assert!(
+            component_of_state.contains_key(state),
+            "Path state {:?} is not part of the SCC DAG subgraph",
+            state
+        );
     }
 
-    let mut results = Vec::new();
+    let mut mgts = MGTS::empty(product, dimension);
+    let mut current_path = MultiGraphPath::new(path.start().clone());
+    let mut state_index = 0usize;
 
-    for accepting in &tree.scc.accepting_nodes {
-        let mut terminal_mgts = mgts.clone();
+    while state_index + 1 < path.states.len() {
+        let component = component_of_state[&path.states[state_index]];
+        let scc = &dag.components[component];
 
-        if tree.scc.is_trivial() {
-            if !current_path.is_empty() {
-                terminal_mgts.add_path(current_path.clone().into());
+        let mut run_end = state_index;
+        while run_end + 1 < path.states.len()
+            && component_of_state[&path.states[run_end + 1]] == component
+        {
+            run_end += 1;
+        }
+
+        if scc.is_trivial() {
+            for edge_index in state_index..run_end {
+                current_path.add(
+                    path.transitions[edge_index],
+                    path.states[edge_index + 1].clone(),
+                );
             }
         } else {
-            terminal_mgts.add_graph(marked_graph_from_scc(&tree.scc, &entry, accepting, product));
+            if !current_path.is_empty() {
+                mgts.add_path(current_path.clone().into());
+            }
+
+            mgts.add_graph(marked_graph_from_scc(
+                scc,
+                &path.states[state_index],
+                &path.states[run_end],
+                product,
+            ));
+
+            current_path = MultiGraphPath::new(path.states[run_end].clone());
         }
 
-        results.push(terminal_mgts);
-    }
-
-    for child in &tree.children {
-        let mut next_mgts = mgts.clone();
-
-        if tree.scc.is_trivial() {
-            let mut next_path = current_path.clone();
-            next_path.concat(child.path.clone());
-
-            results.extend(enumerate_scc_tree_mgts(
-                &child.child,
-                child.path.end().clone(),
-                next_mgts,
-                next_path,
-                product,
-            ));
-        } else {
-            next_mgts.add_graph(marked_graph_from_scc(
-                &tree.scc,
-                &entry,
-                child.path.start(),
-                product,
-            ));
-
-            results.extend(enumerate_scc_tree_mgts(
-                &child.child,
-                child.path.end().clone(),
-                next_mgts,
-                child.path.clone(),
-                product,
-            ));
+        if run_end < path.transitions.len() {
+            current_path.add(path.transitions[run_end], path.states[run_end + 1].clone());
         }
+
+        state_index = run_end + 1;
     }
 
-    results
+    if !current_path.is_empty() {
+        mgts.add_path(current_path.into());
+    }
+
+    assert!(
+        mgts.accepts(path.transitions.iter()),
+        "Path-guided SCC roll-up must accept the original path"
+    );
+
+    mgts
 }
 
 fn marked_graph_from_scc(
@@ -715,6 +709,8 @@ fn marked_graph_from_scc(
     end: &MultiGraphState,
     product: &ImplicitCFGProduct,
 ) -> MarkedGraph {
+    // Keep node order deterministic so repeated runs over the same SCC-DAG
+    // produce structurally stable MGTS graph parts.
     let mut nodes = scc.nodes.clone();
     nodes.sort_unstable();
     MarkedGraph::from_subset(product, &nodes, start.clone(), end.clone())

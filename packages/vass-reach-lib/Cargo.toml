@@ -13,18 +13,14 @@ path = "src/lib.rs"
 vass-reach-macros = { path = "../vass-reach-macros" }
 itertools = "0.14.0"
 petgraph = { version = "0.8.3", features = ["serde-1"] }
-z3 = "0.19.7"
+z3 = "0.20.0"
 rand = "0.10.0"
-colored = "3.1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.133"
 hashbrown = { version = "0.16.0", features = ["serde"] }
 nom = "8.0.0"
-paste = "1.0.15"
-anyhow = "1.0.100"
 toml = "1.0"
-chrono = "0.4.42"
-num = "0.4.3"
+anyhow = "1.0.100"
 tracing = "0.1.44"
 
 

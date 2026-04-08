@@ -5,7 +5,7 @@ use petgraph::graph::NodeIndex;
 use crate::automaton::{
     Alphabet, Automaton, AutomatonEdge, Deterministic, ExplicitEdgeAutomaton, InitializedAutomaton,
     ModifiableAutomaton, TransitionSystem,
-    algorithms::AutomatonAlgorithms,
+    algorithms::SCCAlgorithms,
     cfg::{
         update::CFGCounterUpdate,
         vasscfg::{
@@ -327,7 +327,7 @@ impl ImplicitCFGProduct {
     }
 
     pub fn find_scc_surrounding(&self, node: MultiGraphState) -> HashSet<MultiGraphState> {
-        AutomatonAlgorithms::<Deterministic>::find_scc_surrounding(self, node)
+        SCCAlgorithms::find_scc_surrounding(self, node)
             .into_iter()
             .collect()
     }
@@ -468,16 +468,21 @@ impl TransitionSystem<Deterministic> for ImplicitCFGProduct {
 
     fn successors<'a>(
         &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
+        let node = node.clone();
+
         Box::new(
             self.alphabet()
                 .iter()
-                .filter_map(move |letter| self.successor(node, letter)),
+                .filter_map(move |letter| self.successor(&node, letter)),
         )
     }
 
-    fn predecessors(&self, node: &Self::NIndex) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+    fn predecessors<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         // For each letter in the shared alphabet:
         //  - collect predecessors (sources of incoming edges matching that letter) for
         //    each component

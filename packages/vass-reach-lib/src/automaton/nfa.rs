@@ -223,16 +223,30 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> ExplicitEdgeAutomaton<NonD
         self.graph.edge_endpoints(*edge).unwrap()
     }
 
-    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
-        self.graph
-            .edges_directed(*node, Direction::Outgoing)
-            .map(|edge| edge.id())
+    fn outgoing_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a> {
+        let node = *node;
+
+        Box::new(
+            self.graph
+                .edges_directed(node, Direction::Outgoing)
+                .map(|edge| edge.id()),
+        )
     }
 
-    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
-        self.graph
-            .edges_directed(*node, Direction::Incoming)
-            .map(|edge| edge.id())
+    fn incoming_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a> {
+        let node = *node;
+
+        Box::new(
+            self.graph
+                .edges_directed(node, Direction::Incoming)
+                .map(|edge| edge.id()),
+        )
     }
 
     fn connecting_edge_indices(

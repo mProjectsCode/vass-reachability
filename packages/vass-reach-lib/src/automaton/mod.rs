@@ -15,6 +15,7 @@ pub mod mgts;
 pub mod nfa;
 pub mod path;
 pub mod petri_net;
+pub mod scc;
 pub mod utils;
 pub mod vass;
 
@@ -332,16 +333,14 @@ pub trait TransitionSystem<Type: TransitionSystemType<Self::NIndex>>: Automaton<
 
     /// The set of successors of a node. Usually calculated as the union of the
     /// successors under all letters in the alphabet.
-    fn successors<'a>(
-        &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
+    fn successors<'a>(&'a self, node: &Self::NIndex)
+    -> Box<dyn Iterator<Item = Self::NIndex> + 'a>;
 
     /// The set of predecessors of a node.
     fn predecessors<'a>(
         &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_>;
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a>;
 
     /// The set of neighbors of a node, i.e. the union of its successors and
     /// predecessors.
@@ -367,8 +366,8 @@ impl<T: ExplicitEdgeAutomaton<Deterministic>> TransitionSystem<Deterministic> fo
 
     fn successors<'a>(
         &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         Box::new(
             self.outgoing_edge_indices(node)
                 .map(|e| self.edge_target_unchecked(&e)),
@@ -377,8 +376,8 @@ impl<T: ExplicitEdgeAutomaton<Deterministic>> TransitionSystem<Deterministic> fo
 
     fn predecessors<'a>(
         &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         Box::new(
             self.incoming_edge_indices(node)
                 .map(|e| self.edge_source_unchecked(&e)),
@@ -396,8 +395,8 @@ impl<T: ExplicitEdgeAutomaton<NonDeterministic>> TransitionSystem<NonDeterminist
 
     fn successors<'a>(
         &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         Box::new(
             self.outgoing_edge_indices(node)
                 .map(|e| self.edge_target_unchecked(&e)),
@@ -406,8 +405,8 @@ impl<T: ExplicitEdgeAutomaton<NonDeterministic>> TransitionSystem<NonDeterminist
 
     fn predecessors<'a>(
         &'a self,
-        node: &'a Self::NIndex,
-    ) -> Box<dyn Iterator<Item = Self::NIndex> + '_> {
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::NIndex> + 'a> {
         Box::new(
             self.incoming_edge_indices(node)
                 .map(|e| self.edge_source_unchecked(&e)),
@@ -486,13 +485,27 @@ pub trait ExplicitEdgeAutomaton<Type: TransitionSystemType<Self::NIndex>>:
     }
 
     /// Returns an iterator over the outgoing edge indices of the given node.
-    fn outgoing_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex>;
+    fn outgoing_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a>;
     /// Returns an iterator over the incoming edge indices of the given node.
-    fn incoming_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex>;
+    fn incoming_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a>;
     /// Returns an iterator over the undirected edge indices of the given node.
-    fn undirected_edge_indices(&self, node: &Self::NIndex) -> impl Iterator<Item = Self::EIndex> {
-        self.outgoing_edge_indices(node)
-            .chain(self.incoming_edge_indices(node))
+    fn undirected_edge_indices<'a>(
+        &'a self,
+        node: &Self::NIndex,
+    ) -> Box<dyn Iterator<Item = Self::EIndex> + 'a>
+    where
+        Self::EIndex: 'a,
+    {
+        Box::new(
+            self.outgoing_edge_indices(node)
+                .chain(self.incoming_edge_indices(node)),
+        )
     }
 
     /// Returns an iterator over the edge indices directly connecting the given

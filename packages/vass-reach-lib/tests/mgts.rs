@@ -3,11 +3,14 @@ use petgraph::graph::NodeIndex;
 use vass_reach_lib::{
     automaton::{
         Language, ModifiableAutomaton,
-        algorithms::AutomatonAlgorithms,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        mgts::{MGTS, part::MarkedGraph},
+        mgts::{
+            MGTS,
+            extender::{CompletePartialSCCStrategy, ExtensionStrategy},
+            part::MarkedGraph,
+        },
         path::Path,
         vass::{VASS, VASSEdge},
     },
@@ -412,7 +415,7 @@ fn mgts_determinize_invariant_to_scc_node_order() {
 }
 
 #[test]
-fn mgts_from_scc_tree() {
+fn mgts_from_path_roll_up_branch_specific() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
     let s1 = cfg.add_node(DfaNode::non_accepting(()));
@@ -433,12 +436,10 @@ fn mgts_from_scc_tree() {
 
     let product =
         ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
-    let tree = product.find_scc_tree();
-    let mgts_list = MGTS::from_scc_tree(&tree, &product, 1);
+    let first_word = [cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)];
+    let first_path = MultiGraphPath::from_word(product.initial(), &first_word, &product).unwrap();
+    let first = MGTS::from_path_roll_up(first_path, &product, 1);
 
-    assert_eq!(mgts_list.len(), 2);
-
-    let first = &mgts_list[0];
     assert_eq!(first.sequence.len(), 3);
     assert!(first.sequence[0].is_path());
     assert!(first.sequence[1].is_graph());
@@ -447,7 +448,16 @@ fn mgts_from_scc_tree() {
     assert!(first.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)]));
     assert!(!first.accepts(&[cfg_inc!(0), cfg_inc!(0), cfg_inc!(0), cfg_dec!(0)]));
 
-    let second = &mgts_list[1];
+    let second_word = [
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_inc!(0),
+        cfg_dec!(0),
+    ];
+    let second_path = MultiGraphPath::from_word(product.initial(), &second_word, &product).unwrap();
+    let second = MGTS::from_path_roll_up(second_path, &product, 1);
+
     assert_eq!(second.sequence.len(), 5);
     assert!(second.sequence[0].is_path());
     assert!(second.sequence[1].is_graph());
@@ -463,6 +473,60 @@ fn mgts_from_scc_tree() {
         cfg_dec!(0)
     ]));
     assert!(!second.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
+}
+
+#[test]
+fn complete_partial_scc_strategy_expands_and_then_stops() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::non_accepting(()));
+    let s4 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    let _e0 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    let _e1 = cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    let _e2 = cfg.add_edge(&s2, &s1, cfg_dec!(0));
+    let _e3 = cfg.add_edge(&s2, &s3, cfg_inc!(0));
+    let _e4 = cfg.add_edge(&s3, &s1, cfg_dec!(0));
+    let _e5 = cfg.add_edge(&s1, &s4, cfg_dec!(0));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
+
+    // This path visits only {s1, s2} from the full SCC {s1, s2, s3},
+    // so from_path_roll_up creates a partial SCC graph part.
+    let word = [cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)];
+    let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
+    let mgts = MGTS::from_path_roll_up(path, &product, 1);
+
+    let graph_idx = mgts
+        .sequence
+        .iter()
+        .find_map(|part| {
+            if let vass_reach_lib::automaton::mgts::part::MGTSPart::Graph(idx) = part {
+                Some(*idx)
+            } else {
+                None
+            }
+        })
+        .expect("roll-up MGTS should contain an SCC graph part");
+
+    let partial_node_count = mgts.graph(graph_idx).graph.node_count();
+    assert_eq!(partial_node_count, 2);
+
+    let mut strategy = CompletePartialSCCStrategy::new();
+    let extended = strategy
+        .extend(&mgts, 0)
+        .expect("strategy should extend an incomplete SCC");
+
+    let full_node_count = extended.graph(graph_idx).graph.node_count();
+    assert_eq!(full_node_count, 3);
+
+    // Once SCCs are complete, strategy must stop.
+    assert!(strategy.extend(&extended, 1).is_none());
 }
 
 #[test]

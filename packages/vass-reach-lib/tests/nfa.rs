@@ -1,4 +1,3 @@
-use serde::de;
 use vass_reach_lib::{
     automaton::{
         Automaton, ModifiableAutomaton,

@@ -1,14 +1,11 @@
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use vass_reach_lib::automaton::{
-    Deterministic, ModifiableAutomaton, TransitionSystem,
+    ModifiableAutomaton,
     cfg::update::CFGCounterUpdate,
     dfa::{DFA, node::DfaNode},
-    implicit_cfg_product::state::MultiGraphState,
     path::{Path, parikh_image::ParikhImage},
     vass::counter::{VASSCounterIndex, VASSCounterValuation},
 };
-
-type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 #[test]
 fn test_path_basic_manipulation() {

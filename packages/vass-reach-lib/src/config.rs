@@ -55,13 +55,14 @@ config! {
 pub enum ExtensionStrategyConfig {
     Random,
     RandomSCC,
+    CompletePartialSCC,
 }
 
 config! {
     pub struct MGTSConfig {
         enabled: bool = true,
         max_refinement_steps: u64 = 10,
-        strategy: ExtensionStrategyConfig = ExtensionStrategyConfig::RandomSCC,
+        strategy: ExtensionStrategyConfig = ExtensionStrategyConfig::CompletePartialSCC,
     }
 }
 
