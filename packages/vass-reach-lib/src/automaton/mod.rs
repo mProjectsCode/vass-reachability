@@ -10,6 +10,7 @@ pub mod cfg;
 pub mod dfa;
 pub mod implicit_cfg_product;
 pub mod index_map;
+pub mod karp_miller;
 pub mod ltc;
 pub mod mgts;
 pub mod nfa;

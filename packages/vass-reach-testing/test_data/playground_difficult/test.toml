@@ -1,0 +1,8 @@
+timeout = 300
+memory_max_gb = 4
+
+[[runs]]
+name = "vass-reach-playground-difficult"
+tool = "vass-reach"
+config = "./vass_reach_playground_difficult.toml"
+max_parallel = 1

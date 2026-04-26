@@ -9,7 +9,8 @@ use petgraph::{
 
 use super::nfa::NFAEdge;
 use crate::automaton::{
-    Alphabet, Automaton, ExplicitEdgeAutomaton, Language, ModifiableAutomaton, TransitionSystem,
+    Alphabet, Automaton, Deterministic, ExplicitEdgeAutomaton, GIndex, InitializedAutomaton,
+    Language, ModifiableAutomaton, TransitionSystem,
     algorithms::{SCC, SCCAlgorithms, SCCDag},
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
@@ -19,30 +20,56 @@ use crate::automaton::{
     path::Path,
 };
 
-type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
+type GenericPath<NIndex> = Path<NIndex, CFGCounterUpdate>;
 
 pub mod extender;
 pub mod part;
 
-#[derive(Debug, Clone)]
-pub struct MGTS<'a> {
+#[derive(Debug)]
+pub struct MGTS<'a, NIndex: GIndex = MultiGraphState, A = ImplicitCFGProduct>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
     /// Invariant: every referenced path or graph is used exactly once, and
     /// every stored path or graph is referenced by exactly one entry in
     /// `parts`.
     pub sequence: Vec<MGTSPart>,
-    pub graphs: Vec<MarkedGraph>,
-    pub paths: Vec<MarkedPath>,
-    pub product: &'a ImplicitCFGProduct,
+    pub graphs: Vec<MarkedGraph<NIndex>>,
+    pub paths: Vec<MarkedPath<NIndex>>,
+    pub automaton: &'a A,
     pub dimension: usize,
 }
 
-impl<'a> MGTS<'a> {
-    pub fn from_path(
-        path: MultiGraphPath,
-        product: &'a ImplicitCFGProduct,
-        dimension: usize,
-    ) -> Self {
-        let mut instance = Self::empty(product, dimension);
+impl<'a, NIndex: GIndex, A> Clone for MGTS<'a, NIndex, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            sequence: self.sequence.clone(),
+            graphs: self.graphs.clone(),
+            paths: self.paths.clone(),
+            automaton: self.automaton,
+            dimension: self.dimension,
+        }
+    }
+}
+
+impl<'a, NIndex: GIndex, A> MGTS<'a, NIndex, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
+    pub fn from_path(path: GenericPath<NIndex>, automaton: &'a A, dimension: usize) -> Self {
+        let mut instance = Self::empty(automaton, dimension);
         instance.add_path(path.into());
         instance.assert_consistent();
         instance
@@ -53,23 +80,23 @@ impl<'a> MGTS<'a> {
     /// Then we calculate the SCC DAG of that subgraph and build the MGTS from
     /// that.
     pub fn from_path_roll_up(
-        path: MultiGraphPath,
-        product: &'a ImplicitCFGProduct,
+        path: GenericPath<NIndex>,
+        automaton: &'a A,
         dimension: usize,
     ) -> Self {
         let visited = path.states.iter().cloned().collect::<HashSet<_>>();
-        let dag = product
+        let dag = automaton
             .find_scc_dag_in_subgraph(path.start().clone(), &visited, |node| node == path.end());
 
-        mgts_from_scc_dag_guided_path(&dag, &path, product, dimension)
+        mgts_from_scc_dag_guided_path(&dag, &path, automaton, dimension)
     }
 
-    pub fn empty(product: &'a ImplicitCFGProduct, dimension: usize) -> Self {
+    pub fn empty(automaton: &'a A, dimension: usize) -> Self {
         MGTS {
             sequence: Vec::new(),
             graphs: Vec::new(),
             paths: Vec::new(),
-            product,
+            automaton,
             dimension,
         }
     }
@@ -197,25 +224,25 @@ impl<'a> MGTS<'a> {
         self.paths = paths;
     }
 
-    pub fn add_graph(&mut self, graph: MarkedGraph) {
+    pub fn add_graph(&mut self, graph: MarkedGraph<NIndex>) {
         let index = self.graphs.len();
         self.graphs.push(graph);
         self.sequence.push(MGTSPart::Graph(index));
         self.assert_consistent();
     }
 
-    pub fn add_path(&mut self, path: MarkedPath) {
+    pub fn add_path(&mut self, path: MarkedPath<NIndex>) {
         let index = self.paths.len();
         self.paths.push(path);
         self.sequence.push(MGTSPart::Path(index));
         self.assert_consistent();
     }
 
-    pub fn graph(&self, index: usize) -> &MarkedGraph {
+    pub fn graph(&self, index: usize) -> &MarkedGraph<NIndex> {
         &self.graphs[index]
     }
 
-    pub fn path(&self, index: usize) -> &MarkedPath {
+    pub fn path(&self, index: usize) -> &MarkedPath<NIndex> {
         &self.paths[index]
     }
 
@@ -224,7 +251,7 @@ impl<'a> MGTS<'a> {
     /// This function will also add all existing connections between the new
     /// node and the existing MGTS nodes. This may quickly lead to large
     /// graphs and little path like structure.
-    pub fn add_node(&self, node: MultiGraphState) -> Self {
+    pub fn add_node(&self, node: NIndex) -> Self {
         // first we need to find all parts that contain a neighbor of the node
         // then we build a new graph containing everything between the first and last
         // neighbor then we replace all those parts with the new graph.
@@ -236,8 +263,8 @@ impl<'a> MGTS<'a> {
         // dbg!(&self.parts);
         // dbg!(node);
 
-        let mut result = MGTS::empty(self.product, self.dimension);
-        let neighbors = self.product.undirected_neighbors(&node);
+        let mut result = MGTS::empty(self.automaton, self.dimension);
+        let neighbors = self.automaton.undirected_neighbors(&node);
 
         // first we split all paths at the given node
         for part in &self.sequence {
@@ -313,10 +340,10 @@ impl<'a> MGTS<'a> {
             cut_sequence.push(MGTSPart::Path(result.paths.len()));
             result
                 .paths
-                .push(MultiGraphPath::new(start_node.clone()).into());
+                .push(GenericPath::new(start_node.clone()).into());
         }
 
-        let mut new_graph = DiGraph::<MultiGraphState, CFGCounterUpdate>::new();
+        let mut new_graph = DiGraph::<NIndex, CFGCounterUpdate>::new();
         let mut node_map = HashMap::new();
 
         // add all nodes from the cut sequence to the new graph
@@ -338,8 +365,8 @@ impl<'a> MGTS<'a> {
 
         // now we add all edges between the nodes in the new graph
         for (product_state, new_node) in &node_map {
-            for letter in result.product.alphabet() {
-                let Some(successor) = result.product.successor(product_state, letter) else {
+            for letter in result.automaton.alphabet() {
+                let Some(successor) = result.automaton.successor(product_state, letter) else {
                     continue;
                 };
 
@@ -361,7 +388,7 @@ impl<'a> MGTS<'a> {
             new_graph,
             new_start_node,
             new_end_node,
-            result.product.alphabet().to_vec(),
+            result.automaton.alphabet().to_vec(),
         );
 
         let graph_index = result.graphs.len();
@@ -379,20 +406,20 @@ impl<'a> MGTS<'a> {
     /// Finds the strongly connected component around the given node in the main
     /// CFG and adds it as a graph part. The node must be contained in
     /// the MGTS, otherwise the function will panic.
-    pub fn add_scc_around_node(&self, state: MultiGraphState) -> Self {
+    pub fn add_scc_around_node(&self, state: NIndex) -> Self {
         assert!(
             self.contains_state(&state),
             "Cannot add SCC around node that is not in the MGTS"
         );
 
-        let scc_nodes = self.product.find_scc_surrounding(state.clone());
+        let scc_nodes = self.automaton.find_scc_surrounding(state.clone());
         let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
         // make deterministic: sort the SCC nodes before building the MGTS graph
         scc_nodes_vec.sort_unstable();
         let scc =
-            MarkedGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
+            MarkedGraph::from_subset(self.automaton, &scc_nodes_vec, state.clone(), state.clone());
 
-        let mut result = MGTS::empty(self.product, self.dimension);
+        let mut result = MGTS::empty(self.automaton, self.dimension);
         result.graphs = self.graphs.clone();
 
         // first we split all paths at the given node
@@ -436,14 +463,14 @@ impl<'a> MGTS<'a> {
         };
         let state = &self.paths[path_idx].path.states[node_index];
 
-        let scc_nodes = self.product.find_scc_surrounding(state.clone());
+        let scc_nodes = self.automaton.find_scc_surrounding(state.clone());
         let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
         // make deterministic: sort the SCC nodes before building the MGTS graph
         scc_nodes_vec.sort_unstable();
         let scc =
-            MarkedGraph::from_subset(self.product, &scc_nodes_vec, state.clone(), state.clone());
+            MarkedGraph::from_subset(self.automaton, &scc_nodes_vec, state.clone(), state.clone());
 
-        let mut result = MGTS::empty(self.product, self.dimension);
+        let mut result = MGTS::empty(self.automaton, self.dimension);
 
         for (i, part) in self.sequence.iter().enumerate() {
             if i == path_index {
@@ -510,7 +537,7 @@ impl<'a> MGTS<'a> {
     }
 
     /// Checks if the MGTS contains the given state from the product.
-    pub fn contains_state(&self, state: &MultiGraphState) -> bool {
+    pub fn contains_state(&self, state: &NIndex) -> bool {
         for part in &self.sequence {
             if part.contains_node(self, state) {
                 return true;
@@ -609,14 +636,14 @@ impl<'a> MGTS<'a> {
         self.sequence.iter()
     }
 
-    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b MarkedPath> + 'b {
+    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b MarkedPath<NIndex>> + 'b {
         self.sequence.iter().filter_map(|part| match part {
             MGTSPart::Path(idx) => Some(self.path(*idx)),
             MGTSPart::Graph(_) => None,
         })
     }
 
-    pub fn iter_graph_parts<'b>(&'b self) -> impl Iterator<Item = &'b MarkedGraph> + 'b {
+    pub fn iter_graph_parts<'b>(&'b self) -> impl Iterator<Item = &'b MarkedGraph<NIndex>> + 'b {
         self.sequence.iter().filter_map(|part| match part {
             MGTSPart::Graph(idx) => Some(self.graph(*idx)),
             MGTSPart::Path(_) => None,
@@ -624,14 +651,18 @@ impl<'a> MGTS<'a> {
     }
 }
 
-fn mgts_from_scc_dag_guided_path<'a>(
-    dag: &SCCDag<MultiGraphState, CFGCounterUpdate>,
-    path: &MultiGraphPath,
-    product: &'a ImplicitCFGProduct,
+fn mgts_from_scc_dag_guided_path<'a, NIndex: GIndex, A>(
+    dag: &SCCDag<NIndex, CFGCounterUpdate>,
+    path: &GenericPath<NIndex>,
+    automaton: &'a A,
     dimension: usize,
-) -> MGTS<'a> {
-    let dag = dag.with_rolled_trivial_paths();
-
+) -> MGTS<'a, NIndex, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
     let component_of_state = dag
         .components
         .iter()
@@ -647,8 +678,8 @@ fn mgts_from_scc_dag_guided_path<'a>(
         );
     }
 
-    let mut mgts = MGTS::empty(product, dimension);
-    let mut current_path = MultiGraphPath::new(path.start().clone());
+    let mut mgts = MGTS::empty(automaton, dimension);
+    let mut current_path = GenericPath::new(path.start().clone());
     let mut state_index = 0usize;
 
     while state_index + 1 < path.states.len() {
@@ -678,10 +709,10 @@ fn mgts_from_scc_dag_guided_path<'a>(
                 scc,
                 &path.states[state_index],
                 &path.states[run_end],
-                product,
+                automaton,
             ));
 
-            current_path = MultiGraphPath::new(path.states[run_end].clone());
+            current_path = GenericPath::new(path.states[run_end].clone());
         }
 
         if run_end < path.transitions.len() {
@@ -703,21 +734,25 @@ fn mgts_from_scc_dag_guided_path<'a>(
     mgts
 }
 
-fn marked_graph_from_scc(
-    scc: &SCC<MultiGraphState>,
-    start: &MultiGraphState,
-    end: &MultiGraphState,
-    product: &ImplicitCFGProduct,
-) -> MarkedGraph {
+fn marked_graph_from_scc<NIndex: GIndex, A>(
+    scc: &SCC<NIndex>,
+    start: &NIndex,
+    end: &NIndex,
+    automaton: &A,
+) -> MarkedGraph<NIndex>
+where
+    A: TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
     // Keep node order deterministic so repeated runs over the same SCC-DAG
     // produce structurally stable MGTS graph parts.
     let mut nodes = scc.nodes.clone();
     nodes.sort_unstable();
-    MarkedGraph::from_subset(product, &nodes, start.clone(), end.clone())
+    MarkedGraph::from_subset(automaton, &nodes, start.clone(), end.clone())
 }
 
-fn partial_accept_path<'a>(
-    path: &MarkedPath,
+fn partial_accept_path<'a, NIndex: GIndex>(
+    path: &MarkedPath<NIndex>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut index = 0;
@@ -744,8 +779,8 @@ fn partial_accept_path<'a>(
     index == path.path.len()
 }
 
-fn partial_accept_graph<'a>(
-    graph: &MarkedGraph,
+fn partial_accept_graph<'a, NIndex: GIndex>(
+    graph: &MarkedGraph<NIndex>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut current_state = graph.start;
@@ -772,15 +807,27 @@ fn partial_accept_graph<'a>(
     current_state == graph.end
 }
 
-impl<'a> Alphabet for MGTS<'a> {
+impl<'a, NIndex: GIndex, A> Alphabet for MGTS<'a, NIndex, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
     type Letter = CFGCounterUpdate;
 
     fn alphabet(&self) -> &[CFGCounterUpdate] {
-        self.product.alphabet()
+        self.automaton.alphabet()
     }
 }
 
-impl<'a> Language for MGTS<'a> {
+impl<'a, NIndex: GIndex, A> Language for MGTS<'a, NIndex, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>,
+{
     fn accepts<'b>(&self, input: impl IntoIterator<Item = &'b CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'b,

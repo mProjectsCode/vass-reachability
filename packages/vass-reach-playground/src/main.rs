@@ -4,9 +4,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use vass_reach_lib::{
     automaton::{
         ModifiableAutomaton,
+        algorithms::EdgeAutomatonAlgorithms,
+        scc::SCCAlgorithms,
         vass::{VASS, VASSEdge},
     },
-    config::VASSReachConfig,
+    config::{PreprocessingConfig, VASSReachConfig},
     solver::vass_reach::VASSReachSolver,
 };
 
@@ -91,12 +93,19 @@ fn difficult_instance() {
 
     let initialized = vass.init(vec![0, 0].into(), vec![0, 0].into(), s0, s3);
 
+    let cfg = initialized.to_cfg();
+    let dag = cfg.find_scc_dag();
+    println!("{}", dag.to_graphviz(None, None, true));
+    println!("{}", cfg.to_graphviz(None, None));
+
     let _res = VASSReachSolver::new(
         &initialized,
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default()
             .with_timeout(Some(Duration::from_mins(5)))
-            .with_max_iterations(Some(1000)),
+            .with_max_iterations(Some(2))
+            .with_bounded_counting_enabled(false)
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(true)),
     )
     .solve();
 }

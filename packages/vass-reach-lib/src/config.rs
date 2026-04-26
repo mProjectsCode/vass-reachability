@@ -26,9 +26,28 @@ config! {
         max_iterations: Option<u64> = None,
         consider_modulo_for_pumping: bool = false,
         bounded_counting_enabled: bool = true,
+        preprocessing: PreprocessingConfig (Option<PartialPreprocessingConfig> = PreprocessingConfig::default()),
         modulo: ModuloConfig (Option<PartialModuloConfig> = ModuloConfig::default()),
         lts: LTSConfig (Option<PartialLTSConfig> = LTSConfig::default()),
         mgts: MGTSConfig (Option<PartialMGTSConfig> = MGTSConfig::default()),
+        debug_trace: DebugTraceConfig (Option<PartialDebugTraceConfig> = DebugTraceConfig::default()),
+    }
+}
+
+config! {
+    pub struct PreprocessingConfig {
+        enabled: bool = false,
+        z_reach_precheck_enabled: bool = false,
+        max_mgts_candidates: usize = 256,
+    }
+}
+
+config! {
+    pub struct DebugTraceConfig {
+        enabled: bool = false,
+        output_root: Option<String> = None,
+        run_name: Option<String> = None,
+        instance_name: Option<String> = None,
     }
 }
 

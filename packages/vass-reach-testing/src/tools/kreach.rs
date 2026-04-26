@@ -121,4 +121,8 @@ impl<'a> Tool for KReachTool<'a> {
             )))
         }
     }
+
+    fn supports_instance_file(&self, file_path: &std::path::Path) -> bool {
+        file_path.extension().and_then(|ext| ext.to_str()) == Some("spec")
+    }
 }

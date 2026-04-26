@@ -1,0 +1,15 @@
+{
+  "tool": "vass-reach",
+  "run_name": "vass-reach-playground-difficult",
+  "results": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/playground_difficult/instances/difficult_from_playground.vass.json": {
+      "result": {
+        "Success": {
+          "status": "Unknown",
+          "statistics": null
+        }
+      },
+      "ms_taken": 147
+    }
+  }
+}

@@ -1,0 +1,7 @@
+num_instances = 1
+seed = 0
+petri_net_counters = 6
+petri_net_transitions = 10
+petri_net_max_tokens_per_transition = 6
+petri_net_no_guards = false
+hand_picked_instances = ["difficult_from_playground.vass.json"]

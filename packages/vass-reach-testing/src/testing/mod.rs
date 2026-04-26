@@ -58,7 +58,8 @@ pub fn test(args: &Args) -> anyhow::Result<()> {
 
         tracing::info!("Running tool: {}", tool.name());
 
-        let results = run_tool_on_folder(&test.instances_folder(), tool, tool_config)?;
+        let instance_files = resolve_instance_files(&test, tool)?;
+        let results = run_tool_on_folder(&instance_files, tool, tool_config)?;
 
         test.write_results(tool, results, tool_config)
             .with_context(|| {
@@ -78,16 +79,10 @@ pub fn test(args: &Args) -> anyhow::Result<()> {
 }
 
 fn run_tool_on_folder<T: Tool + Send + Sync>(
-    folder: &path::Path,
+    files: &[path::PathBuf],
     tool: &T,
     config: &TestRunConfig,
 ) -> anyhow::Result<HashMap<String, SolverResultStatistic>> {
-    let files = std::fs::read_dir(folder)
-        .with_context(|| format!("failed to read dir: {}", folder.display()))?;
-    let files = files
-        .collect::<Result<Vec<_>, _>>()
-        .with_context(|| format!("failed to read dir: {}", folder.display()))?;
-
     let thread_pol = ThreadPoolBuilder::new()
         .num_threads(config.max_parallel as usize)
         .build()
@@ -100,17 +95,12 @@ fn run_tool_on_folder<T: Tool + Send + Sync>(
             .par_iter()
             .map(|file| {
                 let i = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let result = if file.path().extension().and_then(|s| s.to_str()) == Some("spec") {
-                    println!(
-                        "Processing file {}/{}: {}",
-                        i,
-                        files.len(),
-                        file.path().display()
-                    );
+                let result = if tool.supports_instance_file(file) {
+                    println!("Processing file {}/{}: {}", i, files.len(), file.display());
 
                     let start_time = std::time::Instant::now();
 
-                    let result = tool.run_on_file(&file.path(), config);
+                    let result = tool.run_on_file(file, config);
 
                     let duration = start_time.elapsed().as_millis();
 
@@ -120,7 +110,7 @@ fn run_tool_on_folder<T: Tool + Send + Sync>(
                             tracing::warn!(
                                 "Tool {} crashed on file {}: {}",
                                 tool.name(),
-                                file.path().display(),
+                                file.display(),
                                 e
                             );
 
@@ -132,12 +122,12 @@ fn run_tool_on_folder<T: Tool + Send + Sync>(
                     }
                 } else {
                     SolverResultStatistic::new(
-                        SolverRunResult::Crash("Not a .spec file".to_string()),
+                        SolverRunResult::Crash("Unsupported instance file for tool".to_string()),
                         0,
                     )
                 };
 
-                let file_path = file.path().to_str().unwrap().to_string();
+                let file_path = file.to_str().unwrap().to_string();
 
                 (file_path, result)
             })
@@ -145,6 +135,37 @@ fn run_tool_on_folder<T: Tool + Send + Sync>(
     });
 
     Ok(results.into_iter().collect())
+}
+
+fn resolve_instance_files(test: &Test, tool: &impl Tool) -> anyhow::Result<Vec<path::PathBuf>> {
+    let instance_config = test.instance_config()?;
+    let instances_folder = test.instances_folder();
+
+    let mut files = if !instance_config.hand_picked_instances.is_empty() {
+        instance_config
+            .hand_picked_instances
+            .iter()
+            .map(|relative| instances_folder.join(relative))
+            .collect::<Vec<_>>()
+    } else {
+        std::fs::read_dir(&instances_folder)
+            .with_context(|| format!("failed to read dir: {}", instances_folder.display()))?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .collect::<Vec<_>>()
+    };
+
+    files.retain(|path| path.is_file() && tool.supports_instance_file(path));
+    files.sort();
+
+    if files.is_empty() {
+        anyhow::bail!(
+            "no supported instance files found for tool {} in {}",
+            tool.name(),
+            instances_folder.display()
+        );
+    }
+
+    Ok(files)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

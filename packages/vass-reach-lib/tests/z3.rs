@@ -14,13 +14,13 @@ fn z3_works() {
     let _17 = Int::from_i64(17);
 
     // both x and y are positive
-    solver.assert(&x.ge(&_0));
-    solver.assert(&y.ge(&_0));
+    solver.assert(x.ge(&_0));
+    solver.assert(y.ge(&_0));
 
     // x + 5 * y = 17
-    solver.assert(&(&x + &_5 * &y).eq(&_17));
+    solver.assert((&x + &_5 * &y).eq(&_17));
     // x + y = 5
-    solver.assert(&(&x + &y).eq(&_5));
+    solver.assert((&x + &y).eq(&_5));
 
     match solver.check() {
         SatResult::Sat => {

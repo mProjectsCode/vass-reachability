@@ -1,6 +1,10 @@
 use petgraph::graph::NodeIndex;
 use serde::{Deserialize, Serialize};
 
+pub mod debug_trace;
+mod preprocess;
+
+use self::debug_trace::DebugTraceWriter;
 use crate::{
     automaton::{
         Automaton, AutomatonEdge, AutomatonNode, FromLetter,
@@ -11,10 +15,11 @@ use crate::{
         ltc::{LTC, translation::LTCTranslation},
         mgts::extender::{ExtensionStrategyEnum, MGTSExtender},
         path::Path,
+        scc::SCCAlgorithms,
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
-    config::{ModuloMode, VASSReachConfig},
-    solver::{SolverResult, SolverStatus},
+    config::{ModuloMode, VASSReachConfig, VASSZReachConfig},
+    solver::{SolverResult, SolverStatus, vass_z_reach::VASSZReachSolver},
 };
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
@@ -82,6 +87,7 @@ pub struct VASSReachSolver {
     state: ImplicitCFGProduct,
     step_count: u64,
     solver_start_time: Option<std::time::Instant>,
+    debug_trace_writer: Option<DebugTraceWriter>,
 }
 
 impl VASSReachSolver {
@@ -89,9 +95,30 @@ impl VASSReachSolver {
         ivass: &InitializedVASS<N, E>,
         config: VASSReachConfig,
     ) -> Self {
+        let time = std::time::Instant::now();
+
         let mut cfg = ivass.to_cfg();
         cfg.make_complete(());
         cfg = cfg.minimize();
+
+        cfg = match preprocess::run_preprocess_unreachable_mgts_from_scc_dag(
+            cfg,
+            &ivass.initial_valuation,
+            &ivass.final_valuation,
+            &config,
+            None,
+        ) {
+            Ok(cfg) => cfg,
+            Err(status) => {
+                tracing::warn!(
+                    ?status,
+                    "CFG preprocessing failed; continuing with unprocessed CFG"
+                );
+                let mut fallback = ivass.to_cfg();
+                fallback.make_complete(());
+                fallback.minimize()
+            }
+        };
 
         tracing::debug!("{}", cfg.to_graphviz(None, None));
 
@@ -105,11 +132,22 @@ impl VASSReachSolver {
             bounded_counting_enabled,
         );
 
+        let debug_trace_writer = match DebugTraceWriter::from_config(&config) {
+            Ok(writer) => writer,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to initialize debug trace writer; continuing without trace output");
+                None
+            }
+        };
+
+        tracing::info!("Solver initialized in {:?}", time.elapsed());
+
         VASSReachSolver {
             config,
             state,
             step_count: 0,
             solver_start_time: None,
+            debug_trace_writer,
         }
     }
 
@@ -129,6 +167,8 @@ impl VASSReachSolver {
 
     fn solve_inner(&mut self) -> Result<(), VASSReachSolverStatus> {
         let mut step_time;
+
+        self.z_reach_precheck()?;
 
         loop {
             self.step_count += 1;
@@ -158,8 +198,13 @@ impl VASSReachSolver {
                 return Err(SolverStatus::False(()));
             };
 
+            let is_n_reaching =
+                path.is_n_reaching(&self.state.initial_valuation, &self.state.final_valuation);
+
+            self.write_debug_trace_seed(&path, is_n_reaching);
+
             // We check if we by change found a real N-reaching path
-            if path.is_n_reaching(&self.state.initial_valuation, &self.state.final_valuation) {
+            if is_n_reaching {
                 tracing::info!("Found N-reaching path: {:?}", path.to_fancy_string());
 
                 return Err(SolverStatus::True(()));
@@ -182,6 +227,72 @@ impl VASSReachSolver {
             self.refinement_step(path)?;
 
             tracing::debug!("Step time: {:?}", step_time.elapsed());
+        }
+    }
+
+    fn z_reach_precheck(&mut self) -> Result<(), VASSReachSolverStatus> {
+        if !*self.config.get_preprocessing().get_enabled()
+            || !*self
+                .config
+                .get_preprocessing()
+                .get_z_reach_precheck_enabled()
+        {
+            return Ok(());
+        }
+
+        let presolve_time = std::time::Instant::now();
+
+        let z_reach_config = VASSZReachConfig::default()
+            .with_timeout(*self.config.get_timeout())
+            .with_max_iterations(*self.config.get_max_iterations());
+
+        let z_reach_result = VASSZReachSolver::new(
+            self.state.main_cfg(),
+            self.state.initial_valuation.clone(),
+            self.state.final_valuation.clone(),
+            z_reach_config,
+        )
+        .solve();
+
+        tracing::info!("Preprocessing finished in {:?}", presolve_time.elapsed());
+
+        match z_reach_result.status {
+            SolverStatus::False(_) => {
+                tracing::info!("Z-reach pre-check proved instance unreachable");
+                Err(SolverStatus::False(()))
+            }
+            SolverStatus::True(_) => Ok(()),
+            SolverStatus::Unknown(reason) => {
+                tracing::warn!(
+                    ?reason,
+                    "Z-reach pre-check returned unknown; continuing with N-reach solver"
+                );
+                Ok(())
+            }
+        }
+    }
+
+    fn write_debug_trace_seed(&self, path: &MultiGraphPath, is_n_reaching: bool) {
+        let Some(writer) = &self.debug_trace_writer else {
+            return;
+        };
+
+        let dag = self.state.find_scc_dag();
+
+        if let Err(err) = writer.write_step_seed(
+            self.step_count,
+            &self.state.initial_valuation,
+            path,
+            &dag,
+            &self.state,
+            is_n_reaching,
+        ) {
+            tracing::warn!(
+                step = self.step_count,
+                error = %err,
+                trace_dir = %writer.run_dir().display(),
+                "failed to write debug trace step seed"
+            );
         }
     }
 

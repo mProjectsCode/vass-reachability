@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use petgraph::{Direction, graph::NodeIndex, prelude::EdgeRef};
+use serde::{Deserialize, Serialize};
 
 use crate::automaton::{
     Alphabet, Automaton, AutomatonEdge, AutomatonIterators, AutomatonNode, Deterministic,
@@ -197,6 +198,145 @@ impl<N: AutomatonNode, E: AutomatonEdge + FromLetter> InitializedVASS<N, E> {
 
     pub fn dimension(&self) -> usize {
         self.vass.dimension
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializedVASSJsonTransition {
+    pub source: usize,
+    pub target: usize,
+    pub letter: usize,
+    pub update: Vec<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializedVASSJson {
+    pub dimension: usize,
+    pub state_count: usize,
+    pub alphabet: Vec<usize>,
+    pub initial_node: usize,
+    pub final_node: usize,
+    pub initial_valuation: Vec<i32>,
+    pub final_valuation: Vec<i32>,
+    pub transitions: Vec<InitializedVASSJsonTransition>,
+}
+
+impl InitializedVASS<usize, usize> {
+    pub fn to_json(&self) -> anyhow::Result<String> {
+        let mut transitions = vec![];
+        for edge_index in self.vass.graph.edge_indices() {
+            let (source, target) =
+                self.vass.graph.edge_endpoints(edge_index).ok_or_else(|| {
+                    anyhow::anyhow!("missing edge endpoints for edge {edge_index:?}")
+                })?;
+            let edge = self
+                .vass
+                .graph
+                .edge_weight(edge_index)
+                .ok_or_else(|| anyhow::anyhow!("missing edge data for edge {edge_index:?}"))?;
+
+            transitions.push(InitializedVASSJsonTransition {
+                source: source.index(),
+                target: target.index(),
+                letter: edge.data,
+                update: edge.update.iter().copied().collect(),
+            });
+        }
+
+        let json = InitializedVASSJson {
+            dimension: self.dimension(),
+            state_count: self.state_count(),
+            alphabet: self.vass.alphabet.clone(),
+            initial_node: self.initial_node.index(),
+            final_node: self.final_node.index(),
+            initial_valuation: self.initial_valuation.iter().copied().collect(),
+            final_valuation: self.final_valuation.iter().copied().collect(),
+            transitions,
+        };
+
+        Ok(serde_json::to_string_pretty(&json)?)
+    }
+
+    pub fn from_json(json: &str) -> anyhow::Result<Self> {
+        let parsed: InitializedVASSJson = serde_json::from_str(json)?;
+
+        if parsed.initial_node >= parsed.state_count || parsed.final_node >= parsed.state_count {
+            anyhow::bail!(
+                "initial_node and final_node must be < state_count (got initial={}, final={}, state_count={})",
+                parsed.initial_node,
+                parsed.final_node,
+                parsed.state_count
+            );
+        }
+
+        if parsed.initial_valuation.len() != parsed.dimension
+            || parsed.final_valuation.len() != parsed.dimension
+        {
+            anyhow::bail!(
+                "valuation dimensions must match dimension (dimension={}, initial={}, final={})",
+                parsed.dimension,
+                parsed.initial_valuation.len(),
+                parsed.final_valuation.len()
+            );
+        }
+
+        let mut vass = VASS::new(parsed.dimension, parsed.alphabet.clone());
+        let alphabet = parsed
+            .alphabet
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        let nodes = (0..parsed.state_count)
+            .map(|index| vass.add_node(index))
+            .collect::<Vec<_>>();
+
+        for transition in parsed.transitions {
+            if transition.source >= parsed.state_count || transition.target >= parsed.state_count {
+                anyhow::bail!(
+                    "transition endpoint out of bounds: source={}, target={}, state_count={}",
+                    transition.source,
+                    transition.target,
+                    parsed.state_count
+                );
+            }
+            if transition.update.len() != parsed.dimension {
+                anyhow::bail!(
+                    "transition update length must match dimension (dimension={}, update_len={})",
+                    parsed.dimension,
+                    transition.update.len()
+                );
+            }
+            if !alphabet.contains(&transition.letter) {
+                anyhow::bail!(
+                    "transition letter {} is not in alphabet {:?}",
+                    transition.letter,
+                    parsed.alphabet
+                );
+            }
+
+            vass.add_edge(
+                &nodes[transition.source],
+                &nodes[transition.target],
+                VASSEdge::new(transition.letter, transition.update.into()),
+            );
+        }
+
+        Ok(vass.init(
+            parsed.initial_valuation.into(),
+            parsed.final_valuation.into(),
+            nodes[parsed.initial_node],
+            nodes[parsed.final_node],
+        ))
+    }
+
+    pub fn from_json_file(path: &str) -> anyhow::Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        Self::from_json(&json)
+    }
+
+    pub fn to_json_file(&self, path: &str) -> anyhow::Result<()> {
+        std::fs::write(path, self.to_json()?)?;
+        Ok(())
     }
 }
 

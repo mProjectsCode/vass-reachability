@@ -1146,6 +1146,7 @@ dependencies = [
  "serde_json",
  "toml",
  "tracing",
+ "tracing-subscriber",
  "vass-reach-macros",
  "z3",
 ]

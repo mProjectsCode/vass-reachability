@@ -7,20 +7,20 @@ use petgraph::{
 use rand::{Rng, RngExt};
 
 use crate::automaton::{
-    Alphabet, Automaton, AutomatonIterators, Deterministic, ExplicitEdgeAutomaton, Frozen,
+    Alphabet, Automaton, AutomatonIterators, Deterministic, ExplicitEdgeAutomaton, Frozen, GIndex,
     InitializedAutomaton, Language, ModifiableAutomaton, SingleFinalStateAutomaton,
+    TransitionSystem,
     cfg::{CFG, update::CFGCounterUpdate},
-    implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
     mgts::MGTS,
     path::Path,
 };
 
-type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
+type GenericPath<NIndex> = Path<NIndex, CFGCounterUpdate>;
 
 // TODO: die sollten auch nicht determistisch sein können
 #[derive(Debug, Clone)]
-pub struct MarkedGraph {
-    pub graph: DiGraph<MultiGraphState, CFGCounterUpdate>,
+pub struct MarkedGraph<NIndex: GIndex> {
+    pub graph: DiGraph<NIndex, CFGCounterUpdate>,
     // start index in the graph, this index refers to the node in the StableDiGraph, not the CFG
     pub start: NodeIndex,
     // end index in the graph, this index refers to the node in the StableDiGraph, not the CFG
@@ -28,9 +28,9 @@ pub struct MarkedGraph {
     pub alphabet: Vec<CFGCounterUpdate>,
 }
 
-impl MarkedGraph {
+impl<NIndex: GIndex> MarkedGraph<NIndex> {
     pub fn new(
-        graph: DiGraph<MultiGraphState, CFGCounterUpdate>,
+        graph: DiGraph<NIndex, CFGCounterUpdate>,
         start: NodeIndex,
         end: NodeIndex,
         alphabet: Vec<CFGCounterUpdate>,
@@ -57,12 +57,11 @@ impl MarkedGraph {
     /// Creates an MarkedGraph from a subset of nodes of a given CFG.
     /// The start and end nodes must be part of the subset.
     /// All indices are in the context of the CFG.
-    pub fn from_subset(
-        product: &ImplicitCFGProduct,
-        nodes: &[MultiGraphState],
-        start: MultiGraphState,
-        end: MultiGraphState,
-    ) -> Self {
+    pub fn from_subset<A>(automaton: &A, nodes: &[NIndex], start: NIndex, end: NIndex) -> Self
+    where
+        A: TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         assert!(
             nodes.contains(&start),
             "Start node {:?} must be in the subset of nodes",
@@ -74,7 +73,7 @@ impl MarkedGraph {
             end
         );
 
-        let mut graph: Graph<MultiGraphState, CFGCounterUpdate> = DiGraph::new();
+        let mut graph: Graph<NIndex, CFGCounterUpdate> = DiGraph::new();
         let mut node_map = HashMap::new();
 
         // Add nodes to the MGTS graph
@@ -86,9 +85,8 @@ impl MarkedGraph {
         // Add edges to the MGTS graph
         for state in nodes {
             let g_node = node_map[state];
-            for letter in product.alphabet() {
-                let target = state.take_letter(&product.cfgs, letter);
-                if let Some(target) = target
+            for letter in automaton.alphabet() {
+                if let Some(target) = automaton.successor(state, letter)
                     && nodes.contains(&target)
                 {
                     let g_target = node_map[&target];
@@ -101,21 +99,24 @@ impl MarkedGraph {
             graph,
             start: node_map[&start],
             end: node_map[&end],
-            alphabet: product.alphabet().to_vec(),
+            alphabet: automaton.alphabet().to_vec(),
         }
     }
 
-    pub fn product_start(&self) -> &MultiGraphState {
+    pub fn product_start(&self) -> &NIndex {
         self.get_node_unchecked(&self.start)
     }
 
-    pub fn product_end(&self) -> &MultiGraphState {
+    pub fn product_end(&self) -> &NIndex {
         self.get_node_unchecked(&self.end)
     }
 
     /// Maps a path in the MGTS back to a path in the CFG.
-    pub fn map_path_to_product(&self, path: &Path<NodeIndex, CFGCounterUpdate>) -> MultiGraphPath {
-        let mut mapped_path = MultiGraphPath::new(self.map_node_to_product(*path.start()).clone());
+    pub fn map_path_to_product(
+        &self,
+        path: &Path<NodeIndex, CFGCounterUpdate>,
+    ) -> GenericPath<NIndex> {
+        let mut mapped_path = GenericPath::new(self.map_node_to_product(*path.start()).clone());
 
         for (update, node) in path.iter() {
             let mapped_node = self.map_node_to_product(*node);
@@ -125,12 +126,12 @@ impl MarkedGraph {
         mapped_path
     }
 
-    pub fn map_node_to_product(&self, node: NodeIndex) -> &MultiGraphState {
+    pub fn map_node_to_product(&self, node: NodeIndex) -> &NIndex {
         &self.graph[node]
     }
 }
 
-impl Alphabet for MarkedGraph {
+impl<NIndex: GIndex> Alphabet for MarkedGraph<NIndex> {
     type Letter = CFGCounterUpdate;
 
     fn alphabet(&self) -> &[CFGCounterUpdate] {
@@ -138,24 +139,24 @@ impl Alphabet for MarkedGraph {
     }
 }
 
-impl Automaton<Deterministic> for MarkedGraph {
+impl<NIndex: GIndex> Automaton<Deterministic> for MarkedGraph<NIndex> {
     type NIndex = NodeIndex;
-    type N = MultiGraphState;
+    type N = NIndex;
 
     fn node_count(&self) -> usize {
         self.graph.node_count()
     }
 
-    fn get_node(&self, index: &Self::NIndex) -> Option<&MultiGraphState> {
+    fn get_node(&self, index: &Self::NIndex) -> Option<&NIndex> {
         self.graph.node_weight(*index)
     }
 
-    fn get_node_unchecked(&self, index: &Self::NIndex) -> &MultiGraphState {
+    fn get_node_unchecked(&self, index: &Self::NIndex) -> &NIndex {
         &self.graph[*index]
     }
 }
 
-impl ExplicitEdgeAutomaton<Deterministic> for MarkedGraph {
+impl<NIndex: GIndex> ExplicitEdgeAutomaton<Deterministic> for MarkedGraph<NIndex> {
     type EIndex = EdgeIndex;
     type E = CFGCounterUpdate;
 
@@ -216,8 +217,8 @@ impl ExplicitEdgeAutomaton<Deterministic> for MarkedGraph {
     }
 }
 
-impl ModifiableAutomaton<Deterministic> for MarkedGraph {
-    fn add_node(&mut self, data: MultiGraphState) -> Self::NIndex {
+impl<NIndex: GIndex> ModifiableAutomaton<Deterministic> for MarkedGraph<NIndex> {
+    fn add_node(&mut self, data: NIndex) -> Self::NIndex {
         self.graph.add_node(data)
     }
 
@@ -264,7 +265,7 @@ impl ModifiableAutomaton<Deterministic> for MarkedGraph {
     }
 }
 
-impl InitializedAutomaton<Deterministic> for MarkedGraph {
+impl<NIndex: GIndex> InitializedAutomaton<Deterministic> for MarkedGraph<NIndex> {
     fn get_initial(&self) -> Self::NIndex {
         self.start
     }
@@ -274,7 +275,7 @@ impl InitializedAutomaton<Deterministic> for MarkedGraph {
     }
 }
 
-impl SingleFinalStateAutomaton<Deterministic> for MarkedGraph {
+impl<NIndex: GIndex> SingleFinalStateAutomaton<Deterministic> for MarkedGraph<NIndex> {
     fn get_final(&self) -> Self::NIndex {
         self.end
     }
@@ -284,7 +285,7 @@ impl SingleFinalStateAutomaton<Deterministic> for MarkedGraph {
     }
 }
 
-impl Language for MarkedGraph {
+impl<NIndex: GIndex> Language for MarkedGraph<NIndex> {
     fn accepts<'a>(&self, _input: impl IntoIterator<Item = &'a CFGCounterUpdate>) -> bool
     where
         CFGCounterUpdate: 'a,
@@ -293,21 +294,21 @@ impl Language for MarkedGraph {
     }
 }
 
-impl CFG for MarkedGraph {}
+impl<NIndex: GIndex> CFG for MarkedGraph<NIndex> {}
 
 #[derive(Debug, Clone)]
-pub struct MarkedPath {
-    pub path: MultiGraphPath,
+pub struct MarkedPath<NIndex: GIndex> {
+    pub path: GenericPath<NIndex>,
 }
 
-impl MarkedPath {
-    pub fn new(path: MultiGraphPath) -> Self {
+impl<NIndex: GIndex> MarkedPath<NIndex> {
+    pub fn new(path: GenericPath<NIndex>) -> Self {
         MarkedPath { path }
     }
 }
 
-impl From<MultiGraphPath> for MarkedPath {
-    fn from(path: MultiGraphPath) -> Self {
+impl<NIndex: GIndex> From<GenericPath<NIndex>> for MarkedPath<NIndex> {
+    fn from(path: GenericPath<NIndex>) -> Self {
         MarkedPath::new(path)
     }
 }
@@ -321,7 +322,17 @@ pub enum MGTSPart {
 impl MGTSPart {
     /// Checks if the part contains the given node.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn contains_node(&self, mgts: &MGTS, node: &MultiGraphState) -> bool {
+    pub fn contains_node<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &MGTS<'a, NIndex, A>,
+        node: &NIndex,
+    ) -> bool
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => mgts.graph(*i).graph.node_weights().any(|n| n == node),
             MGTSPart::Path(i) => mgts.path(*i).path.contains_state(node),
@@ -329,7 +340,17 @@ impl MGTSPart {
     }
 
     // Checks if the part has the given node as start or end node.
-    pub fn has_node_as_extremal(&self, mgts: &MGTS, node: &MultiGraphState) -> bool {
+    pub fn has_node_as_extremal<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &MGTS<'a, NIndex, A>,
+        node: &NIndex,
+    ) -> bool
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => {
                 mgts.graph(*i).product_start() == node || mgts.graph(*i).product_end() == node
@@ -342,10 +363,16 @@ impl MGTSPart {
 
     /// Iters the nodes in this part.
     /// The node indices are in the context of the CFG, not the part itself.
-    pub fn iter_nodes<'a>(
+    pub fn iter_nodes<'a, NIndex: GIndex, A>(
         &'a self,
-        mgts: &'a MGTS<'a>,
-    ) -> Box<dyn Iterator<Item = &'a MultiGraphState> + 'a> {
+        mgts: &'a MGTS<'a, NIndex, A>,
+    ) -> Box<dyn Iterator<Item = &'a NIndex> + 'a>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => Box::new(mgts.graph(*i).graph.node_weights()),
             MGTSPart::Path(i) => Box::new(mgts.path(*i).path.iter_states()),
@@ -354,7 +381,13 @@ impl MGTSPart {
 
     /// Returns the start node of the part.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn start<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MultiGraphState {
+    pub fn start<'a, NIndex: GIndex, A>(&self, mgts: &'a MGTS<'a, NIndex, A>) -> &'a NIndex
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => mgts.graph(*i).product_start(),
             MGTSPart::Path(i) => mgts.path(*i).path.start(),
@@ -363,18 +396,30 @@ impl MGTSPart {
 
     /// Returns the end node of the part.
     /// The node index is in the context of the CFG, not the part itself.
-    pub fn end<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MultiGraphState {
+    pub fn end<'a, NIndex: GIndex, A>(&self, mgts: &'a MGTS<'a, NIndex, A>) -> &'a NIndex
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => mgts.graph(*i).product_end(),
             MGTSPart::Path(i) => mgts.path(*i).path.end(),
         }
     }
 
-    pub fn random_node<'a, T: Rng>(
+    pub fn random_node<'a, NIndex: GIndex, A, T: Rng>(
         &self,
-        mgts: &'a MGTS<'a>,
+        mgts: &'a MGTS<'a, NIndex, A>,
         random: &mut T,
-    ) -> &'a MultiGraphState {
+    ) -> &'a NIndex
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => {
                 let graph = mgts.graph(*i);
@@ -389,7 +434,13 @@ impl MGTSPart {
         }
     }
 
-    pub fn size(&self, mgts: &MGTS) -> usize {
+    pub fn size<'a, NIndex: GIndex, A>(&self, mgts: &MGTS<'a, NIndex, A>) -> usize
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => mgts.graph(*i).graph.node_count(),
             MGTSPart::Path(i) => mgts.path(*i).path.state_len(),
@@ -404,28 +455,64 @@ impl MGTSPart {
         matches!(self, MGTSPart::Graph(_))
     }
 
-    pub fn as_path<'a>(&self, mgts: &'a MGTS<'a>) -> Option<&'a MarkedPath> {
+    pub fn as_path<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &'a MGTS<'a, NIndex, A>,
+    ) -> Option<&'a MarkedPath<NIndex>>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Path(i) => Some(mgts.path(*i)),
             MGTSPart::Graph(_) => None,
         }
     }
 
-    pub fn as_graph<'a>(&self, mgts: &'a MGTS<'a>) -> Option<&'a MarkedGraph> {
+    pub fn as_graph<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &'a MGTS<'a, NIndex, A>,
+    ) -> Option<&'a MarkedGraph<NIndex>>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => Some(mgts.graph(*i)),
             MGTSPart::Path(_) => None,
         }
     }
 
-    pub fn unwrap_path<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MarkedPath {
+    pub fn unwrap_path<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &'a MGTS<'a, NIndex, A>,
+    ) -> &'a MarkedPath<NIndex>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Path(i) => mgts.path(*i),
             MGTSPart::Graph(_) => panic!("Called unwrap_path on a Graph part"),
         }
     }
 
-    pub fn unwrap_graph<'a>(&self, mgts: &'a MGTS<'a>) -> &'a MarkedGraph {
+    pub fn unwrap_graph<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &'a MGTS<'a, NIndex, A>,
+    ) -> &'a MarkedGraph<NIndex>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + crate::automaton::scc::SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         match self {
             MGTSPart::Graph(i) => mgts.graph(*i),
             MGTSPart::Path(_) => panic!("Called unwrap_graph on a Path part"),

@@ -188,3 +188,60 @@ fn test_vass_n_reach_7() {
 
     assert!(!res.is_success());
 }
+
+#[test]
+fn test_vass_n_reach_rejects_z_unreachable_before_iterations() {
+    let mut vass = VASS::<u32, char>::new(2, vec!['a', 'b']);
+    let q0 = vass.add_node(0);
+    let q1 = vass.add_node(1);
+
+    vass.add_edge(&q0, &q0, VASSEdge::new('a', vec![2, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('b', vec![-2, 0].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![-2, 0].into()));
+
+    let initialized_vass = vass.init(vec![0, 0].into(), vec![1, 0].into(), q0, q1);
+
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::from_secs(5)))
+            .with_preprocessing(
+                vass_reach_lib::config::PreprocessingConfig::default()
+                    .with_enabled(true)
+                    .with_z_reach_precheck_enabled(true),
+            ),
+    )
+    .solve();
+
+    assert!(res.is_failure());
+    assert_eq!(res.statistics.step_count, 0);
+}
+
+#[test]
+fn test_vass_n_reach_can_disable_z_reach_precheck() {
+    let mut vass = VASS::<u32, char>::new(2, vec!['a', 'b']);
+    let q0 = vass.add_node(0);
+    let q1 = vass.add_node(1);
+
+    vass.add_edge(&q0, &q0, VASSEdge::new('a', vec![2, 0].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new('b', vec![-2, 0].into()));
+    vass.add_edge(&q1, &q1, VASSEdge::new('b', vec![-2, 0].into()));
+
+    let initialized_vass = vass.init(vec![0, 0].into(), vec![1, 0].into(), q0, q1);
+
+    let res = VASSReachSolver::new(
+        &initialized_vass,
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::from_secs(5)))
+            .with_mgts(vass_reach_lib::config::MGTSConfig::default().with_enabled(false))
+            .with_preprocessing(
+                vass_reach_lib::config::PreprocessingConfig::default()
+                    .with_enabled(true)
+                    .with_z_reach_precheck_enabled(false),
+            ),
+    )
+    .solve();
+
+    assert!(res.is_failure());
+    assert!(res.statistics.step_count > 0);
+}

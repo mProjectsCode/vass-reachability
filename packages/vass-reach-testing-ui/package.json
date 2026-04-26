@@ -1,22 +1,31 @@
 {
-    "name": "vass-reach-testing-ui",
-    "private": true,
-    "version": "0.0.0",
-    "type": "module",
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "preview": "vite preview",
-        "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
-    },
-    "devDependencies": {
-        "@sveltejs/vite-plugin-svelte": "^6.2.4",
-        "@tsconfig/svelte": "^5.0.8",
-        "@types/node": "^25.2.3",
-        "svelte": "^5.51.3",
-        "svelte-check": "^4.4.0",
-        "typescript": "~5.9.3",
-        "vite": "^7.3.1",
-        "svelteplot": "^0.10.3"
-    }
+	"name": "vass-reach-testing-ui",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+		"format": "prettier --write .",
+		"format:check": "prettier --check ."
+	},
+	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@tsconfig/svelte": "^5.0.8",
+		"@types/node": "^25.6.0",
+		"astro": "^5.16.1",
+		"prettier": "^3.6.2",
+		"prettier-plugin-astro": "^0.14.1",
+		"prettier-plugin-svelte": "^3.4.0",
+		"svelte": "^5.55.5",
+		"svelte-check": "^4.4.6",
+		"svelteplot": "^0.14.2",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.10"
+	},
+	"dependencies": {
+		"@viz-js/viz": "^3.26.0"
+	}
 }

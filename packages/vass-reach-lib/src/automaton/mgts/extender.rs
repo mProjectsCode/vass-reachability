@@ -29,10 +29,10 @@ type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 #[derive(Debug)]
 pub struct MGTSExtender<'a> {
     /// The current MGTS being extended.
-    pub mgts: MGTS<'a>,
+    pub mgts: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
     /// The previous MGTS before the last extension.
     /// This is used to backtrack if the current MGTS becomes reachable.
-    pub old_mgts: Option<MGTS<'a>>,
+    pub old_mgts: Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>>,
     /// Reference to the underlying CFG.
     pub product: &'a ImplicitCFGProduct,
     /// Dimension of the CFG.
@@ -163,7 +163,11 @@ impl<'a> MGTSExtender<'a> {
 }
 
 pub trait ExtensionStrategy {
-    fn extend<'a>(&mut self, mgts: &MGTS<'a>, step: u64) -> Option<MGTS<'a>>;
+    fn extend<'a>(
+        &mut self,
+        mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        step: u64,
+    ) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>>;
 
     fn on_rollback(&mut self, solution: &MGTSSolution);
 }
@@ -190,7 +194,11 @@ impl ExtensionStrategyEnum {
         }
     }
 
-    pub fn extend<'a>(&mut self, mgts: &MGTS<'a>, step: u64) -> Option<MGTS<'a>> {
+    pub fn extend<'a>(
+        &mut self,
+        mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        step: u64,
+    ) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
         match self {
             ExtensionStrategyEnum::RandomNode(strategy) => strategy.extend(mgts, step),
             ExtensionStrategyEnum::RandomSCC(strategy) => strategy.extend(mgts, step),
@@ -217,7 +225,11 @@ impl CompletePartialSCCStrategy {
 }
 
 impl ExtensionStrategy for CompletePartialSCCStrategy {
-    fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {
+    fn extend<'a>(
+        &mut self,
+        mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        _step: u64,
+    ) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
         for part in &mgts.sequence {
             let MGTSPart::Graph(graph_idx) = part else {
                 continue;
@@ -227,7 +239,7 @@ impl ExtensionStrategy for CompletePartialSCCStrategy {
             let start = graph.product_start().clone();
             let end = graph.product_end().clone();
 
-            let full_scc_set = mgts.product.find_scc_surrounding(start.clone());
+            let full_scc_set = mgts.automaton.find_scc_surrounding(start.clone());
             tracing::debug!(
                 "CompletePartialSCCStrategy: Found SCC of size {} around node {:?}",
                 full_scc_set.len(),
@@ -253,7 +265,7 @@ impl ExtensionStrategy for CompletePartialSCCStrategy {
 
             let mut extended = mgts.clone();
             extended.graphs[*graph_idx] =
-                MarkedGraph::from_subset(mgts.product, &full_scc, start, end);
+                MarkedGraph::from_subset(mgts.automaton, &full_scc, start, end);
             extended.assert_consistent();
 
             return Some(extended);
@@ -287,13 +299,17 @@ impl RandomNodeStrategy {
 }
 
 impl ExtensionStrategy for RandomNodeStrategy {
-    fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {
+    fn extend<'a>(
+        &mut self,
+        mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        _step: u64,
+    ) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
         for _ in 0..self.max_retries {
             let parts_len = mgts.sequence.len();
             let part_index = self.random.random_range(0..parts_len);
             let state = mgts.sequence[part_index].random_node(mgts, &mut self.random);
 
-            let neighbors: Vec<_> = mgts.product.undirected_neighbors(state);
+            let neighbors: Vec<_> = mgts.automaton.undirected_neighbors(state);
 
             let selected = neighbors
                 .iter()
@@ -337,7 +353,11 @@ impl RandomSCCStrategy {
 }
 
 impl ExtensionStrategy for RandomSCCStrategy {
-    fn extend<'a>(&mut self, mgts: &MGTS<'a>, _step: u64) -> Option<MGTS<'a>> {
+    fn extend<'a>(
+        &mut self,
+        mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        _step: u64,
+    ) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
         for _ in 0..self.max_retries {
             let paths = mgts
                 .sequence

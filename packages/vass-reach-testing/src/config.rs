@@ -159,7 +159,8 @@ pub struct TestRunConfig {
     pub max_parallel: u64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(default)]
 pub struct InstanceConfig {
     pub num_instances: usize,
     pub seed: u64,
@@ -167,6 +168,7 @@ pub struct InstanceConfig {
     pub petri_net_transitions: usize,
     pub petri_net_max_tokens_per_transition: usize,
     pub petri_net_no_guards: bool,
+    pub hand_picked_instances: Vec<String>,
 }
 
 impl InstanceConfig {

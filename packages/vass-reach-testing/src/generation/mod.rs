@@ -11,6 +11,12 @@ pub fn generate(args: &Args) -> anyhow::Result<()> {
     let test = Test::canonicalize(folder)?;
     let config = test.instance_config()?;
 
+    if config.num_instances == 0 {
+        anyhow::bail!(
+            "instance generation requested but num_instances is 0; set random generation parameters in instances.toml"
+        );
+    }
+
     tracing::info!("Generating random Petri nets...");
 
     let random_petri_nets = generate_random_petri_net(

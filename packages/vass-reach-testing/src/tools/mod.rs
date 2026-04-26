@@ -22,6 +22,10 @@ pub trait Tool {
         config: &TestRunConfig,
     ) -> anyhow::Result<SolverRunResult>;
 
+    fn supports_instance_file(&self, file_path: &std::path::Path) -> bool {
+        file_path.extension().and_then(|ext| ext.to_str()) == Some("spec")
+    }
+
     fn get_tool_path(&self) -> anyhow::Result<std::path::PathBuf> {
         match self.tool_config().get(self.name()) {
             Some(path) => Ok(path.clone()),

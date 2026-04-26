@@ -15,6 +15,7 @@ use crate::automaton::{
 
 pub mod counter;
 pub mod initialized;
+pub mod omega;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VASSEdge<E: AutomatonEdge + FromLetter> {

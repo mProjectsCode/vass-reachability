@@ -578,3 +578,25 @@ fn mgts_from_path_roll_up() {
     assert!(mgts.accepts(&[cfg_inc!(0), cfg_dec!(0)]));
     assert!(!mgts.accepts(&[cfg_inc!(0), cfg_inc!(0)]));
 }
+
+#[test]
+fn mgts_from_path_roll_up_with_disabled_bounded_counting_keeps_trivial_path_states() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(2));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+    cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    cfg.add_edge(&s1, &s2, cfg_dec!(0));
+
+    let product = ImplicitCFGProduct::new(2, vec![0, 0].into(), vec![0, 0].into(), cfg, false);
+    let word = [cfg_inc!(0), cfg_dec!(0)];
+    let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
+
+    let mgts = MGTS::from_path_roll_up(path, &product, 2);
+
+    assert_eq!(mgts.sequence.len(), 1);
+    assert!(mgts.sequence[0].is_path());
+    assert!(mgts.accepts(&word));
+}

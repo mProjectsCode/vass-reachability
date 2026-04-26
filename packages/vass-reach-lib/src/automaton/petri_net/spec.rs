@@ -465,7 +465,7 @@ fn test_spec_1() {
         p1=2, p2=0, p3=0
     target
         p1=0, p2=0, p3=2"#;
-    let (_, spec) = PetriNetSpec::p(&spec_str).unwrap();
+    let (_, spec) = PetriNetSpec::p(spec_str).unwrap();
     assert_eq!(spec.variables, vec!["p1", "p2", "p3"]);
     assert_eq!(spec.rules.len(), 2);
     assert_eq!(spec.initial.atoms.len(), 3);

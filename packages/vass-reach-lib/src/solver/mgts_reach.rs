@@ -12,15 +12,16 @@ use z3::{Config, Context, Solver, ast::Int, with_z3_config};
 
 use crate::{
     automaton::{
-        AutomatonIterators, ExplicitEdgeAutomaton,
+        Alphabet, AutomatonIterators, Deterministic, ExplicitEdgeAutomaton, GIndex,
+        InitializedAutomaton, TransitionSystem,
         cfg::update::CFGCounterUpdate,
-        implicit_cfg_product::state::MultiGraphState,
         index_map::OptionIndexMap,
         mgts::{
             MGTS,
             part::{MGTSPart, MarkedGraph, MarkedPath},
         },
         path::{Path, parikh_image::ParikhImage},
+        scc::SCCAlgorithms,
         utils::{cfg_updates_to_counter_update, cfg_updates_to_counter_updates},
         vass::counter::VASSCounterValuation,
     },
@@ -29,8 +30,6 @@ use crate::{
         utils::{forbid_parikh_image, parikh_image_from_edge_map},
     },
 };
-
-type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 #[derive(Debug, Default)]
 pub struct MGTSReachSolverOptions {
@@ -65,12 +64,20 @@ impl MGTSReachSolverOptions {
         self
     }
 
-    pub fn to_solver<'g>(
+    pub fn to_solver<'g, NIndex: GIndex + Send + Sync, A>(
         self,
-        mgts: &'g MGTS<'g>,
+        mgts: &'g MGTS<'g, NIndex, A>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-    ) -> MGTSReachSolver<'g> {
+    ) -> MGTSReachSolver<'g, NIndex, A>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>
+            + Send
+            + Sync,
+    {
         MGTSReachSolver::new(mgts, initial_valuation, final_valuation, self)
     }
 }
@@ -83,7 +90,17 @@ pub struct MGTSSolution {
 }
 
 impl MGTSSolution {
-    pub fn build_run<'a>(&self, mgts: &MGTS<'a>, n_run: bool) -> Option<MultiGraphPath> {
+    pub fn build_run<'a, NIndex: GIndex, A>(
+        &self,
+        mgts: &MGTS<'a, NIndex, A>,
+        n_run: bool,
+    ) -> Option<Path<NIndex, CFGCounterUpdate>>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
         // the parikh image already determines the initial and final valuations when
         // entering and leaving graphs so we can simply build the runs for
         // each part independently and concatenate them
@@ -92,7 +109,7 @@ impl MGTSSolution {
 
         let dimension = self.initial_valuation.dimension();
 
-        let mut product_path = MultiGraphPath::new(mgts.product.initial());
+        let mut product_path = Path::<NIndex, CFGCounterUpdate>::new(mgts.automaton.get_initial());
 
         let mut current_valuation = self.initial_valuation.clone();
 
@@ -186,8 +203,16 @@ impl MGTSReachSolverResult {
     }
 }
 
-pub struct MGTSReachSolver<'g> {
-    mgts: &'g MGTS<'g>,
+pub struct MGTSReachSolver<'g, NIndex: GIndex + Send + Sync, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>
+        + Send
+        + Sync,
+{
+    mgts: &'g MGTS<'g, NIndex, A>,
     initial_valuation: &'g VASSCounterValuation,
     final_valuation: &'g VASSCounterValuation,
     options: MGTSReachSolverOptions,
@@ -196,9 +221,17 @@ pub struct MGTSReachSolver<'g> {
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'g> MGTSReachSolver<'g> {
+impl<'g, NIndex: GIndex + Send + Sync, A> MGTSReachSolver<'g, NIndex, A>
+where
+    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+        + SCCAlgorithms
+        + Alphabet<Letter = CFGCounterUpdate>
+        + Send
+        + Sync,
+{
     pub fn new(
-        mgts: &'g MGTS<'g>,
+        mgts: &'g MGTS<'g, NIndex, A>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
         options: MGTSReachSolverOptions,
@@ -370,7 +403,12 @@ impl<'g> MGTSReachSolver<'g> {
         }
     }
 
-    fn build_path_constraints(&self, path: &MarkedPath, solver: &Solver, sums: &mut Box<[Int]>) {
+    fn build_path_constraints(
+        &self,
+        path: &MarkedPath<NIndex>,
+        solver: &Solver,
+        sums: &mut Box<[Int]>,
+    ) {
         let path_updates = cfg_updates_to_counter_updates(
             path.path.transitions.iter().cloned(),
             self.mgts.dimension,
@@ -399,7 +437,7 @@ impl<'g> MGTSReachSolver<'g> {
     fn build_graph_constraints(
         &self,
         part_index: usize,
-        graph: &MarkedGraph,
+        graph: &MarkedGraph<NIndex>,
         solver: &Solver,
         sums: &mut Box<[Int]>,
     ) -> OptionIndexMap<EdgeIndex, Int> {

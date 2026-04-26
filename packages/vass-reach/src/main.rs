@@ -73,8 +73,7 @@ fn main() -> anyhow::Result<()> {
 
     let config = ModeWithConfig::from_file(args.mode, args.config)?;
 
-    let petri_net = InitializedPetriNet::from_file(&args.file)?;
-    let vass = petri_net.to_vass();
+    let vass = load_initialized_vass(&args.file)?;
 
     match config {
         ModeWithConfig::N(c) => {
@@ -98,4 +97,15 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn load_initialized_vass(
+    file: &str,
+) -> anyhow::Result<vass_reach_lib::automaton::vass::initialized::InitializedVASS<usize, usize>> {
+    if file.ends_with(".vass.json") {
+        return vass_reach_lib::automaton::vass::initialized::InitializedVASS::from_json_file(file);
+    }
+
+    let petri_net = InitializedPetriNet::from_file(file)?;
+    Ok(petri_net.to_vass())
 }

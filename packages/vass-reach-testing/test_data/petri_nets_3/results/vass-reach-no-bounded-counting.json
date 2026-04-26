@@ -2,410 +2,20 @@
   "tool": "vass-reach",
   "run_name": "vass-reach-no-bounded-counting",
   "results": {
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_62.spec": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_81.spec": {
       "result": {
         "Success": {
           "status": "False",
           "statistics": null
         }
       },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_22.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 59
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_24.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_96.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_78.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_61.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
+      "ms_taken": 10
     },
     "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_55.spec": {
       "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: vass-reach_run_net_55.scope; invocation ID: d5e3195145f34d7b9c03b6359e67807a\n"
       },
-      "ms_taken": 102
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_47.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 134
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_99.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 109
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_71.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 75
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_28.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_25.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_10.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 77
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_91.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 61
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_49.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 75
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_89.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 136
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_67.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 60
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_56.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_77.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 101
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_42.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_9.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_63.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 102
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_64.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 77
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_27.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_41.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 95
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_23.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 102
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_86.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 101
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_54.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_98.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 60
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_12.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 77
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_60.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 133
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_18.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_6.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_95.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_19.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 67
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_79.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_38.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_50.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_90.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 134
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_94.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 75
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_76.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_2.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 61
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_29.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 113
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_44.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 168
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_13.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 98
+      "ms_taken": 20249
     },
     "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_93.spec": {
       "result": {
@@ -414,250 +24,7 @@
           "statistics": null
         }
       },
-      "ms_taken": 138
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_65.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_37.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_85.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 63
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_16.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_48.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_17.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 140
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_88.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_46.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_32.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 111
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_70.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_5.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 95
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_73.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 74
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_39.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 61
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_45.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 77
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_87.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 65
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_26.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 116
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_69.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 131
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_36.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 146
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_72.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_84.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_15.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 96
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_35.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 103
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_34.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 59
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_14.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_97.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_59.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 102
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_53.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 59
+      "ms_taken": 101
     },
     "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_68.spec": {
       "result": {
@@ -666,205 +33,34 @@
           "statistics": null
         }
       },
-      "ms_taken": 67
+      "ms_taken": 9
     },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_92.spec": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_34.spec": {
       "result": {
         "Success": {
           "status": "False",
           "statistics": null
         }
       },
-      "ms_taken": 61
+      "ms_taken": 7
     },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_33.spec": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_29.spec": {
       "result": {
         "Success": {
           "status": "False",
           "statistics": null
         }
       },
-      "ms_taken": 65
+      "ms_taken": 110
     },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_8.spec": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_59.spec": {
       "result": {
         "Success": {
           "status": "False",
           "statistics": null
         }
       },
-      "ms_taken": 60
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_7.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 75
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_57.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 75
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_66.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 70
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_80.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 95
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_31.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 97
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_51.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 103
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_21.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 131
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_75.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 59
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_0.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_43.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_40.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 97
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_30.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 101
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_3.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 135
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_83.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 102
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_4.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 102
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_11.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 60
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_81.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 76
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_74.spec": {
-      "result": {
-        "Success": {
-          "status": "False",
-          "statistics": null
-        }
-      },
-      "ms_taken": 66
-    },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_20.spec": {
-      "result": {
-        "Success": {
-          "status": "True",
-          "statistics": null
-        }
-      },
-      "ms_taken": 103
+      "ms_taken": 115
     },
     "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_58.spec": {
       "result": {
@@ -873,7 +69,169 @@
           "statistics": null
         }
       },
-      "ms_taken": 102
+      "ms_taken": 113
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_84.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 13
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_70.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 6
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_20.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 158
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_45.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 114
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_63.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 8
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_7.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 7
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_3.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 83
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_79.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 126
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_40.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 71
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_76.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 101
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_85.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 56
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_12.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 166
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_11.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 170
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_18.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 28
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_36.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 117
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_96.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 10
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_16.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 21
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_88.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 15
     },
     "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_82.spec": {
       "result": {
@@ -882,16 +240,76 @@
           "statistics": null
         }
       },
-      "ms_taken": 64
+      "ms_taken": 110
     },
-    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_1.spec": {
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_87.spec": {
       "result": {
         "Success": {
-          "status": "True",
+          "status": "False",
           "statistics": null
         }
       },
-      "ms_taken": 70
+      "ms_taken": 60
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_15.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 196
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_33.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 100
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_74.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 61
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_94.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: vass-reach_run_net_94.scope; invocation ID: 489cace0444d47f3bda11719bdacafe8\n"
+      },
+      "ms_taken": 20009
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_97.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 118
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_98.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 7
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_4.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 122
     },
     "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_52.spec": {
       "result": {
@@ -900,7 +318,574 @@
           "statistics": null
         }
       },
-      "ms_taken": 141
+      "ms_taken": 10
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_64.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 7
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_65.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 76
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_90.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 114
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_0.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 109
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_41.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 55
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_47.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 110
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_95.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 58
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_17.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 108
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_28.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 156
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_6.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 91
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_69.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 117
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_67.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 8
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_26.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 215
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_80.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 103
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_78.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 47
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_73.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 6
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_21.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 9
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_42.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 232
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_23.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 124
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_72.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 48
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_32.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 70
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_19.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 89
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_66.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 7
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_44.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 18
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_50.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 16
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_8.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 42
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_25.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 107
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_31.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: vass-reach_run_net_31.scope; invocation ID: 000bdcaa90954f6181f6dc5f7e4c9da7\n"
+      },
+      "ms_taken": 20170
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_38.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 73
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_48.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 17
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_56.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 10
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_61.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 13
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_46.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 85
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_62.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 23
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_57.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 85
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_75.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 106
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_37.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 136
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_35.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 20
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_39.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 9
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_2.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 185
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_27.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 6
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_43.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 68
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_51.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 64
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_71.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 8
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_14.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 110
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_86.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: vass-reach_run_net_86.scope; invocation ID: 981aad3823ad468f87ff615e0cc67a8b\n"
+      },
+      "ms_taken": 20079
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_5.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 86
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_30.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 117
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_54.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 169
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_1.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 187
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_83.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 8
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_13.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 60
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_9.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 7
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_91.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 14
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_92.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 109
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_89.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 6
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_49.spec": {
+      "result": {
+        "Crash": "Process exited with status code signal: 15 (SIGTERM) and stderr:\n Running as unit: vass-reach_run_net_49.scope; invocation ID: 62a8494f02f6473c82a8bece4f375511\n"
+      },
+      "ms_taken": 20093
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_99.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 57
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_24.spec": {
+      "result": {
+        "Success": {
+          "status": "True",
+          "statistics": null
+        }
+      },
+      "ms_taken": 51
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_22.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 108
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_60.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 18
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_10.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 83
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_53.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 10
+    },
+    "/home/lemon/src/rust-automata/packages/vass-reach-testing/test_data/petri_nets_3/instances/net_77.spec": {
+      "result": {
+        "Success": {
+          "status": "False",
+          "statistics": null
+        }
+      },
+      "ms_taken": 102
     }
   }
 }

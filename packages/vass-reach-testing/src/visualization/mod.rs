@@ -2,8 +2,7 @@ use std::{fs, process::Command, sync::Arc};
 
 use anyhow::Context;
 use axum::{
-    Json, Router,
-    extract::State,
+    Router,
     http::{HeaderValue, Method, StatusCode},
     routing::{get, post},
 };
@@ -11,8 +10,11 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::{
     Args,
-    config::{Test, TestData, UIConfig, load_ui_config},
+    config::{UIConfig, load_ui_config},
 };
+
+mod api;
+mod trace_store;
 
 pub fn visualize(args: &Args) -> anyhow::Result<()> {
     let ui_config = load_ui_config()?;
@@ -40,8 +42,22 @@ async fn start_server(_args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
         .allow_headers(Any);
 
     let app = Router::new()
-        .route("/api/list_test_folders", get(list_test_folders_handler))
-        .route("/api/test_data", post(test_data_handler))
+        .route(
+            "/api/list_test_folders",
+            get(api::list_test_folders_handler),
+        )
+        .route("/api/test_data", post(api::test_data_handler))
+        .route("/api/list_traces", post(api::list_traces_handler))
+        .route("/api/list_trace_steps", post(api::list_trace_steps_handler))
+        .route("/api/trace_step_seed", post(api::trace_step_seed_handler))
+        .route(
+            "/api/trace_step_metadata",
+            post(api::trace_step_metadata_handler),
+        )
+        .route(
+            "/api/trace_step_scc_view",
+            post(api::trace_step_scc_view_handler),
+        )
         .with_state(Arc::clone(&config))
         .layer(cors_layer);
 
@@ -70,49 +86,9 @@ fn start_ui(ui_config: &UIConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_error(err: anyhow::Error) -> (StatusCode, String) {
+pub(crate) fn handle_error(err: anyhow::Error) -> (StatusCode, String) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         format!("Something went wrong: {err}"),
     )
-}
-
-async fn list_test_folders_handler(
-    State(config): State<Arc<UIConfig>>,
-) -> Result<Json<Vec<String>>, (StatusCode, String)> {
-    match list_test_folders_inner(config).await {
-        Ok(x) => Ok(x.into()),
-        Err(e) => Err(handle_error(e)),
-    }
-}
-
-async fn list_test_folders_inner(config: Arc<UIConfig>) -> anyhow::Result<Vec<String>> {
-    let folder = fs::canonicalize(&config.test_folders_path)?;
-    Ok(folder
-        .read_dir()?
-        .filter_map(|f| f.ok().map(|f| f.path()))
-        .filter(|f| f.is_dir())
-        .filter_map(|f| f.to_str().map(|s| s.to_string()))
-        .collect::<Vec<_>>())
-}
-
-async fn test_data_handler(
-    State(config): State<Arc<UIConfig>>,
-    Json(folder): Json<String>,
-) -> Result<Json<TestData>, (StatusCode, String)> {
-    println!("Handler");
-    match test_data_inner(folder, config).await {
-        Ok(x) => Ok(Json(x)),
-        Err(e) => Err(handle_error(e)),
-    }
-}
-
-async fn test_data_inner(folder: String, config: Arc<UIConfig>) -> anyhow::Result<TestData> {
-    let test = Test::from_string(folder)?;
-
-    if !test.is_inside_folder(&config.test_folders_path)? {
-        anyhow::bail!("Test folder is not in configured test folder");
-    }
-
-    test.try_into()
 }

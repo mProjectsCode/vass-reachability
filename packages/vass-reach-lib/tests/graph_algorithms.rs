@@ -179,3 +179,48 @@ fn scc_dag_shares_suffix_sccs_instead_of_duplicating_them() {
         vec![s4]
     );
 }
+
+#[test]
+fn with_rolled_trivial_paths_removes_non_root_trivial_components() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    let _e0 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    let _e1 = cfg.add_edge(&s1, &s2, cfg_dec!(0));
+    let _e2 = cfg.add_edge(&s2, &s3, cfg_inc!(0));
+
+    let dag = cfg.find_scc_dag();
+    let rolled = dag.with_rolled_trivial_paths();
+
+    assert_eq!(dag.components.len(), 4);
+    assert_eq!(rolled.components.len(), 2);
+
+    assert_eq!(rolled.root().nodes, vec![s0]);
+    assert_eq!(rolled.outgoing_edges(rolled.root_component).len(), 1);
+
+    let accepting_component = rolled.outgoing_edges(rolled.root_component)[0].target_component;
+    assert_eq!(rolled.components[accepting_component].nodes, vec![s3]);
+
+    assert!(
+        !rolled
+            .components
+            .iter()
+            .any(|component| component.nodes == vec![s1])
+    );
+    assert!(
+        !rolled
+            .components
+            .iter()
+            .any(|component| component.nodes == vec![s2])
+    );
+
+    assert_eq!(
+        rolled.outgoing_edges(rolled.root_component)[0].path.states,
+        vec![s0, s1, s2, s3]
+    );
+}

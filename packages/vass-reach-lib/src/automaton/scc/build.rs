@@ -1,10 +1,13 @@
-use std::cmp::Ordering;
-
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 
-use crate::automaton::{Deterministic, GIndex, InitializedAutomaton, Letter, path::Path};
+use super::{SCC, SCCDag, SCCDagEdge, sort_and_dedup_component_edges};
+use crate::automaton::{Deterministic, InitializedAutomaton, Letter, path::Path};
 
+type SCCComponents<NIndex> = (Vec<SCC<NIndex>>, HashMap<NIndex, usize>);
+
+/// SCC-related algorithms available for any initialized deterministic
+/// automaton.
 pub trait SCCAlgorithms: InitializedAutomaton<Deterministic> {
     /// Find the SCC surrounding a given node. Returns a vector of all the nodes
     /// that are part of the SCC.
@@ -39,6 +42,12 @@ pub trait SCCAlgorithms: InitializedAutomaton<Deterministic> {
         self.find_scc_dag_in_subgraph(initial, &reachable, |node| self.is_accepting(node))
     }
 
+    /// Builds an SCC DAG from a caller-provided node subset and acceptance
+    /// predicate.
+    ///
+    /// `allowed` bounds the graph to analyze. From this graph, only nodes that
+    /// can both be reached from `initial` and can still reach some
+    /// accepting node are retained before SCC condensation.
     fn find_scc_dag_in_subgraph<F>(
         &self,
         initial: Self::NIndex,
@@ -67,128 +76,6 @@ pub trait SCCAlgorithms: InitializedAutomaton<Deterministic> {
 
 impl<T: InitializedAutomaton<Deterministic>> SCCAlgorithms for T {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SCC<NIndex: GIndex> {
-    pub nodes: Vec<NIndex>,
-    pub accepting_nodes: Vec<NIndex>,
-    pub cyclic: bool,
-}
-
-impl<NIndex: GIndex> SCC<NIndex> {
-    pub fn is_trivial(&self) -> bool {
-        self.nodes.len() == 1 && !self.cyclic
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SCCDag<NIndex: GIndex, L: Letter> {
-    pub root_component: usize,
-    pub components: Vec<SCC<NIndex>>,
-    // For each component, the list of edges to other components.
-    pub edges: Vec<Vec<SCCDagEdge<NIndex, L>>>,
-    /// True iff non-accepting trivial SCCs have been bypassed so cross-
-    /// component edges may carry longer connector paths.
-    pub trivial_paths_rolled: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SCCDagEdge<NIndex: GIndex, L: Letter> {
-    // A path from the source component to the target component, represented as a sequence of
-    // states and transitions. The first state is part of the source component (and marks the
-    // exit point), the last state is part of the target component (and marks the entry point), and
-    // all intermediate states are outside of both components.
-    pub path: Path<NIndex, L>,
-    pub target_component: usize,
-}
-
-impl<NIndex: GIndex, L: Letter> SCCDag<NIndex, L> {
-    pub fn root(&self) -> &SCC<NIndex> {
-        &self.components[self.root_component]
-    }
-
-    pub fn outgoing_edges(&self, component: usize) -> &[SCCDagEdge<NIndex, L>] {
-        &self.edges[component]
-    }
-
-    /// Returns a copy where non-accepting trivial SCCs are bypassed by
-    /// concatenating incoming and outgoing edge paths.
-    ///
-    /// Accepting trivial SCCs are intentionally kept, because they represent
-    /// valid terminal stopping points.
-    pub fn with_rolled_trivial_paths(&self) -> Self {
-        if self.trivial_paths_rolled {
-            return self.clone();
-        }
-
-        let mut simplified = self.clone();
-
-        loop {
-            let mut changed = false;
-
-            for component in 0..simplified.components.len() {
-                if component == simplified.root_component {
-                    continue;
-                }
-
-                let scc = &simplified.components[component];
-                if !scc.is_trivial() || !scc.accepting_nodes.is_empty() {
-                    continue;
-                }
-
-                let outgoing = simplified.edges[component].clone();
-                let mut has_incoming = false;
-
-                for source in 0..simplified.edges.len() {
-                    if source == component {
-                        continue;
-                    }
-
-                    let mut next_edges = Vec::new();
-                    let mut rewrote_from_source = false;
-
-                    for edge in simplified.edges[source].iter().cloned() {
-                        if edge.target_component != component {
-                            next_edges.push(edge);
-                            continue;
-                        }
-
-                        has_incoming = true;
-                        rewrote_from_source = true;
-
-                        for out in &outgoing {
-                            let mut path = edge.path.clone();
-                            path.concat(out.path.clone());
-                            next_edges.push(SCCDagEdge {
-                                path,
-                                target_component: out.target_component,
-                            });
-                        }
-                    }
-
-                    if rewrote_from_source {
-                        sort_and_dedup_component_edges(&mut next_edges);
-                        simplified.edges[source] = next_edges;
-                        changed = true;
-                    }
-                }
-
-                if has_incoming {
-                    simplified.edges[component].clear();
-                }
-            }
-
-            if !changed {
-                break;
-            }
-        }
-
-        simplified.trivial_paths_rolled = true;
-        simplified
-    }
-}
-
-type SCCComponents<NIndex> = (Vec<SCC<NIndex>>, HashMap<NIndex, usize>);
-
 fn collect_relevant_scc_nodes_in_subgraph<A, F>(
     automaton: &A,
     initial: &A::NIndex,
@@ -199,6 +86,9 @@ where
     A: InitializedAutomaton<Deterministic> + ?Sized,
     F: Fn(&A::NIndex) -> bool,
 {
+    // 1) forward reachability from initial within `allowed`;
+    // 2) reverse reachability from all accepting states;
+    // 3) intersection is exactly nodes that can appear on accepting runs.
     let reachable = reachable_from(initial, |current| {
         Box::new(
             automaton
@@ -238,6 +128,9 @@ where
     A: InitializedAutomaton<Deterministic> + ?Sized,
     F: Fn(&A::NIndex) -> bool,
 {
+    // Iterative Kosaraju (https://en.wikipedia.org/wiki/Kosaraju%27s_algorithm):
+    // - DFS finish order on the forward graph,
+    // - DFS in reverse graph by decreasing finish time.
     let finish_order = compute_finish_order::<A>(automaton, relevant);
     let reverse_relevant = build_reverse_adjacency(automaton, relevant);
     collect_components_from_finish_order::<A, F>(
@@ -264,6 +157,7 @@ where
             continue;
         }
 
+        // Explicit stack avoids recursion depth limits on large graphs.
         let mut stack = vec![(node, false)];
         while let Some((current, expanded)) = stack.pop() {
             if expanded {
@@ -315,6 +209,8 @@ where
         let mut stack = vec![node.clone()];
         assigned.insert(node.clone());
 
+        // Reverse-graph flood fill collects exactly one SCC per seed node,
+        // because seeds are processed in decreasing forward finish time.
         while let Some(current) = stack.pop() {
             component_nodes.push(current.clone());
 
@@ -347,6 +243,7 @@ where
     A: InitializedAutomaton<Deterministic> + ?Sized,
     F: Fn(&A::NIndex) -> bool,
 {
+    // Singleton SCCs are cyclic iff they have an explicit self-loop.
     let cyclic = nodes.len() > 1
         || automaton
             .alphabet()
@@ -394,6 +291,7 @@ where
                     continue;
                 }
 
+                // Use a 1-step witness path for each direct boundary crossing.
                 let mut path = Path::new(node.clone());
                 path.add(letter.clone(), successor);
 
@@ -410,25 +308,14 @@ where
     component_edges
 }
 
-fn sort_and_dedup_component_edges<NIndex: GIndex, L: Letter>(
-    edges: &mut Vec<SCCDagEdge<NIndex, L>>,
-) {
-    edges.sort_by(|left, right| {
-        compare_paths(&left.path, &right.path)
-            .then(left.target_component.cmp(&right.target_component))
-    });
-    edges.dedup_by(|left, right| {
-        left.target_component == right.target_component && left.path == right.path
-    });
-}
-
 fn reachable_from<'a, NIndex>(
     start: &NIndex,
     mut next: impl FnMut(&NIndex) -> Box<dyn Iterator<Item = NIndex> + 'a>,
 ) -> HashSet<NIndex>
 where
-    NIndex: GIndex,
+    NIndex: crate::automaton::GIndex,
 {
+    // Generic non-recursive DFS helper used by both forward and reverse traversals.
     let mut visited = HashSet::new();
     let mut stack = vec![start.clone()];
 
@@ -452,8 +339,9 @@ fn reachable_from_many<'a, NIndex>(
     mut next: impl FnMut(&NIndex) -> Box<dyn Iterator<Item = NIndex> + 'a>,
 ) -> HashSet<NIndex>
 where
-    NIndex: GIndex,
+    NIndex: crate::automaton::GIndex,
 {
+    // Multi-source variant of `reachable_from`.
     let mut visited = HashSet::new();
     let mut stack = starts.into_iter().collect_vec();
 
@@ -479,6 +367,7 @@ fn build_reverse_adjacency<A>(
 where
     A: InitializedAutomaton<Deterministic> + ?Sized,
 {
+    // Materialize reverse edges once so SCC reverse traversals are cheap.
     let mut reverse = HashMap::<A::NIndex, Vec<A::NIndex>>::new();
 
     for node in relevant {
@@ -492,13 +381,4 @@ where
     }
 
     reverse
-}
-
-fn compare_paths<NIndex: GIndex, L: Letter>(
-    left: &Path<NIndex, L>,
-    right: &Path<NIndex, L>,
-) -> Ordering {
-    left.states
-        .cmp(&right.states)
-        .then(left.transitions.cmp(&right.transitions))
 }
