@@ -3,8 +3,8 @@ use std::sync::Arc;
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Deserialize;
 use vass_reach_lib::solver::vass_reach::debug_trace::{
-    DerivedSCCMetadata, StepTraceSeed, TraceStepSccViewSeed, derive_scc_component_view,
-    derive_scc_metadata,
+    DerivedSCCMetadata, StepTraceSeed, TraceStepSccCounterEffectSetSeed, TraceStepSccViewSeed,
+    derive_scc_component_view, derive_scc_counter_effect_set, derive_scc_metadata,
 };
 
 use super::{
@@ -38,6 +38,18 @@ pub(crate) struct TraceStepSccRequest {
     pub instance_name: String,
     pub step: u64,
     pub component_index: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct TraceStepSccCounterEffectsRequest {
+    pub folder: String,
+    pub run_name: String,
+    pub instance_name: String,
+    pub step: u64,
+    pub component_index: usize,
+    #[serde(alias = "entry_state")]
+    pub entry: Vec<usize>,
+    pub start_value: i64,
 }
 
 pub(crate) async fn list_test_folders_handler(
@@ -132,6 +144,34 @@ pub(crate) async fn trace_step_scc_view_handler(
             Ok(view) => Ok(Json(view)),
             Err(e) => Err(handle_error(e)),
         },
+        Err(e) => Err(handle_error(e)),
+    }
+}
+
+pub(crate) async fn trace_step_scc_counter_effects_handler(
+    State(config): State<Arc<UIConfig>>,
+    Json(req): Json<TraceStepSccCounterEffectsRequest>,
+) -> Result<Json<TraceStepSccCounterEffectSetSeed>, (StatusCode, String)> {
+    match trace_step_seed_inner(
+        req.folder,
+        req.run_name,
+        req.instance_name,
+        req.step,
+        config,
+    )
+    .await
+    {
+        Ok(seed) => {
+            match derive_scc_counter_effect_set(
+                &seed,
+                req.component_index,
+                &req.entry.into(),
+                req.start_value,
+            ) {
+                Ok(view) => Ok(Json(view)),
+                Err(e) => Err(handle_error(e)),
+            }
+        }
         Err(e) => Err(handle_error(e)),
     }
 }

@@ -11,7 +11,13 @@
 		run_y: string;
 	} = $props();
 
-	let without_crashes = $derived(plot_data.filter(x => !('Crash' in x.runs[run_x].result) && !('Crash' in x.runs[run_y].result)));
+	function is_non_success(result: { [key: string]: unknown }): boolean {
+		return 'Crash' in result || 'OOM' in result || 'Timeout' in result;
+	}
+
+	let without_crashes = $derived(
+		plot_data.filter(x => !is_non_success(x.runs[run_x].result as { [key: string]: unknown }) && !is_non_success(x.runs[run_y].result as { [key: string]: unknown })),
+	);
 
 	let average_speedup = $derived.by(() => {
 		let speedup = 0;

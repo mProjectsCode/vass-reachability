@@ -218,6 +218,21 @@ impl<N: GIndex, L: Letter> Path<N, L> {
         parts
     }
 
+    /// Returns the sorted union of all states visited by `paths`.
+    pub fn sorted_union_states(paths: &[Self]) -> Vec<N> {
+        let mut states = hashbrown::HashSet::new();
+
+        for path in paths {
+            for state in &path.states {
+                states.insert(state.clone());
+            }
+        }
+
+        let mut states = states.into_iter().collect::<Vec<_>>();
+        states.sort_unstable();
+        states
+    }
+
     pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
         Self {
             transitions: self.transitions[range.clone()].to_vec(),

@@ -1,6 +1,7 @@
 use std::ops::Index;
 
 use petgraph::graph::NodeIndex;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::automaton::{
     TransitionSystem,
@@ -80,6 +81,14 @@ impl From<Vec<NodeIndex>> for MultiGraphState {
     }
 }
 
+impl From<Vec<usize>> for MultiGraphState {
+    fn from(states: Vec<usize>) -> Self {
+        MultiGraphState {
+            states: states.iter().map(|x| NodeIndex::new(*x)).collect(),
+        }
+    }
+}
+
 impl From<Box<[NodeIndex]>> for MultiGraphState {
     fn from(states: Box<[NodeIndex]>) -> Self {
         MultiGraphState { states }
@@ -91,5 +100,30 @@ impl From<NodeIndex> for MultiGraphState {
         MultiGraphState {
             states: vec![state].into_boxed_slice(),
         }
+    }
+}
+
+impl Serialize for MultiGraphState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let indices: Vec<usize> = self.states.iter().map(|idx| idx.index()).collect();
+        indices.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MultiGraphState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let indices: Vec<usize> = Vec::deserialize(deserializer)?;
+        let states = indices
+            .into_iter()
+            .map(NodeIndex::new)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Ok(MultiGraphState { states })
     }
 }

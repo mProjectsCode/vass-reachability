@@ -1,4 +1,4 @@
-import type { DerivedSCCMetadata, StepTraceSeed, TestData, TraceRunInfo, TraceStepSccView } from './types';
+import type { DerivedSCCMetadata, StepTraceSeed, TestData, TraceRunInfo, TraceStepSccCounterEffectSet, TraceStepSccView } from './types';
 
 declare global {
 	interface Window {
@@ -106,6 +106,36 @@ export async function API_trace_step_scc_view(test_folder: string, run_name: str
 			instance_name,
 			step,
 			component_index,
+		}),
+		headers: {
+			'Content-Type': 'application/json',
+		},
+	});
+}
+
+export async function API_trace_step_scc_counter_effects(
+	test_folder: string,
+	run_name: string,
+	instance_name: string,
+	step: number,
+	component_index: number,
+	entry_state: number[],
+	start_value: number,
+): Promise<TraceStepSccCounterEffectSet> {
+	if (!Array.isArray(entry_state)) {
+		throw new Error('Missing required entry_state for /api/trace_step_scc_counter_effects request.');
+	}
+
+	return await fetch_json<TraceStepSccCounterEffectSet>('/api/trace_step_scc_counter_effects', {
+		method: 'POST',
+		body: JSON.stringify({
+			folder: test_folder,
+			run_name,
+			instance_name,
+			step,
+			component_index,
+			entry_state,
+			start_value,
 		}),
 		headers: {
 			'Content-Type': 'application/json',

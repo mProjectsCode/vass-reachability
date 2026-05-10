@@ -3,11 +3,13 @@ use std::cmp::Ordering;
 use crate::automaton::{GIndex, Letter, path::Path};
 
 mod build;
+mod cache;
 mod dag;
 mod graphviz;
 mod rolling;
 
 pub use build::SCCAlgorithms;
+pub use cache::{PrecomputedSccs, SccClass, SccClassifier};
 pub use dag::{SCC, SCCDag, SCCDagEdge};
 
 pub(super) fn sort_and_dedup_component_edges<NIndex: GIndex, L: Letter>(

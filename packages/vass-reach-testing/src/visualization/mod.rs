@@ -58,6 +58,10 @@ async fn start_server(_args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
             "/api/trace_step_scc_view",
             post(api::trace_step_scc_view_handler),
         )
+        .route(
+            "/api/trace_step_scc_counter_effects",
+            post(api::trace_step_scc_counter_effects_handler),
+        )
         .with_state(Arc::clone(&config))
         .layer(cors_layer);
 

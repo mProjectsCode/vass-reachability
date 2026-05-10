@@ -3,6 +3,8 @@ use std::{
     str::FromStr,
 };
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use crate::automaton::vass::counter::{VASSCounterIndex, VASSCounterValuation};
 
 /// Macro to create a cfg increment update
@@ -111,6 +113,25 @@ impl Display for CFGCounterUpdate {
 impl Debug for CFGCounterUpdate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
+    }
+}
+
+impl Serialize for CFGCounterUpdate {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for CFGCounterUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        CFGCounterUpdate::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 

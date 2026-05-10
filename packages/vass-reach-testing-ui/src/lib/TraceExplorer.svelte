@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { API_list_trace_steps, API_list_traces, API_trace_step_scc_view, API_trace_step_metadata, API_trace_step_seed } from '../fetch';
+	import { API_list_trace_steps, API_list_traces, API_trace_step_scc_counter_effects, API_trace_step_scc_view, API_trace_step_metadata, API_trace_step_seed } from '../fetch';
 	import type { TraceRunInfo } from '../types';
 	import DotGraph from './DotGraph.svelte';
 
@@ -27,6 +27,38 @@
 	let selected_scc_view = $derived(
 		selected_trace_run && selected_trace_instance && selected_trace_step !== undefined && selected_scc_component !== undefined
 			? await API_trace_step_scc_view(selected, selected_trace_run, selected_trace_instance, selected_trace_step, selected_scc_component)
+			: undefined,
+	);
+	let selected_scc_entry_key = $state<string | undefined>();
+	let scc_start_value = $state<number>(0);
+
+	type BoundaryState = { key: string; state: number[] };
+
+	function state_key(state: number[]): string {
+		return state.join(',');
+	}
+
+	let selected_scc_entries = $derived<BoundaryState[]>((selected_scc_view?.entries ?? []).map(state => ({ key: state_key(state), state })));
+	let selected_scc_exits = $derived<BoundaryState[]>((selected_scc_view?.exits ?? []).map(state => ({ key: state_key(state), state })));
+	let selected_scc_entry = $derived(selected_scc_entries.find(entry => entry.key === selected_scc_entry_key));
+	let selected_scc_view_is_current = $derived(selected_scc_component !== undefined && selected_scc_view?.component_index === selected_scc_component);
+	let selected_scc_entry_state = $derived(Array.isArray(selected_scc_entry?.state) ? selected_scc_entry.state : undefined);
+	let selected_scc_counter_effects = $derived(
+		selected_trace_run &&
+			selected_trace_instance &&
+			selected_trace_step !== undefined &&
+			selected_scc_component !== undefined &&
+			selected_scc_view_is_current &&
+			selected_scc_entry_state
+			? await API_trace_step_scc_counter_effects(
+					selected,
+					selected_trace_run,
+					selected_trace_instance,
+					selected_trace_step,
+					selected_scc_component,
+					selected_scc_entry_state,
+					Math.trunc(scc_start_value),
+				)
 			: undefined,
 	);
 
@@ -62,6 +94,10 @@
 	});
 
 	let selected_step_index = $derived(selected_trace_step === undefined ? -1 : available_steps.findIndex(step => step === selected_trace_step));
+
+	function format_vector(values: number[]): string {
+		return `[${values.join(', ')}]`;
+	}
 
 	$effect(() => {
 		selected;
@@ -115,11 +151,30 @@
 		const seed = selected_step_seed;
 		if (!seed) {
 			selected_scc_component = undefined;
+			selected_scc_entry_key = undefined;
 			return;
 		}
 
 		if (selected_scc_component === undefined || selected_scc_component >= seed.scc_dag.components.length) {
 			selected_scc_component = seed.scc_dag.root_component;
+		}
+	});
+
+	$effect(() => {
+		const component = selected_scc_component;
+		component;
+		selected_scc_entry_key = undefined;
+	});
+
+	$effect(() => {
+		const entries = selected_scc_entries;
+		if (entries.length === 0) {
+			selected_scc_entry_key = undefined;
+			return;
+		}
+
+		if (!selected_scc_entry_key || !entries.some(entry => entry.key === selected_scc_entry_key)) {
+			selected_scc_entry_key = entries[0].key;
 		}
 	});
 </script>
@@ -293,6 +348,7 @@
 						<div class="trace-inline-summary">
 							<span class="trace-stat-pill">entries {selected_scc_view.entries.length}</span>
 							<span class="trace-stat-pill">exits {selected_scc_view.exits.length}</span>
+							<span class="trace-stat-pill">effect classes {selected_scc_counter_effects?.effect_set.length ?? 0}</span>
 							{#if selected_scc_component === selected_step_seed.scc_dag.root_component}
 								<span class="trace-stat-pill">includes root entry</span>
 							{/if}
@@ -302,10 +358,10 @@
 							<div class="trace-info-card">
 								<div class="trace-card-title">Entries</div>
 								<div class="trace-boundary-list">
-									{#if selected_scc_view.entries.length === 0}
+									{#if selected_scc_entries.length === 0}
 										<span class="trace-muted">none</span>
 									{:else}
-										{#each selected_scc_view.entries as entry}
+										{#each selected_scc_entries as entry}
 											<span class="trace-boundary-chip entry">{entry.key}</span>
 										{/each}
 									{/if}
@@ -314,15 +370,76 @@
 							<div class="trace-info-card">
 								<div class="trace-card-title">Exits</div>
 								<div class="trace-boundary-list">
-									{#if selected_scc_view.exits.length === 0}
+									{#if selected_scc_exits.length === 0}
 										<span class="trace-muted">none</span>
 									{:else}
-										{#each selected_scc_view.exits as exit}
+										{#each selected_scc_exits as exit}
 											<span class="trace-boundary-chip exit">{exit.key}</span>
 										{/each}
 									{/if}
 								</div>
 							</div>
+						</div>
+
+						<div class="trace-selector-row">
+							<span class="trace-selector-label">Entry For Counter Effects</span>
+							<div class="trace-chip-list">
+								{#if selected_scc_entries.length === 0}
+									<span class="trace-muted">No entry node available in this SCC.</span>
+								{:else}
+									{#each selected_scc_entries as entry}
+										<button
+											type="button"
+											class:trace-chip={true}
+											class:is-selected={selected_scc_entry_key === entry.key}
+											onclick={() => {
+												selected_scc_entry_key = entry.key;
+											}}
+										>
+											{entry.key}
+										</button>
+									{/each}
+								{/if}
+							</div>
+						</div>
+
+						<div class="trace-selector-row">
+							<span class="trace-selector-label">Start Counter Value (all counters)</span>
+							<div class="trace-chip-list">
+								<input type="number" bind:value={scc_start_value} step="1" />
+								<span class="trace-muted">only cycles that stay non-negative are kept</span>
+							</div>
+						</div>
+
+						<div class="trace-info-card">
+							<div class="trace-card-title">Counter Effect Set</div>
+							{#if !selected_scc_entry}
+								<div class="trace-muted">Select an entry node to derive rooted basic cycles.</div>
+							{:else if !selected_scc_counter_effects}
+								<div class="trace-muted">Loading counter effects...</div>
+							{:else}
+								<div>entry <strong>{format_vector(selected_scc_counter_effects.entry)}</strong></div>
+								<div>start value <strong>{selected_scc_counter_effects.start_value}</strong></div>
+								<div>dimension <strong>{selected_scc_counter_effects.dimension}</strong></div>
+								<div>basic cycles <strong>{selected_scc_counter_effects.total_cycles}</strong></div>
+								<div>effect classes <strong>{selected_scc_counter_effects.effect_set.length}</strong></div>
+								{#if selected_scc_counter_effects.capped}
+									<div class="trace-muted">Cycle enumeration capped for readability and performance.</div>
+								{/if}
+
+								{#if selected_scc_counter_effects.effect_set.length === 0}
+									<div class="trace-muted">No rooted cycle effect found from this entry.</div>
+								{:else}
+									<div class="trace-effect-list">
+										{#each selected_scc_counter_effects.effect_set as effect}
+											<div class="trace-effect-row">
+												<div>effect <strong>{format_vector(effect.effect)}</strong></div>
+												<div class="trace-muted">sample cycle length {effect.sample_cycle.transitions.length}</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							{/if}
 						</div>
 					</div>
 
@@ -331,17 +448,6 @@
 						<DotGraph dot={selected_scc_view.dot} />
 					</div>
 				{/if}
-			</div>
-
-			<div class="trace-details-grid">
-				<details>
-					<summary>Step seed JSON</summary>
-					<pre>{JSON.stringify(selected_step_seed, null, 2)}</pre>
-				</details>
-				<details>
-					<summary>Derived metadata JSON</summary>
-					<pre>{JSON.stringify(selected_step_metadata, null, 2)}</pre>
-				</details>
 			</div>
 		{/if}
 	{/if}

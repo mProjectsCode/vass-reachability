@@ -61,6 +61,7 @@ export interface InstanceConfig {
 	petri_net_transitions: number;
 	petri_net_max_tokens_per_transition: number;
 	petri_net_no_guards: boolean;
+	hand_picked_instances: string[];
 }
 
 export interface TestConfig {
@@ -73,6 +74,7 @@ export interface TestRunConfig {
 	name: string;
 	tool: string;
 	config: string;
+	max_parallel: number;
 }
 
 export interface ToolResult {
@@ -95,6 +97,12 @@ export type SolverRunResult =
 	  }
 	| {
 			Crash: string;
+	  }
+	| {
+			OOM: null;
+	  }
+	| {
+			Timeout: null;
 	  };
 
 export interface TraceRunInfo {
@@ -141,6 +149,7 @@ export interface SCCDagSeed {
 export interface StepTraceSeed {
 	schema_version: number;
 	step: number;
+	initial_valuation?: number[] | null;
 	found_path: FoundPathSeed;
 	scc_dag: SCCDagSeed;
 }
@@ -151,14 +160,31 @@ export interface DerivedSCCMetadata {
 	cyclic_components: boolean[];
 }
 
-export interface BoundaryState {
-	key: string;
-	state: number[];
-}
-
 export interface TraceStepSccView {
 	component_index: number;
 	dot: string;
-	entries: BoundaryState[];
-	exits: BoundaryState[];
+	entries: number[][];
+	exits: number[][];
+}
+
+export interface SccCycleCounterEffect {
+	states: number[][];
+	transitions: string[];
+	effect: number[];
+}
+
+export interface SccCounterEffectRepresentative {
+	effect: number[];
+	sample_cycle: SccCycleCounterEffect;
+}
+
+export interface TraceStepSccCounterEffectSet {
+	component_index: number;
+	entry: number[];
+	start_value: number;
+	dimension: number;
+	total_cycles: number;
+	capped: boolean;
+	basic_cycles: SccCycleCounterEffect[];
+	effect_set: SccCounterEffectRepresentative[];
 }

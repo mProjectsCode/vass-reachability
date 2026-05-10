@@ -103,9 +103,9 @@ fn difficult_instance() {
         // some time that is long enough, but makes the test run in a reasonable time
         VASSReachConfig::default()
             .with_timeout(Some(Duration::from_mins(5)))
-            .with_max_iterations(Some(2))
+            .with_max_iterations(Some(100))
             .with_bounded_counting_enabled(false)
-            .with_preprocessing(PreprocessingConfig::default().with_enabled(true)),
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
     )
     .solve();
 }

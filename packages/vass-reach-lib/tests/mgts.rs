@@ -6,11 +6,7 @@ use vass_reach_lib::{
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        mgts::{
-            MGTS,
-            extender::{CompletePartialSCCStrategy, ExtensionStrategy},
-            part::MarkedGraph,
-        },
+        mgts::{MGTS, extender::MGTSExtender, part::MarkedGraph},
         path::Path,
         vass::{VASS, VASSEdge},
     },
@@ -20,6 +16,18 @@ use vass_reach_lib::{
 };
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
+
+fn assert_mgts_is_unreachable(mgts: &MGTS<'_, MultiGraphState, ImplicitCFGProduct>) {
+    let res = MGTSReachSolverOptions::default()
+        .to_solver(
+            mgts,
+            &mgts.automaton.initial_valuation,
+            &mgts.automaton.final_valuation,
+        )
+        .solve();
+
+    assert!(res.is_failure());
+}
 
 #[test]
 fn lgs_1() {
@@ -476,57 +484,140 @@ fn mgts_from_path_roll_up_branch_specific() {
 }
 
 #[test]
-fn complete_partial_scc_strategy_expands_and_then_stops() {
+fn mgts_extender_selects_full_scc_when_unreachable() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
     let s1 = cfg.add_node(DfaNode::non_accepting(()));
     let s2 = cfg.add_node(DfaNode::non_accepting(()));
-    let s3 = cfg.add_node(DfaNode::non_accepting(()));
-    let s4 = cfg.add_node(DfaNode::accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
 
     cfg.set_initial(s0);
 
-    let _e0 = cfg.add_edge(&s0, &s1, cfg_inc!(0));
-    let _e1 = cfg.add_edge(&s1, &s2, cfg_inc!(0));
-    let _e2 = cfg.add_edge(&s2, &s1, cfg_dec!(0));
-    let _e3 = cfg.add_edge(&s2, &s3, cfg_inc!(0));
-    let _e4 = cfg.add_edge(&s3, &s1, cfg_dec!(0));
-    let _e5 = cfg.add_edge(&s1, &s4, cfg_dec!(0));
+    cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    cfg.add_edge(&s1, &s3, cfg_dec!(0));
+    cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    cfg.add_edge(&s2, &s1, cfg_dec!(0));
 
     let product =
-        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![0].into(), cfg);
-
-    // This path visits only {s1, s2} from the full SCC {s1, s2, s3},
-    // so from_path_roll_up creates a partial SCC graph part.
-    let word = [cfg_inc!(0), cfg_inc!(0), cfg_dec!(0), cfg_dec!(0)];
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![1].into(), cfg);
+    let word = [cfg_inc!(0), cfg_dec!(0)];
     let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
-    let mgts = MGTS::from_path_roll_up(path, &product, 1);
 
-    let graph_idx = mgts
-        .sequence
-        .iter()
-        .find_map(|part| {
-            if let vass_reach_lib::automaton::mgts::part::MGTSPart::Graph(idx) = part {
-                Some(*idx)
-            } else {
-                None
-            }
-        })
-        .expect("roll-up MGTS should contain an SCC graph part");
+    let mut extender = MGTSExtender::from_cfg_product(path, &product, 10);
+    let mgts = extender.run_mgts();
 
-    let partial_node_count = mgts.graph(graph_idx).graph.node_count();
-    assert_eq!(partial_node_count, 2);
+    assert_mgts_is_unreachable(&mgts);
+    assert!(mgts.accepts(&word));
+    assert!(
+        mgts.iter_graph_parts()
+            .any(|graph| graph.graph.node_count() == 2)
+    );
+}
 
-    let mut strategy = CompletePartialSCCStrategy::new();
-    let extended = strategy
-        .extend(&mgts, 0)
-        .expect("strategy should extend an incomplete SCC");
+#[test]
+fn mgts_extender_rejects_full_scc_when_reachable() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(1));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
 
-    let full_node_count = extended.graph(graph_idx).graph.node_count();
-    assert_eq!(full_node_count, 3);
+    cfg.set_initial(s0);
 
-    // Once SCCs are complete, strategy must stop.
-    assert!(strategy.extend(&extended, 1).is_none());
+    cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    cfg.add_edge(&s1, &s3, cfg_dec!(0));
+    cfg.add_edge(&s1, &s2, cfg_inc!(0));
+    cfg.add_edge(&s2, &s1, cfg_inc!(0));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(1, vec![0].into(), vec![2].into(), cfg);
+    let word = [cfg_inc!(0), cfg_dec!(0)];
+    let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
+
+    let mut extender = MGTSExtender::from_cfg_product(path, &product, 10);
+    let mgts = extender.run_mgts();
+
+    assert_mgts_is_unreachable(&mgts);
+    assert!(mgts.accepts(&word));
+    assert!(mgts.iter_graph_parts().next().is_none());
+}
+
+#[test]
+fn mgts_extender_merges_compatible_seed_paths() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(2));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let s1 = cfg.add_node(DfaNode::non_accepting(()));
+    let s2 = cfg.add_node(DfaNode::non_accepting(()));
+    let s3 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    cfg.add_edge(&s0, &s1, cfg_inc!(0));
+    cfg.add_edge(&s1, &s3, cfg_dec!(0));
+    cfg.add_edge(&s0, &s2, cfg_inc!(1));
+    cfg.add_edge(&s2, &s3, cfg_dec!(1));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(2, vec![0, 0].into(), vec![1, 0].into(), cfg);
+    let first_word = [cfg_inc!(0), cfg_dec!(0)];
+    let second_word = [cfg_inc!(1), cfg_dec!(1)];
+    let first = MultiGraphPath::from_word(product.initial(), &first_word, &product).unwrap();
+    let second = MultiGraphPath::from_word(product.initial(), &second_word, &product).unwrap();
+
+    let mut extender = MGTSExtender::from_cfg_product_paths(vec![first, second], &product, 10);
+    let mgts = extender.run_mgts();
+
+    assert_mgts_is_unreachable(&mgts);
+    assert!(mgts.accepts(&first_word));
+    assert!(mgts.accepts(&second_word));
+    assert!(mgts.contains_state(&MultiGraphState::from(s1)));
+    assert!(mgts.contains_state(&MultiGraphState::from(s2)));
+    assert!(
+        mgts.iter_graph_parts()
+            .any(|graph| graph.graph.node_count() == 4)
+    );
+}
+
+#[test]
+fn mgts_extender_drops_auxiliary_paths_with_different_scc_sequence() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(2));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let primary_entry = cfg.add_node(DfaNode::non_accepting(()));
+    let primary_extra = cfg.add_node(DfaNode::non_accepting(()));
+    let auxiliary_entry = cfg.add_node(DfaNode::non_accepting(()));
+    let auxiliary_extra = cfg.add_node(DfaNode::non_accepting(()));
+    let accepting = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    cfg.add_edge(&s0, &primary_entry, cfg_inc!(0));
+    cfg.add_edge(&primary_entry, &accepting, cfg_dec!(0));
+    cfg.add_edge(&primary_entry, &primary_extra, cfg_inc!(0));
+    cfg.add_edge(&primary_extra, &primary_entry, cfg_dec!(0));
+
+    cfg.add_edge(&s0, &auxiliary_entry, cfg_inc!(1));
+    cfg.add_edge(&auxiliary_entry, &accepting, cfg_dec!(1));
+    cfg.add_edge(&auxiliary_entry, &auxiliary_extra, cfg_inc!(1));
+    cfg.add_edge(&auxiliary_extra, &auxiliary_entry, cfg_dec!(1));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(2, vec![0, 0].into(), vec![1, 0].into(), cfg);
+    let primary_word = [cfg_inc!(0), cfg_dec!(0)];
+    let auxiliary_word = [cfg_inc!(1), cfg_dec!(1)];
+    let primary = MultiGraphPath::from_word(product.initial(), &primary_word, &product).unwrap();
+    let auxiliary =
+        MultiGraphPath::from_word(product.initial(), &auxiliary_word, &product).unwrap();
+
+    let mut extender =
+        MGTSExtender::from_cfg_product_primary_path(primary, vec![auxiliary], &product, 10);
+    let mgts = extender.run_mgts();
+
+    assert_mgts_is_unreachable(&mgts);
+    assert!(mgts.accepts(&primary_word));
+    assert!(mgts.contains_state(&MultiGraphState::from(primary_entry)));
+    assert!(mgts.contains_state(&MultiGraphState::from(primary_extra)));
+    assert!(!mgts.contains_state(&MultiGraphState::from(auxiliary_entry)));
+    assert!(!mgts.contains_state(&MultiGraphState::from(auxiliary_extra)));
 }
 
 #[test]

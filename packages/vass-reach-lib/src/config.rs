@@ -70,18 +70,10 @@ config! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum ExtensionStrategyConfig {
-    Random,
-    RandomSCC,
-    CompletePartialSCC,
-}
-
 config! {
     pub struct MGTSConfig {
         enabled: bool = true,
         max_refinement_steps: u64 = 10,
-        strategy: ExtensionStrategyConfig = ExtensionStrategyConfig::CompletePartialSCC,
     }
 }
 

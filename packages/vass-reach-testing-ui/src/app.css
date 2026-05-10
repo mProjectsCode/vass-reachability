@@ -195,6 +195,21 @@ button.is-selected {
 	gap: 6px;
 }
 
+.trace-effect-list {
+	display: grid;
+	gap: 8px;
+	margin-top: 6px;
+}
+
+.trace-effect-row {
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 8px;
+	background: #151722;
+	display: grid;
+	gap: 2px;
+}
+
 .trace-boundary-chip {
 	border: 1px solid var(--border-color);
 	border-radius: 999px;

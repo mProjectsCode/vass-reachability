@@ -144,6 +144,7 @@ pub fn config(input: TokenStream) -> TokenStream {
         }
 
         #[derive(Debug, Clone, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         #vis struct #partial_struct_name {
             #( #partial_fields, )*
         }
@@ -157,8 +158,17 @@ pub fn config(input: TokenStream) -> TokenStream {
             }
             pub fn from_file<P: AsRef<std::path::Path>>(file_path: P) -> anyhow::Result<Self> {
                 let canonic_path = std::fs::canonicalize(file_path)?;
-                let content = std::fs::read_to_string(canonic_path)?;
-                Ok(Self::from_partial(toml::from_str(&content)?))
+                let content = std::fs::read_to_string(&canonic_path)?;
+                let partial: #partial_struct_name = toml::from_str(&content).map_err(|err| {
+                    let file_path = canonic_path.display();
+                    let err_msg = err.to_string();
+                    if err_msg.contains("unknown field") {
+                        anyhow::anyhow!("Unknown config flag in {}: {}", file_path, err_msg)
+                    } else {
+                        anyhow::anyhow!("Failed to parse config file {}: {}", file_path, err_msg)
+                    }
+                })?;
+                Ok(Self::from_partial(partial))
             }
             pub fn from_optional_file<P: AsRef<std::path::Path>>(file_path: Option<P>) -> anyhow::Result<Self> {
                 match file_path {

@@ -12,8 +12,8 @@ use crate::{
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        ltc::{LTC, translation::LTCTranslation},
-        mgts::extender::{ExtensionStrategyEnum, MGTSExtender},
+        ltc::{self, LTC, translation::LTCTranslation},
+        mgts::extender::MGTSExtender,
         path::Path,
         scc::SCCAlgorithms,
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
@@ -210,9 +210,9 @@ impl VASSReachSolver {
                 return Err(SolverStatus::True(()));
             }
 
-            tracing::debug!("Spurious path: {:?}", path.to_fancy_string());
+            // tracing::debug!("Spurious path: {:?}", path.to_fancy_string());
 
-            if true {
+            if false {
                 let cfg_path = path.to_path_in_cfg(self.state.main_cfg_index());
                 // tracing::debug!("{:?}", cfg_path);
 
@@ -341,13 +341,13 @@ impl VASSReachSolver {
                 );
             }
             VASSReachRefinementAction::BuildAutomaton => {
-                let ltc_automaton = if *self.config.get_lts().get_enabled() {
-                    tracing::debug!("Building and checking LTC");
+                // let ltc_automaton = if *self.config.get_lts().get_enabled() {
+                //     tracing::debug!("Building and checking LTC");
 
-                    Some(self.ltc(&path)?)
-                } else {
-                    None
-                };
+                //     Some(self.ltc(&path)?)
+                // } else {
+                //     None
+                // };
 
                 let mgts_automaton = if *self.config.get_mgts().get_enabled() {
                     tracing::debug!("Building and checking MGTS");
@@ -355,35 +355,33 @@ impl VASSReachSolver {
                     let mut extender = MGTSExtender::from_cfg_product(
                         path,
                         &self.state,
-                        ExtensionStrategyEnum::from_config(
-                            *self.config.get_mgts().get_strategy(),
-                            self.step_count,
-                        ),
                         *self.config.get_mgts().get_max_refinement_steps(),
                     );
                     let mut cfg = extender.run();
                     cfg.invert_mut();
-                    Some(cfg)
+                    self.state.add_cfg(cfg);
+                    // Some(cfg)
                 } else {
-                    None
+                    // None
                 };
 
-                match (ltc_automaton, mgts_automaton) {
-                    (Some(ltc_cfg), Some(mgts_cfg)) => {
-                        // We would expect both automata to be somewhat similar, they are built
-                        // from the same path at least. So we would
-                        // expect their intersection to not blow up too much.
-                        let product = ltc_cfg.intersect(&mgts_cfg);
-                        self.state.add_cfg(product);
-                    }
-                    (Some(ltc_cfg), None) => {
-                        self.state.add_cfg(ltc_cfg);
-                    }
-                    (None, Some(mgts_cfg)) => {
-                        self.state.add_cfg(mgts_cfg);
-                    }
-                    (None, None) => {}
-                }
+
+                // match (ltc_automaton, mgts_automaton) {
+                //     (Some(ltc_cfg), Some(mgts_cfg)) => {
+                //         // We would expect both automata to be somewhat similar, they are built
+                //         // from the same path at least. So we would
+                //         // expect their intersection to not blow up too much.
+                //         let product = ltc_cfg.intersect(&mgts_cfg);
+                //         self.state.add_cfg(product);
+                //     }
+                //     (Some(ltc_cfg), None) => {
+                //         self.state.add_cfg(ltc_cfg);
+                //     }
+                //     (None, Some(mgts_cfg)) => {
+                //         self.state.add_cfg(mgts_cfg);
+                //     }
+                //     (None, None) => {}
+                // }
             }
         }
 

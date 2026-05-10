@@ -119,7 +119,7 @@ where
     })
 }
 
-fn compute_sccs<A, F>(
+pub(super) fn compute_sccs<A, F>(
     automaton: &A,
     relevant: &HashSet<A::NIndex>,
     is_accepting: &F,
@@ -308,7 +308,7 @@ where
     component_edges
 }
 
-fn reachable_from<'a, NIndex>(
+pub(super) fn reachable_from<'a, NIndex>(
     start: &NIndex,
     mut next: impl FnMut(&NIndex) -> Box<dyn Iterator<Item = NIndex> + 'a>,
 ) -> HashSet<NIndex>

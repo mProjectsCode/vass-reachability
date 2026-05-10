@@ -103,6 +103,30 @@ impl<NIndex: GIndex> MarkedGraph<NIndex> {
         }
     }
 
+    /// Creates a marked graph from the union of all states visited by `paths`.
+    ///
+    /// The first path supplies the product start and end markers. Callers
+    /// should only pass paths that share the same boundary states.
+    pub fn from_path_union<A>(automaton: &A, paths: &[GenericPath<NIndex>]) -> Self
+    where
+        A: TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
+        assert!(
+            !paths.is_empty(),
+            "Cannot build a marked graph from an empty path set"
+        );
+
+        let nodes = Path::sorted_union_states(paths);
+
+        Self::from_subset(
+            automaton,
+            &nodes,
+            paths[0].start().clone(),
+            paths[0].end().clone(),
+        )
+    }
+
     pub fn product_start(&self) -> &NIndex {
         self.get_node_unchecked(&self.start)
     }

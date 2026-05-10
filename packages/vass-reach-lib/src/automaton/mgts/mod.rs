@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{iter::Peekable, sync::Arc};
 
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
@@ -37,7 +37,7 @@ where
     /// every stored path or graph is referenced by exactly one entry in
     /// `parts`.
     pub sequence: Vec<MGTSPart>,
-    pub graphs: Vec<MarkedGraph<NIndex>>,
+    pub graphs: Vec<Arc<MarkedGraph<NIndex>>>,
     pub paths: Vec<MarkedPath<NIndex>>,
     pub automaton: &'a A,
     pub dimension: usize,
@@ -199,7 +199,7 @@ where
                             panic!("Part references missing graph {} while compacting", old_idx);
                         };
 
-                        graphs.push(graph.clone());
+                        graphs.push(Arc::clone(graph));
                         graphs.len() - 1
                     });
 
@@ -224,9 +224,9 @@ where
         self.paths = paths;
     }
 
-    pub fn add_graph(&mut self, graph: MarkedGraph<NIndex>) {
+    pub fn add_graph(&mut self, graph: impl Into<Arc<MarkedGraph<NIndex>>>) {
         let index = self.graphs.len();
-        self.graphs.push(graph);
+        self.graphs.push(graph.into());
         self.sequence.push(MGTSPart::Graph(index));
         self.assert_consistent();
     }
@@ -239,7 +239,7 @@ where
     }
 
     pub fn graph(&self, index: usize) -> &MarkedGraph<NIndex> {
-        &self.graphs[index]
+        self.graphs[index].as_ref()
     }
 
     pub fn path(&self, index: usize) -> &MarkedPath<NIndex> {
@@ -276,7 +276,7 @@ where
                     }
                 }
                 MGTSPart::Graph(idx) => {
-                    result.add_graph(self.graph(*idx).clone());
+                    result.add_graph(Arc::clone(&self.graphs[*idx]));
                 }
             }
         }
@@ -392,7 +392,7 @@ where
         );
 
         let graph_index = result.graphs.len();
-        result.graphs.push(graph);
+        result.graphs.push(Arc::new(graph));
         result
             .sequence
             .insert(first_part_index, MGTSPart::Graph(graph_index));
@@ -438,7 +438,7 @@ where
         }
 
         let scc_idx = result.graphs.len();
-        result.graphs.push(scc);
+        result.graphs.push(Arc::new(scc));
 
         let parts = std::mem::take(&mut result.sequence);
         result.sequence = parts
@@ -467,31 +467,35 @@ where
         let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
         // make deterministic: sort the SCC nodes before building the MGTS graph
         scc_nodes_vec.sort_unstable();
-        let scc =
-            MarkedGraph::from_subset(self.automaton, &scc_nodes_vec, state.clone(), state.clone());
+        let scc = Arc::new(MarkedGraph::from_subset(
+            self.automaton,
+            &scc_nodes_vec,
+            state.clone(),
+            state.clone(),
+        ));
 
         let mut result = MGTS::empty(self.automaton, self.dimension);
 
         for (i, part) in self.sequence.iter().enumerate() {
             if i == path_index {
                 if node_index == 0 {
-                    result.add_graph(scc.clone());
+                    result.add_graph(Arc::clone(&scc));
                     result.add_path(self.paths[path_idx].clone());
                 } else if node_index == self.paths[path_idx].path.states.len() - 1 {
                     result.add_path(self.paths[path_idx].clone());
-                    result.add_graph(scc.clone());
+                    result.add_graph(Arc::clone(&scc));
                 } else {
                     let mut path = self.paths[path_idx].clone();
                     let after = path.path.split_off(node_index);
 
                     result.add_path(path);
-                    result.add_graph(scc.clone());
+                    result.add_graph(Arc::clone(&scc));
                     result.add_path(after.into());
                 }
             } else {
                 match part {
                     MGTSPart::Path(idx) => result.add_path(self.paths[*idx].clone()),
-                    MGTSPart::Graph(idx) => result.add_graph(self.graphs[*idx].clone()),
+                    MGTSPart::Graph(idx) => result.add_graph(Arc::clone(&self.graphs[*idx])),
                 }
             }
         }
@@ -504,7 +508,7 @@ where
     /// Removes the given node from the graph. The node must be in the graph,
     /// otherwise the function will panic.
     pub fn remove_node_from_graph(&mut self, graph_index: usize, node_index: NodeIndex) {
-        let graph = &mut self.graphs[graph_index];
+        let graph = Arc::make_mut(&mut self.graphs[graph_index]);
         if graph.node_count() <= node_index.index() {
             panic!("Node is not in the graph");
         }
@@ -516,7 +520,7 @@ where
     /// Removes the given edge from the graph. The edge must be in the graph,
     /// otherwise the function will panic.
     pub fn remove_edge_from_graph(&mut self, graph_index: usize, edge_index: EdgeIndex) {
-        let graph = &mut self.graphs[graph_index];
+        let graph = Arc::make_mut(&mut self.graphs[graph_index]);
         if graph.edge_count() <= edge_index.index() {
             panic!("Edge is not in the graph");
         }
@@ -531,7 +535,7 @@ where
         graph_index: usize,
         nodes_to_keep: HashSet<NodeIndex>,
     ) {
-        let graph = &mut self.graphs[graph_index];
+        let graph = Arc::make_mut(&mut self.graphs[graph_index]);
         graph.retain_nodes(|_, node| nodes_to_keep.contains(&node));
         self.assert_consistent();
     }
