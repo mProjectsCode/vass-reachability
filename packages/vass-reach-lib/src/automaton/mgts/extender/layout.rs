@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 
-use super::{
-    MultiGraphPath,
-    segmentation::{PathSegment, SegmentedPath, segment_path},
-};
+use super::MultiGraphPath;
 use crate::{
     automaton::{
         cfg::update::CFGCounterUpdate,
@@ -15,7 +12,7 @@ use crate::{
             part::{MGTSPart, MarkedGraph},
         },
         path::Path,
-        scc::{PrecomputedSccs, SccClassifier},
+        scc::{SCCDag, SCCDagEdge},
     },
     solver::mgts_reach::MGTSSolution,
 };
@@ -31,7 +28,6 @@ pub(super) struct InterpolationLayout<'a> {
 #[derive(Debug, Clone)]
 enum InterpolationItem {
     FixedPath(MultiGraphPath),
-    FixedGraph(Arc<MarkedGraph<MultiGraphState>>),
     Region(usize),
 }
 
@@ -55,6 +51,59 @@ pub(super) struct CandidateSeed<'a> {
     pub(super) seed_mgts: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
 }
 
+#[derive(Debug, Clone)]
+struct SegmentedPath {
+    segments: Vec<PathSegment>,
+}
+
+#[derive(Debug, Clone)]
+enum PathSegment {
+    Fixed(MultiGraphPath),
+    Region { path: MultiGraphPath },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DagRoute {
+    edges: Vec<DagRouteEdge>,
+    accepting: MultiGraphState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DagRouteEdge {
+    source_component: usize,
+    edge: SCCDagEdge<MultiGraphState, CFGCounterUpdate>,
+}
+
+struct DagContext<'d> {
+    dag: &'d SCCDag<MultiGraphState, CFGCounterUpdate>,
+    component_of_state: HashMap<MultiGraphState, usize>,
+}
+
+impl<'d> DagContext<'d> {
+    fn new(dag: &'d SCCDag<MultiGraphState, CFGCounterUpdate>) -> Self {
+        let component_of_state = dag
+            .components
+            .iter()
+            .enumerate()
+            .flat_map(|(component, scc)| {
+                scc.nodes
+                    .iter()
+                    .cloned()
+                    .map(move |state| (state, component))
+            })
+            .collect();
+
+        Self {
+            dag,
+            component_of_state,
+        }
+    }
+
+    fn component(&self, state: &MultiGraphState) -> Option<usize> {
+        self.component_of_state.get(state).copied()
+    }
+}
+
 impl<'a> InterpolationLayout<'a> {
     /// Builds candidate layouts from the primary path plus compatible
     /// auxiliary paths.
@@ -72,21 +121,32 @@ impl<'a> InterpolationLayout<'a> {
         auxiliary_paths: &[MultiGraphPath],
         automaton: &'a ImplicitCFGProduct,
         dimension: usize,
+        dag: &SCCDag<MultiGraphState, CFGCounterUpdate>,
     ) -> Vec<CandidateSeed<'a>> {
-        let sccs = Arc::new(PrecomputedSccs::from_reachable(
-            automaton,
-            automaton.initial(),
-        ));
-        let classifier = SccClassifier::new(Arc::clone(&sccs));
-        let primary = segment_path(primary_path, &classifier);
+        let dag = DagContext::new(dag);
+        let Some(primary_route) = dag_route_for_path(&dag, primary_path) else {
+            return Vec::new();
+        };
+        let Some(full_mgts) =
+            build_full_mgts_from_dag_route(automaton, dimension, &dag, &primary_route)
+        else {
+            return Vec::new();
+        };
+        let Some(primary) = segment_path_by_full_mgts(primary_path, &full_mgts, &dag) else {
+            return Vec::new();
+        };
+
         let mut compatible_auxiliaries = auxiliary_paths
             .iter()
             .enumerate()
             .filter_map(|(auxiliary_index, path)| {
-                let segmented = segment_path(path, &classifier);
+                let route = dag_route_for_path(&dag, path)?;
+                if route != primary_route {
+                    return None;
+                }
 
-                (segmented.signature == primary.signature)
-                    .then_some((auxiliary_index + 1, segmented))
+                let segmented = segment_path_by_full_mgts(path, &full_mgts, &dag)?;
+                Some((auxiliary_index + 1, segmented))
             })
             .collect::<Vec<_>>();
 
@@ -100,7 +160,7 @@ impl<'a> InterpolationLayout<'a> {
                     .chain(compatible_auxiliaries.iter().take(auxiliary_count).cloned())
                     .collect();
 
-                Self::from_segmented_group(group, automaton, dimension, Arc::clone(&sccs))
+                Self::from_segmented_group(group, &full_mgts, automaton, dimension)
             })
             .map(|(path_indices, layout)| {
                 let seed_mgts = layout.build_seed_mgts();
@@ -116,14 +176,14 @@ impl<'a> InterpolationLayout<'a> {
     /// Converts one compatible group of segmented paths into a concrete
     /// interpolation layout.
     ///
-    /// Fixed segments stay exact or become a shared path-union graph. Region
-    /// segments keep a seed MGTS plus one shared full-SCC graph so candidate
-    /// builds can toggle each region without rebuilding graph payloads.
+    /// Fixed segments stay on the exact DAG-route connector paths. Region
+    /// segments keep a seed MGTS plus the route's full-SCC graph so candidate
+    /// builds can toggle each region without changing the DAG-route shape.
     fn from_segmented_group(
         group: Vec<(usize, SegmentedPath)>,
+        full_mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
         automaton: &'a ImplicitCFGProduct,
         dimension: usize,
-        sccs: Arc<PrecomputedSccs<MultiGraphState>>,
     ) -> Option<(Vec<usize>, Self)> {
         let first = group.first()?.1.clone();
         let mut path_indices = Vec::with_capacity(group.len());
@@ -134,43 +194,23 @@ impl<'a> InterpolationLayout<'a> {
             path_indices.push(*path_index);
         }
 
-        for segment_index in 0..first.segments.len() {
-            match &first.segments[segment_index] {
-                PathSegment::Fixed(_) => {
-                    let paths = group
-                        .iter()
-                        .map(|(_, segmented)| match &segmented.segments[segment_index] {
-                            PathSegment::Fixed(path) => path.clone(),
-                            PathSegment::Region { .. } => unreachable!("signature mismatch"),
-                        })
-                        .collect::<Vec<_>>();
-
-                    items.push(build_fixed_item(automaton, &paths));
+        for (segment_index, segment) in first.segments.iter().enumerate() {
+            match segment {
+                PathSegment::Fixed(path) => {
+                    items.push(InterpolationItem::FixedPath(path.clone()));
                 }
-                PathSegment::Region { component, path } => {
+                PathSegment::Region { path: _ } => {
                     let paths = group
                         .iter()
                         .map(|(_, segmented)| match &segmented.segments[segment_index] {
-                            PathSegment::Region {
-                                component: other_component,
-                                path,
-                            } => {
-                                assert_eq!(component, other_component);
-                                path.clone()
-                            }
+                            PathSegment::Region { path } => path.clone(),
                             PathSegment::Fixed(_) => unreachable!("signature mismatch"),
                         })
                         .collect::<Vec<_>>();
 
                     let seed = build_seed_region(automaton, dimension, &paths);
-                    let full_component = sccs.component(*component);
-                    let full_size = full_component.nodes.len();
-                    let full_graph = Arc::new(MarkedGraph::from_subset(
-                        automaton,
-                        &full_component.nodes,
-                        path.start().clone(),
-                        path.end().clone(),
-                    ));
+                    let full_graph = full_graph_for_segment(full_mgts, segment_index)?;
+                    let full_size = full_graph.graph.node_count();
 
                     let region = regions.len();
                     regions.push(SccRegion {
@@ -212,10 +252,6 @@ impl<'a> InterpolationLayout<'a> {
                 InterpolationItem::FixedPath(path) => {
                     mgts.add_path(path.clone().into());
                 }
-                InterpolationItem::FixedGraph(graph) => {
-                    mgts.add_graph(Arc::clone(graph));
-                    graph_to_full_region.push(None);
-                }
                 InterpolationItem::Region(region_index) => {
                     let region = &self.regions[*region_index];
 
@@ -238,12 +274,190 @@ impl<'a> InterpolationLayout<'a> {
     }
 }
 
-fn build_fixed_item(automaton: &ImplicitCFGProduct, paths: &[MultiGraphPath]) -> InterpolationItem {
-    if paths.iter().all(|path| path == &paths[0]) {
-        return InterpolationItem::FixedPath(paths[0].clone());
+fn dag_route_for_path(dag: &DagContext<'_>, path: &MultiGraphPath) -> Option<DagRoute> {
+    let mut edges = Vec::new();
+
+    for edge_index in 0..path.transitions.len() {
+        let source_component = dag.component(&path.states[edge_index])?;
+        let target_component = dag.component(&path.states[edge_index + 1])?;
+
+        if source_component == target_component {
+            continue;
+        }
+
+        let mut crossing = MultiGraphPath::new(path.states[edge_index].clone());
+        crossing.add(
+            path.transitions[edge_index],
+            path.states[edge_index + 1].clone(),
+        );
+
+        let edge = dag
+            .dag
+            .outgoing_edges(source_component)
+            .iter()
+            .find(|edge| edge.target_component == target_component && edge.path == crossing)?
+            .clone();
+
+        edges.push(DagRouteEdge {
+            source_component,
+            edge,
+        });
     }
 
-    InterpolationItem::FixedGraph(Arc::new(MarkedGraph::from_path_union(automaton, paths)))
+    let accepting_component = dag.component(path.end())?;
+    if !dag.dag.components[accepting_component]
+        .accepting_nodes
+        .contains(path.end())
+    {
+        return None;
+    }
+
+    Some(DagRoute {
+        edges,
+        accepting: path.end().clone(),
+    })
+}
+
+fn build_full_mgts_from_dag_route<'a>(
+    automaton: &'a ImplicitCFGProduct,
+    dimension: usize,
+    dag: &DagContext<'_>,
+    route: &DagRoute,
+) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
+    let mut mgts = MGTS::empty(automaton, dimension);
+    let mut current_path = MultiGraphPath::new(automaton.initial());
+    let mut entry_node = automaton.initial();
+    let mut component_index = dag.dag.root_component;
+
+    for route_edge in &route.edges {
+        if route_edge.source_component != component_index {
+            return None;
+        }
+
+        let component = &dag.dag.components[component_index];
+        let exit_node = route_edge.edge.path.start().clone();
+
+        if component.is_trivial() {
+            if entry_node != exit_node {
+                return None;
+            }
+        } else {
+            if !current_path.is_empty() {
+                mgts.add_path(current_path.clone().into());
+            }
+
+            mgts.add_graph(MarkedGraph::from_subset(
+                automaton,
+                &component.nodes,
+                entry_node.clone(),
+                exit_node.clone(),
+            ));
+            current_path = MultiGraphPath::new(exit_node);
+        }
+
+        current_path.concat(route_edge.edge.path.clone());
+        entry_node = route_edge.edge.path.end().clone();
+        component_index = route_edge.edge.target_component;
+    }
+
+    let component = &dag.dag.components[component_index];
+    if !component.accepting_nodes.contains(&route.accepting) {
+        return None;
+    }
+
+    if component.is_trivial() {
+        if entry_node != route.accepting {
+            return None;
+        }
+    } else {
+        if !current_path.is_empty() {
+            mgts.add_path(current_path.clone().into());
+        }
+
+        mgts.add_graph(MarkedGraph::from_subset(
+            automaton,
+            &component.nodes,
+            entry_node,
+            route.accepting.clone(),
+        ));
+        current_path = MultiGraphPath::new(route.accepting.clone());
+    }
+
+    if !current_path.is_empty() {
+        mgts.add_path(current_path.into());
+    }
+
+    mgts.assert_consistent();
+    Some(mgts)
+}
+
+fn segment_path_by_full_mgts(
+    path: &MultiGraphPath,
+    full_mgts: &MGTS<'_, MultiGraphState, ImplicitCFGProduct>,
+    dag: &DagContext<'_>,
+) -> Option<SegmentedPath> {
+    let mut segments = Vec::with_capacity(full_mgts.sequence.len());
+    let mut state_index = 0usize;
+
+    for part in &full_mgts.sequence {
+        match part {
+            MGTSPart::Path(path_index) => {
+                let fixed = &full_mgts.path(*path_index).path;
+                let end_index = state_index.checked_add(fixed.len())?;
+                if end_index > path.len() {
+                    return None;
+                }
+
+                let segment = path.slice(state_index..end_index);
+                if segment != *fixed {
+                    return None;
+                }
+
+                segments.push(PathSegment::Fixed(segment));
+                state_index = end_index;
+            }
+            MGTSPart::Graph(graph_index) => {
+                let graph = full_mgts.graph(*graph_index);
+                if path.states.get(state_index)? != graph.product_start() {
+                    return None;
+                }
+
+                let component = dag.component(graph.product_start())?;
+                let mut run_end = state_index;
+                while run_end + 1 < path.states.len()
+                    && dag.component(&path.states[run_end + 1])? == component
+                {
+                    run_end += 1;
+                }
+
+                if &path.states[run_end] != graph.product_end() {
+                    return None;
+                }
+
+                segments.push(PathSegment::Region {
+                    path: path.slice(state_index..run_end),
+                });
+                state_index = run_end;
+            }
+        }
+    }
+
+    if state_index != path.len() {
+        return None;
+    }
+
+    Some(SegmentedPath { segments })
+}
+
+fn full_graph_for_segment<'a>(
+    full_mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+    segment_index: usize,
+) -> Option<Arc<MarkedGraph<MultiGraphState>>> {
+    let MGTSPart::Graph(graph_index) = full_mgts.sequence.get(segment_index)? else {
+        return None;
+    };
+
+    Some(Arc::clone(&full_mgts.graphs[*graph_index]))
 }
 
 fn candidate_auxiliary_counts(auxiliary_len: usize) -> Vec<usize> {

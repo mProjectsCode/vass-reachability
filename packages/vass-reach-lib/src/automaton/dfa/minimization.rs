@@ -115,7 +115,7 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge + FromLetter> DfaMinimizationTable<'
         }
 
         // now we add the transitions
-        // if a node has only self-loops, we mark it as a trap node
+        // if a non-accepting node has only self-loops, we mark it as a trap node
         for entry in self.iter_some() {
             let from = state_map[entry.state];
             let mut trap = true;
@@ -129,7 +129,7 @@ impl<'a, N: AutomatonNode, E: AutomatonEdge + FromLetter> DfaMinimizationTable<'
                 }
             }
 
-            if trap {
+            if trap && !entry.is_final {
                 dfa.graph[from].trap = true;
             }
         }

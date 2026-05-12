@@ -8,13 +8,13 @@ use crate::{
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
         mgts::MGTS,
         path::Path,
+        scc::{SCCAlgorithms, SCCDag},
         vass::counter::VASSCounterValuation,
     },
     solver::{SolverStatus, mgts_reach::MGTSReachSolverOptions},
 };
 
 mod layout;
-mod segmentation;
 
 use layout::{CandidateSeed, InterpolationLayout};
 
@@ -42,6 +42,8 @@ pub struct MGTSExtender<'a> {
     seed_mgts: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
     /// Interpolation layout for the selected seed subset.
     layout: Option<InterpolationLayout<'a>>,
+    /// Optional SCC DAG supplied by a caller that already computed it.
+    scc_dag: Option<SCCDag<MultiGraphState, CFGCounterUpdate>>,
 }
 
 impl<'a> MGTSExtender<'a> {
@@ -72,7 +74,7 @@ impl<'a> MGTSExtender<'a> {
     ///
     /// The first path is the primary path that must be covered by any selected
     /// MGTS. Remaining paths are auxiliary paths that may enrich the primary
-    /// path when they have a compatible SCC layout.
+    /// path when they take the same SCC-DAG route.
     pub fn from_paths(
         paths: Vec<MultiGraphPath>,
         product: &'a ImplicitCFGProduct,
@@ -103,8 +105,8 @@ impl<'a> MGTSExtender<'a> {
     /// Creates an extender from a primary path and auxiliary paths.
     ///
     /// Every selected MGTS must include the primary path. Auxiliary paths are
-    /// only used when their SCC/fixed-region signature matches the primary
-    /// path, so they can add nodes without changing the path shape being cut.
+    /// only used when they take the same SCC-DAG route as the primary path, so
+    /// they can add seed nodes without changing the full MGTS shape being cut.
     pub fn from_primary_path(
         primary_path: MultiGraphPath,
         auxiliary_paths: Vec<MultiGraphPath>,
@@ -114,10 +116,10 @@ impl<'a> MGTSExtender<'a> {
         final_valuation: VASSCounterValuation,
         max_refinements: u64,
     ) -> Self {
-        let seed_mgts = MGTS::from_path_roll_up(primary_path.clone(), product, dimension);
+        let initial_mgts = MGTS::from_path(primary_path.clone(), product, dimension);
 
         MGTSExtender {
-            mgts: seed_mgts.clone(),
+            mgts: initial_mgts.clone(),
             primary_path,
             auxiliary_paths,
             selected_path_indices: vec![0],
@@ -126,9 +128,16 @@ impl<'a> MGTSExtender<'a> {
             initial_valuation,
             final_valuation,
             max_refinements,
-            seed_mgts,
+            seed_mgts: initial_mgts,
             layout: None,
+            scc_dag: None,
         }
+    }
+
+    /// Reuses a precomputed SCC DAG for route-compatible MGTS layout building.
+    pub fn with_scc_dag(mut self, scc_dag: SCCDag<MultiGraphState, CFGCounterUpdate>) -> Self {
+        self.scc_dag = Some(scc_dag);
+        self
     }
 
     /// Creates a single-path extender using dimension and boundary valuations
@@ -203,51 +212,15 @@ impl<'a> MGTSExtender<'a> {
         let mut seed_checks = 0usize;
 
         let Some(seed) = self.select_initial_seed(max_checks_per_phase, &mut seed_checks) else {
-            tracing::debug!("No seed MGTS was proved unreachable; keeping exact first path MGTS");
-            let exact = MGTS::from_path(self.primary_path.clone(), self.product, self.dimension);
-            let result = self.solve_candidate(&exact);
-            debug_assert!(
-                matches!(&result.status, SolverStatus::False(_)),
-                "Exact primary path MGTS must be unreachable when used as fallback"
-            );
-            if !matches!(&result.status, SolverStatus::False(_)) {
-                tracing::warn!(
-                    status = ?result.status,
-                    "Exact primary path MGTS was not proved unreachable during fallback"
-                );
-            }
-            self.mgts = exact.clone();
-            return exact;
+            return self.fallback_to_exact_primary_path();
         };
 
-        self.selected_path_indices = seed.path_indices;
-        self.seed_mgts = seed.seed_mgts;
-        self.layout = Some(seed.layout);
-        self.mgts = self.seed_mgts.clone();
-
-        let mut best = self.seed_mgts.clone();
+        let layout = self.install_initial_seed(seed, seed_checks);
+        let best = self.seed_mgts.clone();
         let mut checks = 0usize;
-        tracing::debug!(
-            size = best.size(),
-            selected_paths = self.selected_path_indices.len(),
-            seed_checks,
-            "Seed-language MGTS is unreachable; using it as search lower bound"
-        );
 
-        let Some(layout) = self.layout.clone() else {
-            self.mgts = best.clone();
-            return best;
-        };
-
-        if layout.regions.is_empty() || checks >= max_checks_per_phase {
-            tracing::debug!(
-                regions = layout.regions.len(),
-                checks,
-                max_checks = max_checks_per_phase,
-                "No interpolation search needed"
-            );
-            self.mgts = best.clone();
-            return best;
+        if self.interpolation_is_exhausted(&layout, checks, max_checks_per_phase) {
+            return self.finish_with_mgts(best);
         }
 
         tracing::debug!(
@@ -256,36 +229,127 @@ impl<'a> MGTSExtender<'a> {
             "Starting interpolated MGTS search"
         );
 
+        if let Some(full) = self.try_full_scc_upper_bound(&layout, &mut checks) {
+            return self.finish_with_mgts(full);
+        }
+
+        let best = self.search_interpolated_regions(&layout, best, checks, max_checks_per_phase);
+
+        self.finish_with_mgts(best)
+    }
+
+    /// Keeps the exact primary path when no larger seed-language candidate can
+    /// be proved unreachable.
+    fn fallback_to_exact_primary_path(&mut self) -> MGTS<'a, MultiGraphState, ImplicitCFGProduct> {
+        tracing::debug!("No seed MGTS was proved unreachable; keeping exact first path MGTS");
+
+        let exact = MGTS::from_path(self.primary_path.clone(), self.product, self.dimension);
+        let result = self.solve_candidate(&exact);
+
+        debug_assert!(
+            matches!(&result.status, SolverStatus::False(_)),
+            "Exact primary path MGTS must be unreachable when used as fallback"
+        );
+        if !matches!(&result.status, SolverStatus::False(_)) {
+            tracing::warn!(
+                status = ?result.status,
+                "Exact primary path MGTS was not proved unreachable during fallback"
+            );
+        }
+
+        self.finish_with_mgts(exact)
+    }
+
+    /// Records the selected seed as the lower bound for interpolation.
+    fn install_initial_seed(
+        &mut self,
+        seed: CandidateSeed<'a>,
+        seed_checks: usize,
+    ) -> InterpolationLayout<'a> {
+        let layout = seed.layout;
+
+        self.selected_path_indices = seed.path_indices;
+        self.seed_mgts = seed.seed_mgts;
+        self.layout = Some(layout.clone());
+        self.mgts = self.seed_mgts.clone();
+
+        tracing::debug!(
+            size = self.seed_mgts.size(),
+            selected_paths = self.selected_path_indices.len(),
+            seed_checks,
+            "Seed-language MGTS is unreachable; using it as search lower bound"
+        );
+
+        layout
+    }
+
+    /// Returns true when there are no SCC regions left to expand, or the
+    /// per-phase solver budget has already been spent.
+    fn interpolation_is_exhausted(
+        &self,
+        layout: &InterpolationLayout<'a>,
+        checks: usize,
+        max_checks: usize,
+    ) -> bool {
+        let exhausted = layout.regions.is_empty() || checks >= max_checks;
+
+        if exhausted {
+            tracing::debug!(
+                regions = layout.regions.len(),
+                checks,
+                max_checks,
+                "No interpolation search needed"
+            );
+        }
+
+        exhausted
+    }
+
+    /// Checks the full-SCC upper bound before doing smaller interpolation
+    /// steps. If it is unreachable, no larger candidate exists in this layout.
+    fn try_full_scc_upper_bound(
+        &self,
+        layout: &InterpolationLayout<'a>,
+        checks: &mut usize,
+    ) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
         let full_mask = vec![true; layout.regions.len()];
         let full = layout.build_candidate(&full_mask);
         let full_result = self.solve_candidate(&full.mgts);
-        checks += 1;
+        *checks += 1;
 
         if matches!(full_result.status, SolverStatus::False(_)) {
             tracing::debug!(
                 size = full.mgts.size(),
-                checks,
+                checks = *checks,
                 "Full-SCC MGTS is unreachable"
             );
-            self.mgts = full.mgts.clone();
-            return full.mgts;
+            return Some(full.mgts);
         }
 
+        None
+    }
+
+    /// Grows the seed candidate by enabling batches of SCC regions and keeping
+    /// only the unreachable expansions.
+    fn search_interpolated_regions(
+        &self,
+        layout: &InterpolationLayout<'a>,
+        mut best: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        mut checks: usize,
+        max_checks: usize,
+    ) -> MGTS<'a, MultiGraphState, ImplicitCFGProduct> {
         let mut accepted = vec![false; layout.regions.len()];
         let mut pending = (0..layout.regions.len()).collect::<Vec<_>>();
         pending.sort_by_key(|region| std::cmp::Reverse(layout.regions[*region].gain()));
 
         let mut batch_size = pending.len().div_ceil(2).max(1);
 
-        while checks < max_checks_per_phase && !pending.is_empty() {
+        while checks < max_checks && !pending.is_empty() {
             let batch_len = batch_size.min(pending.len()).max(1);
             let batch = pending[..batch_len].to_vec();
 
-            let mut candidate_mask = accepted.clone();
-            for region in &batch {
-                candidate_mask[*region] = true;
-            }
-
+            // Try one extra region batch on top of the known-unreachable mask.
+            let candidate_mask = mask_with_batch(&accepted, &batch);
             let candidate = layout.build_candidate(&candidate_mask);
             let candidate_result = self.solve_candidate(&candidate.mgts);
             checks += 1;
@@ -351,12 +415,20 @@ impl<'a> MGTSExtender<'a> {
             size = best.size(),
             enabled_regions = accepted.iter().filter(|enabled| **enabled).count(),
             checks,
-            max_checks = max_checks_per_phase,
+            max_checks,
             "Finished interpolated MGTS search"
         );
 
-        self.mgts = best.clone();
         best
+    }
+
+    /// Stores and returns the MGTS chosen by the current search phase.
+    fn finish_with_mgts(
+        &mut self,
+        mgts: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+    ) -> MGTS<'a, MultiGraphState, ImplicitCFGProduct> {
+        self.mgts = mgts.clone();
+        mgts
     }
 
     /// Finds a large path-compatible seed-language MGTS that is still
@@ -370,11 +442,20 @@ impl<'a> MGTSExtender<'a> {
         max_checks: usize,
         checks: &mut usize,
     ) -> Option<CandidateSeed<'a>> {
+        let computed_dag;
+        let dag = if let Some(dag) = &self.scc_dag {
+            dag
+        } else {
+            computed_dag = self.product.find_scc_dag();
+            &computed_dag
+        };
+
         let mut candidates = InterpolationLayout::from_compatible_path_groups(
             &self.primary_path,
             &self.auxiliary_paths,
             self.product,
             self.dimension,
+            dag,
         );
 
         candidates.sort_by_key(|candidate| {
@@ -413,4 +494,14 @@ impl<'a> MGTSExtender<'a> {
             .to_solver(mgts, &self.initial_valuation, &self.final_valuation)
             .solve()
     }
+}
+
+fn mask_with_batch(accepted: &[bool], batch: &[usize]) -> Vec<bool> {
+    let mut mask = accepted.to_vec();
+
+    for region in batch {
+        mask[*region] = true;
+    }
+
+    mask
 }

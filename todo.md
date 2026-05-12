@@ -11,6 +11,9 @@
 
 - [ ] Better debug tools for the graph, the implicit product, and the MGTS to better understand what is going on
 
+- [x] Investigation: route blowup after adding the full-MGTS cut
+  - The root cause seems to be the implicit product not being minimized, thus not loosing cut away states, causing path blowup.
+
 - [ ] Idea: Sub SCC, we look at strongly connected subsets of SCCs.
   Probably the easiest would be to look at the path through the SCC (or just the parikh image) if it is reachable, then do a sub-refinement step where we don't disregard the SCC, but instead look if we can remove some edge or node from the SCC to make it unreachable again.
 

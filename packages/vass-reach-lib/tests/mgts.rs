@@ -543,7 +543,7 @@ fn mgts_extender_rejects_full_scc_when_reachable() {
 }
 
 #[test]
-fn mgts_extender_merges_compatible_seed_paths() {
+fn mgts_extender_drops_auxiliary_paths_with_different_dag_route() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(2));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
     let s1 = cfg.add_node(DfaNode::non_accepting(()));
@@ -569,13 +569,52 @@ fn mgts_extender_merges_compatible_seed_paths() {
 
     assert_mgts_is_unreachable(&mgts);
     assert!(mgts.accepts(&first_word));
-    assert!(mgts.accepts(&second_word));
+    assert!(!mgts.accepts(&second_word));
     assert!(mgts.contains_state(&MultiGraphState::from(s1)));
-    assert!(mgts.contains_state(&MultiGraphState::from(s2)));
-    assert!(
-        mgts.iter_graph_parts()
-            .any(|graph| graph.graph.node_count() == 4)
+    assert!(!mgts.contains_state(&MultiGraphState::from(s2)));
+    assert!(mgts.iter_graph_parts().next().is_none());
+}
+
+#[test]
+fn mgts_extender_merges_auxiliary_paths_on_same_dag_route() {
+    let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(3));
+    let s0 = cfg.add_node(DfaNode::non_accepting(()));
+    let entry = cfg.add_node(DfaNode::non_accepting(()));
+    let seed_extra = cfg.add_node(DfaNode::non_accepting(()));
+    let full_extra = cfg.add_node(DfaNode::non_accepting(()));
+    let accepting = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(s0);
+
+    cfg.add_edge(&s0, &entry, cfg_inc!(0));
+    cfg.add_edge(&entry, &accepting, cfg_dec!(0));
+    cfg.add_edge(&entry, &seed_extra, cfg_inc!(1));
+    cfg.add_edge(&seed_extra, &entry, cfg_dec!(1));
+    cfg.add_edge(&entry, &full_extra, cfg_inc!(2));
+    cfg.add_edge(&full_extra, &entry, cfg_inc!(2));
+
+    let product = ImplicitCFGProduct::new_without_counting_cfgs(
+        3,
+        vec![0, 0, 0].into(),
+        vec![0, 0, 2].into(),
+        cfg,
     );
+    let primary_word = [cfg_inc!(0), cfg_dec!(0)];
+    let auxiliary_word = [cfg_inc!(0), cfg_inc!(1), cfg_dec!(1), cfg_dec!(0)];
+    let full_only_word = [cfg_inc!(0), cfg_inc!(2), cfg_inc!(2), cfg_dec!(0)];
+    let primary = MultiGraphPath::from_word(product.initial(), &primary_word, &product).unwrap();
+    let auxiliary =
+        MultiGraphPath::from_word(product.initial(), &auxiliary_word, &product).unwrap();
+
+    let mut extender = MGTSExtender::from_cfg_product_paths(vec![primary, auxiliary], &product, 10);
+    let mgts = extender.run_mgts();
+
+    assert_mgts_is_unreachable(&mgts);
+    assert!(mgts.accepts(&primary_word));
+    assert!(mgts.accepts(&auxiliary_word));
+    assert!(!mgts.accepts(&full_only_word));
+    assert!(mgts.contains_state(&MultiGraphState::from(seed_extra)));
+    assert!(!mgts.contains_state(&MultiGraphState::from(full_extra)));
 }
 
 #[test]

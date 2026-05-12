@@ -9,8 +9,8 @@ mod graphviz;
 mod rolling;
 
 pub use build::SCCAlgorithms;
-pub use cache::{PrecomputedSccs, SccClass, SccClassifier};
-pub use dag::{SCC, SCCDag, SCCDagEdge};
+pub use cache::{PrecomputedSccs, SccCache, SccRef};
+pub use dag::{SCC, SCCDag, SCCDagEdge, SCCDagRouteSummary};
 
 pub(super) fn sort_and_dedup_component_edges<NIndex: GIndex, L: Letter>(
     edges: &mut Vec<SCCDagEdge<NIndex, L>>,

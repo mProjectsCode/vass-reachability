@@ -350,6 +350,41 @@ fn minimize_5() {
 }
 
 #[test]
+fn minimize_accepting_sink_is_not_marked_trap() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
+    let q0 = dfa.add_node(DfaNode::accepting(0));
+    dfa.set_initial(q0);
+    dfa.add_edge(&q0, &q0, 'a');
+    dfa.add_edge(&q0, &q0, 'b');
+    dfa.set_complete_unchecked();
+
+    let minimized = dfa.minimize();
+
+    assert_eq!(minimized.node_count(), 1);
+    assert!(minimized.accepts(&['a', 'b', 'a']));
+
+    let state = minimized.graph.node_indices().next().unwrap();
+    assert!(minimized.graph[state].accepting);
+    assert!(!minimized.is_trap(state));
+}
+
+#[test]
+fn minimize_inverted_rejecting_sink_keeps_accepting_sink_live() {
+    let mut dfa = DFA::<u32, char>::new(vec!['a']);
+    let q0 = dfa.add_node(DfaNode::non_accepting(0));
+    dfa.set_initial(q0);
+    dfa.add_edge(&q0, &q0, 'a');
+    dfa.set_complete_unchecked();
+
+    let minimized = dfa.invert().minimize();
+
+    assert!(minimized.accepts(&['a', 'a']));
+    let state = minimized.graph.node_indices().next().unwrap();
+    assert!(minimized.graph[state].accepting);
+    assert!(!minimized.is_trap(state));
+}
+
+#[test]
 fn find_loop_1() {
     let mut dfa = DFA::<u32, char>::new(vec!['a', 'b']);
 

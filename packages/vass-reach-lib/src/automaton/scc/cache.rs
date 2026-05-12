@@ -39,37 +39,41 @@ impl<NIndex: GIndex> PrecomputedSccs<NIndex> {
     }
 }
 
-/// Lightweight classification of a state by its precomputed SCC.
+/// Lightweight reference to a precomputed SCC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SccClass {
+pub struct SccRef {
     pub component: usize,
     pub cyclic: bool,
 }
 
-impl SccClass {
+impl SccRef {
     /// Returns whether this component is a singleton without a self-loop.
     pub fn is_trivial(&self) -> bool {
         !self.cyclic
     }
 }
 
-/// Classifies states by looking them up in a precomputed SCC decomposition.
-pub struct SccClassifier<NIndex: GIndex> {
+/// Caches precomputed SCCs.
+pub struct SccCache<NIndex: GIndex> {
     sccs: Arc<PrecomputedSccs<NIndex>>,
 }
 
-impl<NIndex: GIndex> SccClassifier<NIndex> {
+impl<NIndex: GIndex> SccCache<NIndex> {
     pub fn new(sccs: Arc<PrecomputedSccs<NIndex>>) -> Self {
         Self { sccs }
     }
 
-    pub fn classify(&self, state: &NIndex) -> SccClass {
+    pub fn get_scc_for_state(&self, state: &NIndex) -> SccRef {
         let component = self
             .sccs
             .component_index(state)
             .expect("State must belong to the precomputed reachable SCC graph");
         let cyclic = self.sccs.component(component).cyclic;
 
-        SccClass { component, cyclic }
+        SccRef { component, cyclic }
+    }
+
+    pub fn get_sccs(&self) -> &Arc<PrecomputedSccs<NIndex>> {
+        &self.sccs
     }
 }

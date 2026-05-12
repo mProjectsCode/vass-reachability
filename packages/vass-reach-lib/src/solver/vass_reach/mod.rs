@@ -7,7 +7,7 @@ mod preprocess;
 use self::debug_trace::DebugTraceWriter;
 use crate::{
     automaton::{
-        Automaton, AutomatonEdge, AutomatonNode, FromLetter,
+        Automaton, AutomatonEdge, AutomatonNode, FromLetter, GIndex,
         algorithms::EdgeAutomatonAlgorithms,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
@@ -15,7 +15,7 @@ use crate::{
         ltc::{self, LTC, translation::LTCTranslation},
         mgts::extender::MGTSExtender,
         path::Path,
-        scc::SCCAlgorithms,
+        scc::{SCCAlgorithms, SCCDag, SCCDagRouteSummary},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
     },
     config::{ModuloMode, VASSReachConfig, VASSZReachConfig},
@@ -349,28 +349,48 @@ impl VASSReachSolver {
                 //     None
                 // };
 
-                let mgts_automaton = if *self.config.get_mgts().get_enabled() {
-                    tracing::debug!("Building and checking MGTS");
+                // let mgts_automaton = if *self.config.get_mgts().get_enabled() {
+                //     tracing::debug!("Building and checking MGTS");
 
-                    let mut extender = MGTSExtender::from_cfg_product(
-                        path,
-                        &self.state,
-                        *self.config.get_mgts().get_max_refinement_steps(),
-                    );
-                    let mut cfg = extender.run();
-                    cfg.invert_mut();
-                    self.state.add_cfg(cfg);
-                    // Some(cfg)
-                } else {
-                    // None
-                };
+                //     let mut extender = MGTSExtender::from_cfg_product(
+                //         path,
+                //         &self.state,
+                //         *self.config.get_mgts().get_max_refinement_steps(),
+                //     );
+                //     let mut cfg = extender.run();
+                //     cfg.invert_mut();
+                //     Some(cfg)
+                // } else {
+                //     None
+                // };
 
+                tracing::debug!("Building and checking MGTS");
+                let full_dag = self.state.find_scc_dag();
+                log_scc_dag_route_summary_before_mgts("implicit_product", &full_dag);
+
+                let minimized_explicit_product = self.state.explicit().minimize();
+                let minimized_explicit_dag = minimized_explicit_product.find_scc_dag();
+                log_scc_dag_route_summary_before_mgts(
+                    "minimized_explicit_product",
+                    &minimized_explicit_dag,
+                );
+
+                let mut extender = MGTSExtender::from_cfg_product(
+                    path,
+                    &self.state,
+                    *self.config.get_mgts().get_max_refinement_steps(),
+                )
+                .with_scc_dag(full_dag);
+                let mut cfg = extender.run();
+                cfg.invert_mut();
+                self.state.add_cfg(cfg.minimize());
 
                 // match (ltc_automaton, mgts_automaton) {
                 //     (Some(ltc_cfg), Some(mgts_cfg)) => {
-                //         // We would expect both automata to be somewhat similar, they are built
-                //         // from the same path at least. So we would
-                //         // expect their intersection to not blow up too much.
+                //         // We would expect both automata to be somewhat
+                // similar, they are built         // from the
+                // same path at least. So we would expect their intersection
+                //         // to not blow up too much.
                 //         let product = ltc_cfg.intersect(&mgts_cfg);
                 //         self.state.add_cfg(product);
                 //     }
@@ -577,4 +597,29 @@ impl VASSReachSolver {
             "Result"
         );
     }
+}
+
+fn log_scc_dag_route_summary_before_mgts<NIndex: GIndex>(
+    product: &'static str,
+    dag: &SCCDag<NIndex, CFGCounterUpdate>,
+) {
+    let SCCDagRouteSummary {
+        components,
+        edges,
+        accepting_components,
+        accepting_states,
+        accepting_component_routes,
+        accepting_state_routes,
+    } = dag.accepting_route_summary();
+
+    tracing::info!(
+        product,
+        scc_components = components,
+        scc_edges = edges,
+        accepting_components,
+        accepting_states,
+        accepting_component_routes,
+        accepting_state_routes,
+        "SCC-DAG accepting routes before MGTS refinement"
+    );
 }
