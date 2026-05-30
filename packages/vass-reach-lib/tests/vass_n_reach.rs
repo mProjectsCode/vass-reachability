@@ -233,7 +233,9 @@ fn test_vass_n_reach_can_disable_z_reach_precheck() {
         &initialized_vass,
         VASSReachConfig::default()
             .with_timeout(Some(Duration::from_secs(5)))
-            .with_mgts(vass_reach_lib::config::MGTSConfig::default().with_enabled(false))
+            .with_linear_graph(
+                vass_reach_lib::config::LinearGraphConfig::default().with_enabled(false),
+            )
             .with_preprocessing(
                 vass_reach_lib::config::PreprocessingConfig::default()
                     .with_enabled(true)

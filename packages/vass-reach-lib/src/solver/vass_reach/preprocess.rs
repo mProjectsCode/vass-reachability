@@ -9,13 +9,13 @@ use crate::{
         Alphabet, GIndex, InitializedAutomaton, Letter, TransitionSystem,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
-        mgts::{MGTS, part::MarkedGraph},
+        linear_graph::{LinearGraph, part::LinearGraphRegion},
         path::Path,
         scc::{SCCAlgorithms, SCCDag, SCCDagEdge},
         vass::counter::VASSCounterValuation,
     },
     config::VASSReachConfig,
-    solver::{SolverStatus, mgts_reach::MGTSReachSolverOptions},
+    solver::{SolverStatus, linear_graph_reach::LinearGraphReachSolverOptions},
 };
 
 type CFGPath = Path<NodeIndex, CFGCounterUpdate>;
@@ -26,7 +26,7 @@ struct AcceptingRoute<NIndex: GIndex, L: Letter> {
     accepting: NIndex,
 }
 
-pub(super) fn run_preprocess_unreachable_mgts_from_scc_dag(
+pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
     cfg: VASSCFG<()>,
     initial_valuation: &VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
@@ -37,12 +37,14 @@ pub(super) fn run_preprocess_unreachable_mgts_from_scc_dag(
         return Ok(cfg);
     }
 
-    if !*config.get_mgts().get_enabled() {
+    if !*config.get_linear_graph().get_enabled() {
         return Ok(cfg);
     }
 
     if !has_reachable_accepting(&cfg) {
-        tracing::debug!("Skipping MGTS preprocessing because CFG has no reachable accepting node");
+        tracing::debug!(
+            "Skipping LinearGraph preprocessing because CFG has no reachable accepting node"
+        );
         return Ok(cfg);
     }
 
@@ -50,11 +52,11 @@ pub(super) fn run_preprocess_unreachable_mgts_from_scc_dag(
 
     let base_cfg = cfg;
     let dag = base_cfg.find_scc_dag().with_rolled_trivial_paths();
-    let max_candidates = *config.get_preprocessing().get_max_mgts_candidates();
+    let max_candidates = *config.get_preprocessing().get_max_linear_graph_candidates();
     let routes = collect_accepting_routes(&dag, max_candidates);
 
     if routes.is_empty() {
-        tracing::debug!("No SCC-DAG MGTS preprocessing routes found");
+        tracing::debug!("No SCC-DAG LinearGraph preprocessing routes found");
         return Ok(base_cfg);
     }
 
@@ -62,7 +64,7 @@ pub(super) fn run_preprocess_unreachable_mgts_from_scc_dag(
 
     tracing::info!(
         routes = routes.len(),
-        "Running MGTS preprocessing over SCC-DAG routes"
+        "Running LinearGraph preprocessing over SCC-DAG routes"
     );
 
     let mut unreachable = 0usize;
@@ -75,20 +77,24 @@ pub(super) fn run_preprocess_unreachable_mgts_from_scc_dag(
     for route in routes {
         max_time_reached(config, solver_start_time)?;
 
-        let Some(mgts) =
-            build_mgts_from_route(&base_cfg, dimension, &dag, &route.edges, &route.accepting)
-        else {
+        let Some(linear_graph) = build_linear_graph_from_route(
+            &base_cfg,
+            dimension,
+            &dag,
+            &route.edges,
+            &route.accepting,
+        ) else {
             skipped += 1;
             continue;
         };
 
-        let solver_result = MGTSReachSolverOptions::default()
-            .to_solver(&mgts, initial_valuation, final_valuation)
+        let solver_result = LinearGraphReachSolverOptions::default()
+            .to_solver(&linear_graph, initial_valuation, final_valuation)
             .solve();
 
         match solver_result.status {
             SolverStatus::False(_) => {
-                let mut cfg = mgts.to_cfg();
+                let mut cfg = linear_graph.to_cfg();
                 cfg.invert_mut();
                 processed_cfg = processed_cfg.intersect(&cfg);
                 unreachable += 1;
@@ -109,7 +115,7 @@ pub(super) fn run_preprocess_unreachable_mgts_from_scc_dag(
         reachable,
         unknown,
         skipped,
-        "Finished SCC-DAG MGTS preprocessing"
+        "Finished SCC-DAG LinearGraph preprocessing"
     );
 
     Ok(processed_cfg)
@@ -167,18 +173,18 @@ fn collect_accepting_routes<NIndex: GIndex, L: Letter>(
     routes
 }
 
-fn build_mgts_from_route<'a>(
+fn build_linear_graph_from_route<'a>(
     cfg: &'a VASSCFG<()>,
     dimension: usize,
     dag: &SCCDag<NodeIndex, CFGCounterUpdate>,
     route: &[SCCDagEdge<NodeIndex, CFGCounterUpdate>],
     accepting_node: &NodeIndex,
-) -> Option<MGTS<'a, NodeIndex, VASSCFG<()>>> {
+) -> Option<LinearGraph<'a, NodeIndex, VASSCFG<()>>> {
     let mut component_indices = Vec::with_capacity(route.len() + 1);
     component_indices.push(dag.root_component);
     component_indices.extend(route.iter().map(|edge| edge.target_component));
 
-    let mut mgts = MGTS::empty(cfg, dimension);
+    let mut linear_graph = LinearGraph::empty(cfg, dimension);
     let mut current_path = CFGPath::new(cfg.get_initial());
 
     let mut entry_node = cfg.get_initial();
@@ -202,10 +208,10 @@ fn build_mgts_from_route<'a>(
             current_path.concat(connector);
         } else {
             if !current_path.is_empty() {
-                mgts.add_path(current_path.clone().into());
+                linear_graph.add_path(current_path.clone().into());
             }
 
-            mgts.add_graph(MarkedGraph::from_subset(
+            linear_graph.add_graph(LinearGraphRegion::from_subset(
                 cfg,
                 &component.nodes,
                 entry_node,
@@ -222,10 +228,10 @@ fn build_mgts_from_route<'a>(
     }
 
     if !current_path.is_empty() {
-        mgts.add_path(current_path.into());
+        linear_graph.add_path(current_path.into());
     }
 
-    Some(mgts)
+    Some(linear_graph)
 }
 
 fn find_path_within_component_cfg(
@@ -340,7 +346,7 @@ fn max_time_reached(
 
 #[cfg(test)]
 mod tests {
-    use super::{has_reachable_accepting, run_preprocess_unreachable_mgts_from_scc_dag};
+    use super::{has_reachable_accepting, run_preprocess_unreachable_linear_graph_from_scc_dag};
     use crate::{
         automaton::{
             Automaton, ExplicitEdgeAutomaton, ModifiableAutomaton,
@@ -366,7 +372,7 @@ mod tests {
         let before_nodes = cfg.node_count();
         let before_edges = cfg.edge_count();
 
-        let processed = run_preprocess_unreachable_mgts_from_scc_dag(
+        let processed = run_preprocess_unreachable_linear_graph_from_scc_dag(
             cfg,
             &initialized_vass.initial_valuation,
             &initialized_vass.final_valuation,
@@ -412,7 +418,7 @@ mod tests {
         cfg.make_complete(());
         cfg = cfg.minimize();
 
-        let processed = run_preprocess_unreachable_mgts_from_scc_dag(
+        let processed = run_preprocess_unreachable_linear_graph_from_scc_dag(
             cfg,
             &initialized.initial_valuation,
             &initialized.final_valuation,

@@ -15,40 +15,72 @@ use crate::automaton::{
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-    mgts::part::{MGTSPart, MarkedGraph, MarkedPath},
+    linear_graph::part::{LinearGraphPart, LinearGraphPathSegment, LinearGraphRegion},
     nfa::NFA,
     path::Path,
 };
 
-type GenericPath<NIndex> = Path<NIndex, CFGCounterUpdate>;
+type CFGPath<NIndex> = Path<NIndex, CFGCounterUpdate>;
 
 pub mod extender;
 pub mod part;
 
-#[derive(Debug)]
-pub struct MGTS<'a, NIndex: GIndex = MultiGraphState, A = ImplicitCFGProduct>
-where
+#[derive(Debug, Clone, Copy)]
+enum NeighborPart {
+    Boundary(usize),
+    Interior(usize),
+}
+
+impl NeighborPart {
+    fn first_replaced_part(self) -> usize {
+        match self {
+            NeighborPart::Boundary(index) => index + 1,
+            NeighborPart::Interior(index) => index,
+        }
+    }
+
+    fn last_replaced_part(self) -> usize {
+        match self {
+            NeighborPart::Boundary(index) => index - 1,
+            NeighborPart::Interior(index) => index,
+        }
+    }
+}
+
+pub trait LinearGraphAutomaton<NIndex: GIndex>:
+    InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+    + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+    + SCCAlgorithms
+    + Alphabet<Letter = CFGCounterUpdate>
+{
+}
+
+impl<NIndex: GIndex, A> LinearGraphAutomaton<NIndex> for A where
     A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
         + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
         + SCCAlgorithms
-        + Alphabet<Letter = CFGCounterUpdate>,
+        + Alphabet<Letter = CFGCounterUpdate>
+{
+}
+
+#[derive(Debug)]
+pub struct LinearGraph<'a, NIndex: GIndex = MultiGraphState, A = ImplicitCFGProduct>
+where
+    A: LinearGraphAutomaton<NIndex>,
 {
     /// Invariant: every referenced path or graph is used exactly once, and
     /// every stored path or graph is referenced by exactly one entry in
     /// `parts`.
-    pub sequence: Vec<MGTSPart>,
-    pub graphs: Vec<Arc<MarkedGraph<NIndex>>>,
-    pub paths: Vec<MarkedPath<NIndex>>,
+    pub sequence: Vec<LinearGraphPart>,
+    pub graphs: Vec<Arc<LinearGraphRegion<NIndex>>>,
+    pub paths: Vec<LinearGraphPathSegment<NIndex>>,
     pub automaton: &'a A,
     pub dimension: usize,
 }
 
-impl<'a, NIndex: GIndex, A> Clone for MGTS<'a, NIndex, A>
+impl<'a, NIndex: GIndex, A> Clone for LinearGraph<'a, NIndex, A>
 where
-    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + SCCAlgorithms
-        + Alphabet<Letter = CFGCounterUpdate>,
+    A: LinearGraphAutomaton<NIndex>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -61,14 +93,11 @@ where
     }
 }
 
-impl<'a, NIndex: GIndex, A> MGTS<'a, NIndex, A>
+impl<'a, NIndex: GIndex, A> LinearGraph<'a, NIndex, A>
 where
-    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + SCCAlgorithms
-        + Alphabet<Letter = CFGCounterUpdate>,
+    A: LinearGraphAutomaton<NIndex>,
 {
-    pub fn from_path(path: GenericPath<NIndex>, automaton: &'a A, dimension: usize) -> Self {
+    pub fn from_path(path: CFGPath<NIndex>, automaton: &'a A, dimension: usize) -> Self {
         let mut instance = Self::empty(automaton, dimension);
         instance.add_path(path.into());
         instance.assert_consistent();
@@ -77,22 +106,18 @@ where
 
     /// The idea here is to take the subgraph of nodes that is visited in the
     /// path (including non visited edges between those nodes).
-    /// Then we calculate the SCC DAG of that subgraph and build the MGTS from
-    /// that.
-    pub fn from_path_roll_up(
-        path: GenericPath<NIndex>,
-        automaton: &'a A,
-        dimension: usize,
-    ) -> Self {
+    /// Then we calculate the SCC DAG of that subgraph and build the LinearGraph
+    /// from that.
+    pub fn from_path_roll_up(path: CFGPath<NIndex>, automaton: &'a A, dimension: usize) -> Self {
         let visited = path.states.iter().cloned().collect::<HashSet<_>>();
         let dag = automaton
             .find_scc_dag_in_subgraph(path.start().clone(), &visited, |node| node == path.end());
 
-        mgts_from_scc_dag_guided_path(&dag, &path, automaton, dimension)
+        linear_graph_from_scc_dag_guided_path(&dag, &path, automaton, dimension)
     }
 
     pub fn empty(automaton: &'a A, dimension: usize) -> Self {
-        MGTS {
+        LinearGraph {
             sequence: Vec::new(),
             graphs: Vec::new(),
             paths: Vec::new(),
@@ -112,7 +137,7 @@ where
 
         for (part_index, part) in self.sequence.iter().enumerate() {
             match part {
-                MGTSPart::Graph(idx) => {
+                LinearGraphPart::Graph(idx) => {
                     let Some(used) = used_graphs.get_mut(*idx) else {
                         panic!(
                             "Part {} references missing graph {} (have {})",
@@ -123,7 +148,7 @@ where
                     };
                     *used += 1;
                 }
-                MGTSPart::Path(idx) => {
+                LinearGraphPart::Path(idx) => {
                     let Some(used) = used_paths.get_mut(*idx) else {
                         panic!(
                             "Part {} references missing path {} (have {})",
@@ -156,13 +181,13 @@ where
         for (index, graph) in self.graphs.iter().enumerate() {
             assert!(
                 graph.graph.node_weight(graph.start).is_some(),
-                "Graph {} start marker {:?} is not a live node",
+                "Graph {} start boundary {:?} is not a live node",
                 index,
                 graph.start
             );
             assert!(
                 graph.graph.node_weight(graph.end).is_some(),
-                "Graph {} end marker {:?} is not a live node",
+                "Graph {} end boundary {:?} is not a live node",
                 index,
                 graph.end
             );
@@ -174,7 +199,7 @@ where
             assert_eq!(
                 left.end(self),
                 right.start(self),
-                "Adjacent MGTS parts must share a boundary"
+                "Adjacent LinearGraph parts must share a boundary"
             );
         }
     }
@@ -193,7 +218,7 @@ where
 
         for part in &mut self.sequence {
             match *part {
-                MGTSPart::Graph(old_idx) => {
+                LinearGraphPart::Graph(old_idx) => {
                     let new_idx = *graph_map.entry(old_idx).or_insert_with(|| {
                         let Some(graph) = old_graphs.get(old_idx) else {
                             panic!("Part references missing graph {} while compacting", old_idx);
@@ -203,9 +228,9 @@ where
                         graphs.len() - 1
                     });
 
-                    *part = MGTSPart::Graph(new_idx);
+                    *part = LinearGraphPart::Graph(new_idx);
                 }
-                MGTSPart::Path(old_idx) => {
+                LinearGraphPart::Path(old_idx) => {
                     let new_idx = *path_map.entry(old_idx).or_insert_with(|| {
                         let Some(path) = old_paths.get(old_idx) else {
                             panic!("Part references missing path {} while compacting", old_idx);
@@ -215,7 +240,7 @@ where
                         paths.len() - 1
                     });
 
-                    *part = MGTSPart::Path(new_idx);
+                    *part = LinearGraphPart::Path(new_idx);
                 }
             }
         }
@@ -224,87 +249,75 @@ where
         self.paths = paths;
     }
 
-    pub fn add_graph(&mut self, graph: impl Into<Arc<MarkedGraph<NIndex>>>) {
+    pub fn add_graph(&mut self, graph: impl Into<Arc<LinearGraphRegion<NIndex>>>) {
         let index = self.graphs.len();
         self.graphs.push(graph.into());
-        self.sequence.push(MGTSPart::Graph(index));
+        self.sequence.push(LinearGraphPart::Graph(index));
         self.assert_consistent();
     }
 
-    pub fn add_path(&mut self, path: MarkedPath<NIndex>) {
+    pub fn add_path(&mut self, path: LinearGraphPathSegment<NIndex>) {
         let index = self.paths.len();
         self.paths.push(path);
-        self.sequence.push(MGTSPart::Path(index));
+        self.sequence.push(LinearGraphPart::Path(index));
         self.assert_consistent();
     }
 
-    pub fn graph(&self, index: usize) -> &MarkedGraph<NIndex> {
+    pub fn graph(&self, index: usize) -> &LinearGraphRegion<NIndex> {
         self.graphs[index].as_ref()
     }
 
-    pub fn path(&self, index: usize) -> &MarkedPath<NIndex> {
+    pub fn path(&self, index: usize) -> &LinearGraphPathSegment<NIndex> {
         &self.paths[index]
     }
 
-    /// Adds a node from the CFG to the MGTS. The node needs to be connected to
-    /// at least one node in the MGTS, otherwise the function will panic.
-    /// This function will also add all existing connections between the new
-    /// node and the existing MGTS nodes. This may quickly lead to large
-    /// graphs and little path like structure.
+    /// Adds a node from the CFG to the LinearGraph. The node needs to be
+    /// connected to at least one node in the LinearGraph, otherwise the
+    /// function will panic. This function will also add all existing
+    /// connections between the new node and the existing LinearGraph nodes.
+    /// This may quickly lead to large graphs and little path like
+    /// structure.
     pub fn add_node(&self, node: NIndex) -> Self {
-        // first we need to find all parts that contain a neighbor of the node
-        // then we build a new graph containing everything between the first and last
-        // neighbor then we replace all those parts with the new graph.
-        // For this to work correctly, we would need to ensure that paths get split,
-        // otherwise we would end up with just a single giant graph part.
-        // As a simple solution, we split the paths beforehand, so that we don't have to
-        // deal with the complexity of splitting paths later in this function.
-
-        // dbg!(&self.parts);
-        // dbg!(node);
-
-        let mut result = MGTS::empty(self.automaton, self.dimension);
+        let mut result = LinearGraph::empty(self.automaton, self.dimension);
         let neighbors = self.automaton.undirected_neighbors(&node);
 
-        // first we split all paths at the given node
+        // Split paths first so every neighboring path segment touches the new
+        // graph only at a segment boundary.
         for part in &self.sequence {
             match part {
-                MGTSPart::Path(idx) => {
+                LinearGraphPart::Path(idx) => {
                     let path = self.path(*idx);
                     for split in path.path.clone().split_at(|s, _| neighbors.contains(s)) {
                         result.add_path(split.into());
                     }
                 }
-                MGTSPart::Graph(idx) => {
+                LinearGraphPart::Graph(idx) => {
                     result.add_graph(Arc::clone(&self.graphs[*idx]));
                 }
             }
         }
 
-        // then we find all parts that contain a neighbor of the node
-        // the second boolean in the tuple indicates whether the neighbor is at the
-        // start or end of the part (true) or inside the part (false)
-        let mut neighbor_parts_indices = vec![];
+        let mut neighbor_parts = vec![];
 
         for (i, part) in result.sequence.iter().enumerate() {
             for neighbor in &neighbors {
                 match part {
-                    MGTSPart::Graph(_) => {
+                    LinearGraphPart::Graph(_) => {
                         if part.start(&result) == neighbor || part.end(&result) == neighbor {
-                            neighbor_parts_indices.push((i, true));
+                            neighbor_parts.push(NeighborPart::Boundary(i));
                             break;
                         }
 
                         if part.contains_node(&result, neighbor) {
-                            neighbor_parts_indices.push((i, false));
+                            neighbor_parts.push(NeighborPart::Interior(i));
                             break;
                         }
                     }
-                    MGTSPart::Path(_) => {
-                        // since we split the paths beforehand, we only need to check the start and
-                        // end nodes
+                    LinearGraphPart::Path(_) => {
+                        // Paths have already been split, so a neighbor can only
+                        // matter at the segment boundary.
                         if part.start(&result) == neighbor || part.end(&result) == neighbor {
-                            neighbor_parts_indices.push((i, true));
+                            neighbor_parts.push(NeighborPart::Boundary(i));
                             break;
                         }
                     }
@@ -312,19 +325,18 @@ where
             }
         }
 
-        // if the list is empty, we can't add the node
-        if neighbor_parts_indices.is_empty() {
-            panic!("Cannot add node that is not connected to any part of the MGTS");
+        if neighbor_parts.is_empty() {
+            panic!("Cannot add node that is not connected to any part of the LinearGraph");
         }
 
-        // thanks to the way we search for neighbors, the indices should be sorted
-        let first_part = *neighbor_parts_indices.first().unwrap();
-        let last_part = *neighbor_parts_indices.last().unwrap();
-
-        // dbg!(&neighbor_parts_indices);
-
-        let first_part_index = first_part.0 + usize::from(first_part.1);
-        let last_part_index = last_part.0 - usize::from(last_part.1);
+        let first_part_index = neighbor_parts
+            .first()
+            .expect("neighbor parts must be non-empty")
+            .first_replaced_part();
+        let last_part_index = neighbor_parts
+            .last()
+            .expect("neighbor parts must be non-empty")
+            .last_replaced_part();
 
         let start_node = result.sequence[first_part_index].start(&result).clone();
         let end_node = result.sequence[last_part_index].end(&result).clone();
@@ -337,19 +349,15 @@ where
         if cut_sequence.is_empty() {
             assert_eq!(start_node, end_node);
 
-            cut_sequence.push(MGTSPart::Path(result.paths.len()));
-            result
-                .paths
-                .push(GenericPath::new(start_node.clone()).into());
+            cut_sequence.push(LinearGraphPart::Path(result.paths.len()));
+            result.paths.push(CFGPath::new(start_node.clone()).into());
         }
 
         let mut new_graph = DiGraph::<NIndex, CFGCounterUpdate>::new();
         let mut node_map = HashMap::new();
 
-        // add all nodes from the cut sequence to the new graph
         for part in &cut_sequence {
             for node in part.iter_nodes(&result) {
-                // we may have already added this node, because start and end nodes overlap
                 if node_map.contains_key(node) {
                     continue;
                 }
@@ -359,11 +367,9 @@ where
             }
         }
 
-        // add the new node
         let new_node = new_graph.add_node(node.clone());
         node_map.insert(node, new_node);
 
-        // now we add all edges between the nodes in the new graph
         for (product_state, new_node) in &node_map {
             for letter in result.automaton.alphabet() {
                 let Some(successor) = result.automaton.successor(product_state, letter) else {
@@ -383,8 +389,7 @@ where
             .get(&end_node)
             .expect("End node must be in the new graph");
 
-        // lastly we create the new MarkedGraph and insert it into the parts
-        let graph = MarkedGraph::new(
+        let graph = LinearGraphRegion::new(
             new_graph,
             new_start_node,
             new_end_node,
@@ -395,7 +400,7 @@ where
         result.graphs.push(Arc::new(graph));
         result
             .sequence
-            .insert(first_part_index, MGTSPart::Graph(graph_index));
+            .insert(first_part_index, LinearGraphPart::Graph(graph_index));
 
         result.compact_parts_storage();
         result.assert_consistent();
@@ -405,34 +410,38 @@ where
 
     /// Finds the strongly connected component around the given node in the main
     /// CFG and adds it as a graph part. The node must be contained in
-    /// the MGTS, otherwise the function will panic.
+    /// the LinearGraph, otherwise the function will panic.
     pub fn add_scc_around_node(&self, state: NIndex) -> Self {
         assert!(
             self.contains_state(&state),
-            "Cannot add SCC around node that is not in the MGTS"
+            "Cannot add SCC around node that is not in the LinearGraph"
         );
 
         let scc_nodes = self.automaton.find_scc_surrounding(state.clone());
         let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
-        // make deterministic: sort the SCC nodes before building the MGTS graph
+        // make deterministic: sort the SCC nodes before building the region
         scc_nodes_vec.sort_unstable();
-        let scc =
-            MarkedGraph::from_subset(self.automaton, &scc_nodes_vec, state.clone(), state.clone());
+        let scc = LinearGraphRegion::from_subset(
+            self.automaton,
+            &scc_nodes_vec,
+            state.clone(),
+            state.clone(),
+        );
 
-        let mut result = MGTS::empty(self.automaton, self.dimension);
+        let mut result = LinearGraph::empty(self.automaton, self.dimension);
         result.graphs = self.graphs.clone();
 
         // first we split all paths at the given node
         for part in &self.sequence {
             match part {
-                MGTSPart::Path(idx) => {
+                LinearGraphPart::Path(idx) => {
                     let path = self.path(*idx);
                     for split in path.path.clone().split_at(|s, _| s == &state) {
                         result.add_path(split.into());
                     }
                 }
-                MGTSPart::Graph(idx) => {
-                    result.sequence.push(MGTSPart::Graph(*idx));
+                LinearGraphPart::Graph(idx) => {
+                    result.sequence.push(LinearGraphPart::Graph(*idx));
                 }
             }
         }
@@ -445,7 +454,7 @@ where
             .into_iter()
             .flat_map(|part| {
                 if part.end(&result) == &state {
-                    vec![part, MGTSPart::Graph(scc_idx)]
+                    vec![part, LinearGraphPart::Graph(scc_idx)]
                 } else {
                     vec![part]
                 }
@@ -458,23 +467,23 @@ where
     }
 
     pub fn add_scc_around_position(&self, path_index: usize, node_index: usize) -> Self {
-        let MGTSPart::Path(path_idx) = self.sequence[path_index] else {
+        let LinearGraphPart::Path(path_idx) = self.sequence[path_index] else {
             panic!("Part must be a path");
         };
         let state = &self.paths[path_idx].path.states[node_index];
 
         let scc_nodes = self.automaton.find_scc_surrounding(state.clone());
         let mut scc_nodes_vec = scc_nodes.into_iter().collect_vec();
-        // make deterministic: sort the SCC nodes before building the MGTS graph
+        // make deterministic: sort the SCC nodes before building the region
         scc_nodes_vec.sort_unstable();
-        let scc = Arc::new(MarkedGraph::from_subset(
+        let scc = Arc::new(LinearGraphRegion::from_subset(
             self.automaton,
             &scc_nodes_vec,
             state.clone(),
             state.clone(),
         ));
 
-        let mut result = MGTS::empty(self.automaton, self.dimension);
+        let mut result = LinearGraph::empty(self.automaton, self.dimension);
 
         for (i, part) in self.sequence.iter().enumerate() {
             if i == path_index {
@@ -494,8 +503,8 @@ where
                 }
             } else {
                 match part {
-                    MGTSPart::Path(idx) => result.add_path(self.paths[*idx].clone()),
-                    MGTSPart::Graph(idx) => result.add_graph(Arc::clone(&self.graphs[*idx])),
+                    LinearGraphPart::Path(idx) => result.add_path(self.paths[*idx].clone()),
+                    LinearGraphPart::Graph(idx) => result.add_graph(Arc::clone(&self.graphs[*idx])),
                 }
             }
         }
@@ -540,7 +549,7 @@ where
         self.assert_consistent();
     }
 
-    /// Checks if the MGTS contains the given state from the product.
+    /// Checks if the LinearGraph contains the given state from the product.
     pub fn contains_state(&self, state: &NIndex) -> bool {
         for part in &self.sequence {
             if part.contains_node(self, state) {
@@ -555,7 +564,7 @@ where
         self.sequence.iter().map(|part| part.size(self)).sum()
     }
 
-    /// Converts the MGTS into an NFA over CFGCounterUpdate.
+    /// Converts the LinearGraph into an NFA over CFGCounterUpdate.
     pub fn to_nfa(&self) -> NFA<(), CFGCounterUpdate> {
         self.assert_consistent();
 
@@ -568,7 +577,7 @@ where
 
         for part in &self.sequence {
             match part {
-                MGTSPart::Path(idx) => {
+                LinearGraphPart::Path(idx) => {
                     let path = self.path(*idx);
                     for update in &path.path.transitions {
                         let next_state = nfa.add_node(DfaNode::non_accepting(()));
@@ -577,7 +586,7 @@ where
                         prev_state = next_state;
                     }
                 }
-                MGTSPart::Graph(idx) => {
+                LinearGraphPart::Graph(idx) => {
                     let graph = self.graph(*idx);
                     // compute base index in the NFA for the first node of this graph
                     let base = nfa.graph.node_count() as u32;
@@ -625,7 +634,7 @@ where
     }
 
     pub fn to_cfg(&self) -> VASSCFG<()> {
-        tracing::debug!("Converting MGTS to NFA");
+        tracing::debug!("Converting LinearGraph to NFA");
         let nfa = self.to_nfa();
 
         tracing::debug!(
@@ -636,36 +645,37 @@ where
         nfa.determinize()
     }
 
-    pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b MGTSPart> + 'b {
+    pub fn iter_parts<'b>(&'b self) -> impl Iterator<Item = &'b LinearGraphPart> + 'b {
         self.sequence.iter()
     }
 
-    pub fn iter_path_parts<'b>(&'b self) -> impl Iterator<Item = &'b MarkedPath<NIndex>> + 'b {
+    pub fn iter_path_parts<'b>(
+        &'b self,
+    ) -> impl Iterator<Item = &'b LinearGraphPathSegment<NIndex>> + 'b {
         self.sequence.iter().filter_map(|part| match part {
-            MGTSPart::Path(idx) => Some(self.path(*idx)),
-            MGTSPart::Graph(_) => None,
+            LinearGraphPart::Path(idx) => Some(self.path(*idx)),
+            LinearGraphPart::Graph(_) => None,
         })
     }
 
-    pub fn iter_graph_parts<'b>(&'b self) -> impl Iterator<Item = &'b MarkedGraph<NIndex>> + 'b {
+    pub fn iter_graph_parts<'b>(
+        &'b self,
+    ) -> impl Iterator<Item = &'b LinearGraphRegion<NIndex>> + 'b {
         self.sequence.iter().filter_map(|part| match part {
-            MGTSPart::Graph(idx) => Some(self.graph(*idx)),
-            MGTSPart::Path(_) => None,
+            LinearGraphPart::Graph(idx) => Some(self.graph(*idx)),
+            LinearGraphPart::Path(_) => None,
         })
     }
 }
 
-fn mgts_from_scc_dag_guided_path<'a, NIndex: GIndex, A>(
+fn linear_graph_from_scc_dag_guided_path<'a, NIndex: GIndex, A>(
     dag: &SCCDag<NIndex, CFGCounterUpdate>,
-    path: &GenericPath<NIndex>,
+    path: &CFGPath<NIndex>,
     automaton: &'a A,
     dimension: usize,
-) -> MGTS<'a, NIndex, A>
+) -> LinearGraph<'a, NIndex, A>
 where
-    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + SCCAlgorithms
-        + Alphabet<Letter = CFGCounterUpdate>,
+    A: LinearGraphAutomaton<NIndex>,
 {
     let component_of_state = dag
         .components
@@ -682,8 +692,8 @@ where
         );
     }
 
-    let mut mgts = MGTS::empty(automaton, dimension);
-    let mut current_path = GenericPath::new(path.start().clone());
+    let mut linear_graph = LinearGraph::empty(automaton, dimension);
+    let mut current_path = CFGPath::new(path.start().clone());
     let mut state_index = 0usize;
 
     while state_index + 1 < path.states.len() {
@@ -706,17 +716,17 @@ where
             }
         } else {
             if !current_path.is_empty() {
-                mgts.add_path(current_path.clone().into());
+                linear_graph.add_path(current_path.clone().into());
             }
 
-            mgts.add_graph(marked_graph_from_scc(
+            linear_graph.add_graph(region_from_scc(
                 scc,
                 &path.states[state_index],
                 &path.states[run_end],
                 automaton,
             ));
 
-            current_path = GenericPath::new(path.states[run_end].clone());
+            current_path = CFGPath::new(path.states[run_end].clone());
         }
 
         if run_end < path.transitions.len() {
@@ -727,36 +737,36 @@ where
     }
 
     if !current_path.is_empty() {
-        mgts.add_path(current_path.into());
+        linear_graph.add_path(current_path.into());
     }
 
     assert!(
-        mgts.accepts(path.transitions.iter()),
+        linear_graph.accepts(path.transitions.iter()),
         "Path-guided SCC roll-up must accept the original path"
     );
 
-    mgts
+    linear_graph
 }
 
-fn marked_graph_from_scc<NIndex: GIndex, A>(
+fn region_from_scc<NIndex: GIndex, A>(
     scc: &SCC<NIndex>,
     start: &NIndex,
     end: &NIndex,
     automaton: &A,
-) -> MarkedGraph<NIndex>
+) -> LinearGraphRegion<NIndex>
 where
     A: TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
         + Alphabet<Letter = CFGCounterUpdate>,
 {
     // Keep node order deterministic so repeated runs over the same SCC-DAG
-    // produce structurally stable MGTS graph parts.
+    // produce structurally stable linear graph regions.
     let mut nodes = scc.nodes.clone();
     nodes.sort_unstable();
-    MarkedGraph::from_subset(automaton, &nodes, start.clone(), end.clone())
+    LinearGraphRegion::from_subset(automaton, &nodes, start.clone(), end.clone())
 }
 
 fn partial_accept_path<'a, NIndex: GIndex>(
-    path: &MarkedPath<NIndex>,
+    path: &LinearGraphPathSegment<NIndex>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut index = 0;
@@ -784,7 +794,7 @@ fn partial_accept_path<'a, NIndex: GIndex>(
 }
 
 fn partial_accept_graph<'a, NIndex: GIndex>(
-    graph: &MarkedGraph<NIndex>,
+    graph: &LinearGraphRegion<NIndex>,
     input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
 ) -> bool {
     let mut current_state = graph.start;
@@ -811,12 +821,9 @@ fn partial_accept_graph<'a, NIndex: GIndex>(
     current_state == graph.end
 }
 
-impl<'a, NIndex: GIndex, A> Alphabet for MGTS<'a, NIndex, A>
+impl<'a, NIndex: GIndex, A> Alphabet for LinearGraph<'a, NIndex, A>
 where
-    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + SCCAlgorithms
-        + Alphabet<Letter = CFGCounterUpdate>,
+    A: LinearGraphAutomaton<NIndex>,
 {
     type Letter = CFGCounterUpdate;
 
@@ -825,12 +832,9 @@ where
     }
 }
 
-impl<'a, NIndex: GIndex, A> Language for MGTS<'a, NIndex, A>
+impl<'a, NIndex: GIndex, A> Language for LinearGraph<'a, NIndex, A>
 where
-    A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
-        + SCCAlgorithms
-        + Alphabet<Letter = CFGCounterUpdate>,
+    A: LinearGraphAutomaton<NIndex>,
 {
     fn accepts<'b>(&self, input: impl IntoIterator<Item = &'b CFGCounterUpdate>) -> bool
     where
@@ -841,8 +845,8 @@ where
         let mut input = input.into_iter().peekable();
         for part in self.sequence.iter() {
             let success = match part {
-                MGTSPart::Path(idx) => partial_accept_path(self.path(*idx), &mut input),
-                MGTSPart::Graph(idx) => partial_accept_graph(self.graph(*idx), &mut input),
+                LinearGraphPart::Path(idx) => partial_accept_path(self.path(*idx), &mut input),
+                LinearGraphPart::Graph(idx) => partial_accept_graph(self.graph(*idx), &mut input),
             };
 
             if !success {

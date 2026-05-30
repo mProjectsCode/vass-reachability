@@ -7,14 +7,14 @@ use crate::{
     automaton::{
         cfg::update::CFGCounterUpdate,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        mgts::{
-            MGTS,
-            part::{MGTSPart, MarkedGraph},
+        linear_graph::{
+            LinearGraph,
+            part::{LinearGraphPart, LinearGraphRegion},
         },
         path::Path,
         scc::{SCCDag, SCCDagEdge},
     },
-    solver::mgts_reach::MGTSSolution,
+    solver::linear_graph_reach::LinearGraphSolution,
 };
 
 #[derive(Debug, Clone)]
@@ -33,14 +33,14 @@ enum InterpolationItem {
 
 #[derive(Debug, Clone)]
 pub(super) struct SccRegion<'a> {
-    seed: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+    seed: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
     full_size: usize,
-    full_graph: Arc<MarkedGraph<MultiGraphState>>,
+    full_graph: Arc<LinearGraphRegion<MultiGraphState>>,
 }
 
 #[derive(Debug)]
 pub(super) struct CandidateBuildResult<'a> {
-    pub(super) mgts: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+    pub(super) linear_graph: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
     graph_to_full_region: Vec<Option<usize>>,
 }
 
@@ -48,7 +48,7 @@ pub(super) struct CandidateBuildResult<'a> {
 pub(super) struct CandidateSeed<'a> {
     pub(super) path_indices: Vec<usize>,
     pub(super) layout: InterpolationLayout<'a>,
-    pub(super) seed_mgts: MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+    pub(super) seed_linear_graph: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
 }
 
 #[derive(Debug, Clone)]
@@ -127,12 +127,14 @@ impl<'a> InterpolationLayout<'a> {
         let Some(primary_route) = dag_route_for_path(&dag, primary_path) else {
             return Vec::new();
         };
-        let Some(full_mgts) =
-            build_full_mgts_from_dag_route(automaton, dimension, &dag, &primary_route)
+        let Some(full_linear_graph) =
+            build_full_linear_graph_from_dag_route(automaton, dimension, &dag, &primary_route)
         else {
             return Vec::new();
         };
-        let Some(primary) = segment_path_by_full_mgts(primary_path, &full_mgts, &dag) else {
+        let Some(primary) =
+            segment_path_by_full_linear_graph(primary_path, &full_linear_graph, &dag)
+        else {
             return Vec::new();
         };
 
@@ -145,7 +147,7 @@ impl<'a> InterpolationLayout<'a> {
                     return None;
                 }
 
-                let segmented = segment_path_by_full_mgts(path, &full_mgts, &dag)?;
+                let segmented = segment_path_by_full_linear_graph(path, &full_linear_graph, &dag)?;
                 Some((auxiliary_index + 1, segmented))
             })
             .collect::<Vec<_>>();
@@ -160,14 +162,14 @@ impl<'a> InterpolationLayout<'a> {
                     .chain(compatible_auxiliaries.iter().take(auxiliary_count).cloned())
                     .collect();
 
-                Self::from_segmented_group(group, &full_mgts, automaton, dimension)
+                Self::from_segmented_group(group, &full_linear_graph, automaton, dimension)
             })
             .map(|(path_indices, layout)| {
-                let seed_mgts = layout.build_seed_mgts();
+                let seed_linear_graph = layout.build_seed_linear_graph();
                 CandidateSeed {
                     path_indices,
                     layout,
-                    seed_mgts,
+                    seed_linear_graph,
                 }
             })
             .collect()
@@ -177,29 +179,29 @@ impl<'a> InterpolationLayout<'a> {
     /// interpolation layout.
     ///
     /// Fixed segments stay on the exact DAG-route connector paths. Region
-    /// segments keep a seed MGTS plus the route's full-SCC graph so candidate
-    /// builds can toggle each region without changing the DAG-route shape.
+    /// segments keep a seed LinearGraph plus the route's full-SCC graph so
+    /// candidate builds can toggle each region without changing the
+    /// DAG-route shape.
     fn from_segmented_group(
         group: Vec<(usize, SegmentedPath)>,
-        full_mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+        full_linear_graph: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
         automaton: &'a ImplicitCFGProduct,
         dimension: usize,
     ) -> Option<(Vec<usize>, Self)> {
-        let first = group.first()?.1.clone();
-        let mut path_indices = Vec::with_capacity(group.len());
+        let first = &group.first()?.1;
+        let path_indices = group
+            .iter()
+            .map(|(path_index, _)| *path_index)
+            .collect::<Vec<_>>();
         let mut items = Vec::new();
         let mut regions = Vec::new();
-
-        for (path_index, _) in &group {
-            path_indices.push(*path_index);
-        }
 
         for (segment_index, segment) in first.segments.iter().enumerate() {
             match segment {
                 PathSegment::Fixed(path) => {
                     items.push(InterpolationItem::FixedPath(path.clone()));
                 }
-                PathSegment::Region { path: _ } => {
+                PathSegment::Region { .. } => {
                     let paths = group
                         .iter()
                         .map(|(_, segmented)| match &segmented.segments[segment_index] {
@@ -209,7 +211,7 @@ impl<'a> InterpolationLayout<'a> {
                         .collect::<Vec<_>>();
 
                     let seed = build_seed_region(automaton, dimension, &paths);
-                    let full_graph = full_graph_for_segment(full_mgts, segment_index)?;
+                    let full_graph = full_graph_for_segment(full_linear_graph, segment_index)?;
                     let full_size = full_graph.graph.node_count();
 
                     let region = regions.len();
@@ -236,39 +238,45 @@ impl<'a> InterpolationLayout<'a> {
 
     /// Builds the lower-bound candidate where every SCC region uses the
     /// selected seed-language graph.
-    pub(super) fn build_seed_mgts(&self) -> MGTS<'a, MultiGraphState, ImplicitCFGProduct> {
+    pub(super) fn build_seed_linear_graph(
+        &self,
+    ) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
         let mask = vec![false; self.regions.len()];
-        self.build_candidate(&mask).mgts
+        self.build_candidate(&mask).linear_graph
     }
 
-    /// Materializes a candidate MGTS from a region mask and records which graph
-    /// parts correspond to full regions.
+    /// Materializes a candidate LinearGraph from a region mask and records
+    /// which graph parts correspond to full regions.
     pub(super) fn build_candidate(&self, mask: &[bool]) -> CandidateBuildResult<'a> {
-        let mut mgts = MGTS::empty(self.automaton, self.dimension);
+        let mut linear_graph = LinearGraph::empty(self.automaton, self.dimension);
         let mut graph_to_full_region = Vec::new();
 
         for item in &self.items {
             match item {
                 InterpolationItem::FixedPath(path) => {
-                    mgts.add_path(path.clone().into());
+                    linear_graph.add_path(path.clone().into());
                 }
                 InterpolationItem::Region(region_index) => {
                     let region = &self.regions[*region_index];
 
                     if mask[*region_index] {
-                        mgts.add_graph(Arc::clone(&region.full_graph));
+                        linear_graph.add_graph(Arc::clone(&region.full_graph));
                         graph_to_full_region.push(Some(*region_index));
                     } else {
-                        append_mgts(&mut mgts, &region.seed, &mut graph_to_full_region);
+                        append_linear_graph(
+                            &mut linear_graph,
+                            &region.seed,
+                            &mut graph_to_full_region,
+                        );
                     }
                 }
             }
         }
 
-        mgts.assert_consistent();
+        linear_graph.assert_consistent();
 
         CandidateBuildResult {
-            mgts,
+            linear_graph,
             graph_to_full_region,
         }
     }
@@ -318,13 +326,13 @@ fn dag_route_for_path(dag: &DagContext<'_>, path: &MultiGraphPath) -> Option<Dag
     })
 }
 
-fn build_full_mgts_from_dag_route<'a>(
+fn build_full_linear_graph_from_dag_route<'a>(
     automaton: &'a ImplicitCFGProduct,
     dimension: usize,
     dag: &DagContext<'_>,
     route: &DagRoute,
-) -> Option<MGTS<'a, MultiGraphState, ImplicitCFGProduct>> {
-    let mut mgts = MGTS::empty(automaton, dimension);
+) -> Option<LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>> {
+    let mut linear_graph = LinearGraph::empty(automaton, dimension);
     let mut current_path = MultiGraphPath::new(automaton.initial());
     let mut entry_node = automaton.initial();
     let mut component_index = dag.dag.root_component;
@@ -343,10 +351,10 @@ fn build_full_mgts_from_dag_route<'a>(
             }
         } else {
             if !current_path.is_empty() {
-                mgts.add_path(current_path.clone().into());
+                linear_graph.add_path(current_path.clone().into());
             }
 
-            mgts.add_graph(MarkedGraph::from_subset(
+            linear_graph.add_graph(LinearGraphRegion::from_subset(
                 automaton,
                 &component.nodes,
                 entry_node.clone(),
@@ -371,10 +379,10 @@ fn build_full_mgts_from_dag_route<'a>(
         }
     } else {
         if !current_path.is_empty() {
-            mgts.add_path(current_path.clone().into());
+            linear_graph.add_path(current_path.clone().into());
         }
 
-        mgts.add_graph(MarkedGraph::from_subset(
+        linear_graph.add_graph(LinearGraphRegion::from_subset(
             automaton,
             &component.nodes,
             entry_node,
@@ -384,25 +392,25 @@ fn build_full_mgts_from_dag_route<'a>(
     }
 
     if !current_path.is_empty() {
-        mgts.add_path(current_path.into());
+        linear_graph.add_path(current_path.into());
     }
 
-    mgts.assert_consistent();
-    Some(mgts)
+    linear_graph.assert_consistent();
+    Some(linear_graph)
 }
 
-fn segment_path_by_full_mgts(
+fn segment_path_by_full_linear_graph(
     path: &MultiGraphPath,
-    full_mgts: &MGTS<'_, MultiGraphState, ImplicitCFGProduct>,
+    full_linear_graph: &LinearGraph<'_, MultiGraphState, ImplicitCFGProduct>,
     dag: &DagContext<'_>,
 ) -> Option<SegmentedPath> {
-    let mut segments = Vec::with_capacity(full_mgts.sequence.len());
+    let mut segments = Vec::with_capacity(full_linear_graph.sequence.len());
     let mut state_index = 0usize;
 
-    for part in &full_mgts.sequence {
+    for part in &full_linear_graph.sequence {
         match part {
-            MGTSPart::Path(path_index) => {
-                let fixed = &full_mgts.path(*path_index).path;
+            LinearGraphPart::Path(path_index) => {
+                let fixed = &full_linear_graph.path(*path_index).path;
                 let end_index = state_index.checked_add(fixed.len())?;
                 if end_index > path.len() {
                     return None;
@@ -416,8 +424,8 @@ fn segment_path_by_full_mgts(
                 segments.push(PathSegment::Fixed(segment));
                 state_index = end_index;
             }
-            MGTSPart::Graph(graph_index) => {
-                let graph = full_mgts.graph(*graph_index);
+            LinearGraphPart::Graph(graph_index) => {
+                let graph = full_linear_graph.graph(*graph_index);
                 if path.states.get(state_index)? != graph.product_start() {
                     return None;
                 }
@@ -450,14 +458,14 @@ fn segment_path_by_full_mgts(
 }
 
 fn full_graph_for_segment<'a>(
-    full_mgts: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+    full_linear_graph: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
     segment_index: usize,
-) -> Option<Arc<MarkedGraph<MultiGraphState>>> {
-    let MGTSPart::Graph(graph_index) = full_mgts.sequence.get(segment_index)? else {
+) -> Option<Arc<LinearGraphRegion<MultiGraphState>>> {
+    let LinearGraphPart::Graph(graph_index) = full_linear_graph.sequence.get(segment_index)? else {
         return None;
     };
 
-    Some(Arc::clone(&full_mgts.graphs[*graph_index]))
+    Some(Arc::clone(&full_linear_graph.graphs[*graph_index]))
 }
 
 fn candidate_auxiliary_counts(auxiliary_len: usize) -> Vec<usize> {
@@ -489,25 +497,25 @@ fn build_seed_region<'a>(
     automaton: &'a ImplicitCFGProduct,
     dimension: usize,
     paths: &[MultiGraphPath],
-) -> MGTS<'a, MultiGraphState, ImplicitCFGProduct> {
+) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
     if paths.len() == 1 {
-        return MGTS::from_path_roll_up(paths[0].clone(), automaton, dimension);
+        return LinearGraph::from_path_roll_up(paths[0].clone(), automaton, dimension);
     }
 
     let all_empty = paths.iter().all(Path::is_empty);
     let unique_nodes = Path::<MultiGraphState, CFGCounterUpdate>::sorted_union_states(paths);
     if all_empty && unique_nodes.len() <= 1 {
-        return MGTS::empty(automaton, dimension);
+        return LinearGraph::empty(automaton, dimension);
     }
 
-    let mut mgts = MGTS::empty(automaton, dimension);
-    mgts.add_graph(MarkedGraph::from_subset(
+    let mut linear_graph = LinearGraph::empty(automaton, dimension);
+    linear_graph.add_graph(LinearGraphRegion::from_subset(
         automaton,
         &unique_nodes,
         paths[0].start().clone(),
         paths[0].end().clone(),
     ));
-    mgts
+    linear_graph
 }
 
 impl SccRegion<'_> {
@@ -517,7 +525,7 @@ impl SccRegion<'_> {
 }
 
 impl CandidateBuildResult<'_> {
-    pub(super) fn used_full_regions(&self, solution: &MGTSSolution) -> HashSet<usize> {
+    pub(super) fn used_full_regions(&self, solution: &LinearGraphSolution) -> HashSet<usize> {
         solution
             .sub_graph_parikh_images
             .iter()
@@ -535,17 +543,17 @@ impl CandidateBuildResult<'_> {
     }
 }
 
-fn append_mgts<'a>(
-    target: &mut MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
-    source: &MGTS<'a, MultiGraphState, ImplicitCFGProduct>,
+fn append_linear_graph<'a>(
+    target: &mut LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+    source: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
     graph_to_full_region: &mut Vec<Option<usize>>,
 ) {
     for part in &source.sequence {
         match part {
-            MGTSPart::Path(path_index) => {
+            LinearGraphPart::Path(path_index) => {
                 target.add_path(source.path(*path_index).clone());
             }
-            MGTSPart::Graph(graph_index) => {
+            LinearGraphPart::Graph(graph_index) => {
                 target.add_graph(Arc::clone(&source.graphs[*graph_index]));
                 graph_to_full_region.push(None);
             }

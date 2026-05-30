@@ -29,7 +29,7 @@ config! {
         preprocessing: PreprocessingConfig (Option<PartialPreprocessingConfig> = PreprocessingConfig::default()),
         modulo: ModuloConfig (Option<PartialModuloConfig> = ModuloConfig::default()),
         lts: LTSConfig (Option<PartialLTSConfig> = LTSConfig::default()),
-        mgts: MGTSConfig (Option<PartialMGTSConfig> = MGTSConfig::default()),
+        linear_graph: LinearGraphConfig (Option<PartialLinearGraphConfig> = LinearGraphConfig::default()),
         debug_trace: DebugTraceConfig (Option<PartialDebugTraceConfig> = DebugTraceConfig::default()),
     }
 }
@@ -38,7 +38,7 @@ config! {
     pub struct PreprocessingConfig {
         enabled: bool = false,
         z_reach_precheck_enabled: bool = false,
-        max_mgts_candidates: usize = 256,
+        max_linear_graph_candidates: usize = 256,
     }
 }
 
@@ -70,10 +70,38 @@ config! {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum LinearGraphInterpolationStrategy {
+    AdaptiveBatch,
+    Linear,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum LinearGraphRegionOrder {
+    GainDescending,
+    GainAscending,
+    Input,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum LinearGraphSeedOrder {
+    MorePathsThenSize,
+    LargerSeedFirst,
+    SmallerSeedFirst,
+}
+
 config! {
-    pub struct MGTSConfig {
+    pub struct LinearGraphConfig {
         enabled: bool = true,
         max_refinement_steps: u64 = 10,
+        max_seed_checks: Option<usize> = None,
+        max_interpolation_steps: Option<usize> = None,
+        check_full_scc_upper_bound: bool = true,
+        interpolation_strategy: LinearGraphInterpolationStrategy = LinearGraphInterpolationStrategy::AdaptiveBatch,
+        region_order: LinearGraphRegionOrder = LinearGraphRegionOrder::GainDescending,
+        seed_order: LinearGraphSeedOrder = LinearGraphSeedOrder::MorePathsThenSize,
+        reach_solver_max_iterations: Option<u32> = None,
+        reach_solver_timeout: Option<std::time::Duration> = None,
     }
 }
 

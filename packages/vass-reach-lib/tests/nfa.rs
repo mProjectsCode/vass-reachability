@@ -89,7 +89,7 @@ fn test_nfa_to_dfa_3() {
 #[test]
 fn test_nfa_to_dfa_4() {
     // We want to mirror the situation where we have the same SCC twice, directly
-    // consecutive, in the MGTS.
+    // consecutive, in the LinearGraph.
 
     let mut nfa = NFA::<u32, char>::new(vec!['a', 'b', 'c']);
     // path before

@@ -16,9 +16,9 @@ use crate::{
         InitializedAutomaton, TransitionSystem,
         cfg::update::CFGCounterUpdate,
         index_map::OptionIndexMap,
-        mgts::{
-            MGTS,
-            part::{MGTSPart, MarkedGraph, MarkedPath},
+        linear_graph::{
+            LinearGraph,
+            part::{LinearGraphPart, LinearGraphPathSegment, LinearGraphRegion},
         },
         path::{Path, parikh_image::ParikhImage},
         scc::SCCAlgorithms,
@@ -32,13 +32,13 @@ use crate::{
 };
 
 #[derive(Debug, Default)]
-pub struct MGTSReachSolverOptions {
+pub struct LinearGraphReachSolverOptions {
     max_iterations: Option<u32>,
     max_time: Option<Duration>,
     stop_signal: Option<Arc<AtomicBool>>,
 }
 
-impl MGTSReachSolverOptions {
+impl LinearGraphReachSolverOptions {
     pub fn with_iteration_limit(mut self, limit: u32) -> Self {
         self.max_iterations = Some(limit);
         self
@@ -66,10 +66,10 @@ impl MGTSReachSolverOptions {
 
     pub fn to_solver<'g, NIndex: GIndex + Send + Sync, A>(
         self,
-        mgts: &'g MGTS<'g, NIndex, A>,
+        linear_graph: &'g LinearGraph<'g, NIndex, A>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-    ) -> MGTSReachSolver<'g, NIndex, A>
+    ) -> LinearGraphReachSolver<'g, NIndex, A>
     where
         A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
             + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
@@ -78,21 +78,21 @@ impl MGTSReachSolverOptions {
             + Send
             + Sync,
     {
-        MGTSReachSolver::new(mgts, initial_valuation, final_valuation, self)
+        LinearGraphReachSolver::new(linear_graph, initial_valuation, final_valuation, self)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct MGTSSolution {
+pub struct LinearGraphSolution {
     pub sub_graph_parikh_images: Vec<ParikhImage<EdgeIndex>>,
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
 }
 
-impl MGTSSolution {
+impl LinearGraphSolution {
     pub fn build_run<'a, NIndex: GIndex, A>(
         &self,
-        mgts: &MGTS<'a, NIndex, A>,
+        linear_graph: &LinearGraph<'a, NIndex, A>,
         n_run: bool,
     ) -> Option<Path<NIndex, CFGCounterUpdate>>
     where
@@ -109,7 +109,8 @@ impl MGTSSolution {
 
         let dimension = self.initial_valuation.dimension();
 
-        let mut product_path = Path::<NIndex, CFGCounterUpdate>::new(mgts.automaton.get_initial());
+        let mut product_path =
+            Path::<NIndex, CFGCounterUpdate>::new(linear_graph.automaton.get_initial());
 
         let mut current_valuation = self.initial_valuation.clone();
 
@@ -117,10 +118,10 @@ impl MGTSSolution {
         // path or graph we are in trouble. First we do more solving and then we also
         // run into index errors here.
 
-        for part in mgts.sequence.iter() {
+        for part in linear_graph.sequence.iter() {
             match part {
-                MGTSPart::Graph(idx) => {
-                    let graph = mgts.graph(*idx);
+                LinearGraphPart::Graph(idx) => {
+                    let graph = linear_graph.graph(*idx);
                     let image = &self.sub_graph_parikh_images[*idx];
 
                     // first we need to calculate the start and end valuations for the graph
@@ -139,8 +140,8 @@ impl MGTSSolution {
 
                     product_path.concat(mapped_path);
                 }
-                MGTSPart::Path(idx) => {
-                    let path = mgts.path(*idx);
+                LinearGraphPart::Path(idx) => {
+                    let path = linear_graph.path(*idx);
 
                     // we need to update the current valuation for possible following graphs
                     let update = cfg_updates_to_counter_update(
@@ -162,7 +163,7 @@ impl MGTSSolution {
         );
 
         tracing::debug!(
-            "Built run for MGTSs solution in {} ms",
+            "Built run for linear graph solution in {} ms",
             timer.elapsed().as_millis()
         );
 
@@ -171,31 +172,36 @@ impl MGTSSolution {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MGTSReachSolverError {
+pub enum LinearGraphReachSolverError {
     Timeout,
     MaxIterationsReached,
     SolverUnknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MGTSReachSolverStatistics {
+pub struct LinearGraphReachSolverStatistics {
     pub step_count: u32,
     pub time: Duration,
 }
 
-impl MGTSReachSolverStatistics {
+impl LinearGraphReachSolverStatistics {
     pub fn new(step_count: u32, time: Duration) -> Self {
-        MGTSReachSolverStatistics { step_count, time }
+        LinearGraphReachSolverStatistics { step_count, time }
     }
 }
 
-pub type MGTSReachSolverStatus = SolverStatus<MGTSSolution, (), MGTSReachSolverError>;
+pub type LinearGraphReachSolverStatus =
+    SolverStatus<LinearGraphSolution, (), LinearGraphReachSolverError>;
 
-pub type MGTSReachSolverResult =
-    SolverResult<MGTSSolution, (), MGTSReachSolverError, MGTSReachSolverStatistics>;
+pub type LinearGraphReachSolverResult = SolverResult<
+    LinearGraphSolution,
+    (),
+    LinearGraphReachSolverError,
+    LinearGraphReachSolverStatistics,
+>;
 
-impl MGTSReachSolverResult {
-    pub fn get_solution(&self) -> Option<&MGTSSolution> {
+impl LinearGraphReachSolverResult {
+    pub fn get_solution(&self) -> Option<&LinearGraphSolution> {
         match &self.status {
             SolverStatus::True(solution) => Some(solution),
             _ => None,
@@ -203,7 +209,7 @@ impl MGTSReachSolverResult {
     }
 }
 
-pub struct MGTSReachSolver<'g, NIndex: GIndex + Send + Sync, A>
+pub struct LinearGraphReachSolver<'g, NIndex: GIndex + Send + Sync, A>
 where
     A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
         + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
@@ -212,16 +218,16 @@ where
         + Send
         + Sync,
 {
-    mgts: &'g MGTS<'g, NIndex, A>,
+    linear_graph: &'g LinearGraph<'g, NIndex, A>,
     initial_valuation: &'g VASSCounterValuation,
     final_valuation: &'g VASSCounterValuation,
-    options: MGTSReachSolverOptions,
+    options: LinearGraphReachSolverOptions,
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
     stop_signal: Arc<AtomicBool>,
 }
 
-impl<'g, NIndex: GIndex + Send + Sync, A> MGTSReachSolver<'g, NIndex, A>
+impl<'g, NIndex: GIndex + Send + Sync, A> LinearGraphReachSolver<'g, NIndex, A>
 where
     A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
         + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
@@ -231,20 +237,20 @@ where
         + Sync,
 {
     pub fn new(
-        mgts: &'g MGTS<'g, NIndex, A>,
+        linear_graph: &'g LinearGraph<'g, NIndex, A>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-        options: MGTSReachSolverOptions,
+        options: LinearGraphReachSolverOptions,
     ) -> Self {
         let stop_signal = options
             .stop_signal
             .clone()
             .unwrap_or(Arc::new(AtomicBool::new(false)));
 
-        mgts.assert_consistent();
+        linear_graph.assert_consistent();
 
-        MGTSReachSolver {
-            mgts,
+        LinearGraphReachSolver {
+            linear_graph,
             initial_valuation,
             final_valuation,
             options,
@@ -254,7 +260,7 @@ where
         }
     }
 
-    pub fn solve(&mut self) -> MGTSReachSolverResult {
+    pub fn solve(&mut self) -> LinearGraphReachSolverResult {
         self.solver_start_time = Some(std::time::Instant::now());
 
         let mut config = Config::new();
@@ -296,7 +302,7 @@ where
             });
 
             tracing::debug!(
-                "MGTS reachability solver finished in {} ms",
+                "Linear graph reachability solver finished in {} ms",
                 self.get_solver_time().unwrap_or_default().as_millis()
             );
 
@@ -304,7 +310,7 @@ where
         })
     }
 
-    fn solve_inner(&mut self, solver: &Solver) -> MGTSReachSolverResult {
+    fn solve_inner(&mut self, solver: &Solver) -> LinearGraphReachSolverResult {
         let mut sums: Box<[_]> = self
             .initial_valuation
             .iter()
@@ -312,18 +318,22 @@ where
             .collect();
 
         let edge_maps = self
-            .mgts
+            .linear_graph
             .sequence
             .iter()
             .enumerate()
             .filter_map(|(i, part)| match part {
-                MGTSPart::Path(idx) => {
-                    self.build_path_constraints(self.mgts.path(*idx), solver, &mut sums);
+                LinearGraphPart::Path(idx) => {
+                    self.build_path_constraints(self.linear_graph.path(*idx), solver, &mut sums);
                     None
                 }
-                MGTSPart::Graph(idx) => {
-                    let edge_map =
-                        self.build_graph_constraints(i, self.mgts.graph(*idx), solver, &mut sums);
+                LinearGraphPart::Graph(idx) => {
+                    let edge_map = self.build_graph_constraints(
+                        i,
+                        self.linear_graph.graph(*idx),
+                        solver,
+                        &mut sums,
+                    );
                     Some(edge_map)
                 }
             })
@@ -342,7 +352,7 @@ where
 
                     let parikh_image_components = edge_maps
                         .iter()
-                        .zip(self.mgts.iter_graph_parts())
+                        .zip(self.linear_graph.iter_graph_parts())
                         .map(|(map, graph)| {
                             let image = parikh_image_from_edge_map(map, &model);
 
@@ -357,14 +367,16 @@ where
                         .iter()
                         .all(|(_, _, _, c)| c.is_empty())
                     {
-                        return self.get_solver_result(MGTSReachSolverStatus::True(MGTSSolution {
-                            sub_graph_parikh_images: parikh_image_components
-                                .into_iter()
-                                .map(|(_, _, main_component, _)| main_component)
-                                .collect(),
-                            initial_valuation: self.initial_valuation.clone(),
-                            final_valuation: self.final_valuation.clone(),
-                        }));
+                        return self.get_solver_result(LinearGraphReachSolverStatus::True(
+                            LinearGraphSolution {
+                                sub_graph_parikh_images: parikh_image_components
+                                    .into_iter()
+                                    .map(|(_, _, main_component, _)| main_component)
+                                    .collect(),
+                                initial_valuation: self.initial_valuation.clone(),
+                                final_valuation: self.final_valuation.clone(),
+                            },
+                        ));
                     }
 
                     if self.max_iterations_reached() {
@@ -392,11 +404,11 @@ where
                     self.step_count += 1;
                 }
                 z3::SatResult::Unsat => {
-                    return self.get_solver_result(MGTSReachSolverStatus::False(()));
+                    return self.get_solver_result(LinearGraphReachSolverStatus::False(()));
                 }
                 z3::SatResult::Unknown => {
-                    return self.get_solver_result(MGTSReachSolverStatus::Unknown(
-                        MGTSReachSolverError::SolverUnknown,
+                    return self.get_solver_result(LinearGraphReachSolverStatus::Unknown(
+                        LinearGraphReachSolverError::SolverUnknown,
                     ));
                 }
             }
@@ -405,13 +417,13 @@ where
 
     fn build_path_constraints(
         &self,
-        path: &MarkedPath<NIndex>,
+        path: &LinearGraphPathSegment<NIndex>,
         solver: &Solver,
         sums: &mut Box<[Int]>,
     ) {
         let path_updates = cfg_updates_to_counter_updates(
             path.path.transitions.iter().cloned(),
-            self.mgts.dimension,
+            self.linear_graph.dimension,
         );
 
         // first subtract the minimums
@@ -437,7 +449,7 @@ where
     fn build_graph_constraints(
         &self,
         part_index: usize,
-        graph: &MarkedGraph<NIndex>,
+        graph: &LinearGraphRegion<NIndex>,
         solver: &Solver,
         sums: &mut Box<[Int]>,
     ) -> OptionIndexMap<EdgeIndex, Int> {
@@ -503,26 +515,32 @@ where
         self.stop_signal.load(Ordering::SeqCst)
     }
 
-    fn max_iterations_reached_result(&self) -> MGTSReachSolverResult {
-        MGTSReachSolverResult::new(
-            SolverStatus::Unknown(MGTSReachSolverError::MaxIterationsReached),
+    fn max_iterations_reached_result(&self) -> LinearGraphReachSolverResult {
+        LinearGraphReachSolverResult::new(
+            SolverStatus::Unknown(LinearGraphReachSolverError::MaxIterationsReached),
             self.get_solver_statistics(),
         )
     }
 
-    fn max_time_reached_result(&self) -> MGTSReachSolverResult {
-        MGTSReachSolverResult::new(
-            SolverStatus::Unknown(MGTSReachSolverError::Timeout),
+    fn max_time_reached_result(&self) -> LinearGraphReachSolverResult {
+        LinearGraphReachSolverResult::new(
+            SolverStatus::Unknown(LinearGraphReachSolverError::Timeout),
             self.get_solver_statistics(),
         )
     }
 
-    fn get_solver_result(&self, status: MGTSReachSolverStatus) -> MGTSReachSolverResult {
-        MGTSReachSolverResult::new(status, self.get_solver_statistics())
+    fn get_solver_result(
+        &self,
+        status: LinearGraphReachSolverStatus,
+    ) -> LinearGraphReachSolverResult {
+        LinearGraphReachSolverResult::new(status, self.get_solver_statistics())
     }
 
-    fn get_solver_statistics(&self) -> MGTSReachSolverStatistics {
-        MGTSReachSolverStatistics::new(self.step_count, self.get_solver_time().unwrap_or_default())
+    fn get_solver_statistics(&self) -> LinearGraphReachSolverStatistics {
+        LinearGraphReachSolverStatistics::new(
+            self.step_count,
+            self.get_solver_time().unwrap_or_default(),
+        )
     }
 
     fn get_solver_time(&self) -> Option<Duration> {

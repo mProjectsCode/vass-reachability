@@ -12,8 +12,8 @@ use crate::{
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
+        linear_graph::extender::LinearGraphExtender,
         ltc::{self, LTC, translation::LTCTranslation},
-        mgts::extender::MGTSExtender,
         path::Path,
         scc::{SCCAlgorithms, SCCDag, SCCDagRouteSummary},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
@@ -36,7 +36,8 @@ pub enum VASSReachRefinementAction {
     /// Increase the backward counting bound for the given counter to the given
     /// value.
     IncreaseBackwardsBound(VASSCounterIndex, u32),
-    /// Build some automaton (LTC, MGTS, ...?) to cut away the spurious path.
+    /// Build some automaton (LTC, LinearGraph, ...?) to cut away the spurious
+    /// path.
     BuildAutomaton,
 }
 
@@ -101,7 +102,7 @@ impl VASSReachSolver {
         cfg.make_complete(());
         cfg = cfg.minimize();
 
-        cfg = match preprocess::run_preprocess_unreachable_mgts_from_scc_dag(
+        cfg = match preprocess::run_preprocess_unreachable_linear_graph_from_scc_dag(
             cfg,
             &ivass.initial_valuation,
             &ivass.final_valuation,
@@ -349,13 +350,13 @@ impl VASSReachSolver {
                 //     None
                 // };
 
-                // let mgts_automaton = if *self.config.get_mgts().get_enabled() {
-                //     tracing::debug!("Building and checking MGTS");
+                // let linear_graph_automaton = if *self.config.get_linear_graph().get_enabled()
+                // {     tracing::debug!("Building and checking LinearGraph");
 
-                //     let mut extender = MGTSExtender::from_cfg_product(
+                //     let mut extender = LinearGraphExtender::from_cfg_product(
                 //         path,
                 //         &self.state,
-                //         *self.config.get_mgts().get_max_refinement_steps(),
+                //         *self.config.get_linear_graph().get_max_refinement_steps(),
                 //     );
                 //     let mut cfg = extender.run();
                 //     cfg.invert_mut();
@@ -364,41 +365,41 @@ impl VASSReachSolver {
                 //     None
                 // };
 
-                tracing::debug!("Building and checking MGTS");
+                tracing::debug!("Building and checking LinearGraph");
                 let full_dag = self.state.find_scc_dag();
-                log_scc_dag_route_summary_before_mgts("implicit_product", &full_dag);
+                log_scc_dag_route_summary_before_linear_graph("implicit_product", &full_dag);
 
                 let minimized_explicit_product = self.state.explicit().minimize();
                 let minimized_explicit_dag = minimized_explicit_product.find_scc_dag();
-                log_scc_dag_route_summary_before_mgts(
+                log_scc_dag_route_summary_before_linear_graph(
                     "minimized_explicit_product",
                     &minimized_explicit_dag,
                 );
 
-                let mut extender = MGTSExtender::from_cfg_product(
+                let mut extender = LinearGraphExtender::from_cfg_product_with_config(
                     path,
                     &self.state,
-                    *self.config.get_mgts().get_max_refinement_steps(),
+                    self.config.get_linear_graph(),
                 )
                 .with_scc_dag(full_dag);
                 let mut cfg = extender.run();
                 cfg.invert_mut();
                 self.state.add_cfg(cfg.minimize());
 
-                // match (ltc_automaton, mgts_automaton) {
-                //     (Some(ltc_cfg), Some(mgts_cfg)) => {
+                // match (ltc_automaton, linear_graph_automaton) {
+                //     (Some(ltc_cfg), Some(linear_graph_cfg)) => {
                 //         // We would expect both automata to be somewhat
                 // similar, they are built         // from the
                 // same path at least. So we would expect their intersection
                 //         // to not blow up too much.
-                //         let product = ltc_cfg.intersect(&mgts_cfg);
+                //         let product = ltc_cfg.intersect(&linear_graph_cfg);
                 //         self.state.add_cfg(product);
                 //     }
                 //     (Some(ltc_cfg), None) => {
                 //         self.state.add_cfg(ltc_cfg);
                 //     }
-                //     (None, Some(mgts_cfg)) => {
-                //         self.state.add_cfg(mgts_cfg);
+                //     (None, Some(linear_graph_cfg)) => {
+                //         self.state.add_cfg(linear_graph_cfg);
                 //     }
                 //     (None, None) => {}
                 // }
@@ -410,6 +411,8 @@ impl VASSReachSolver {
 
     /// Selects a refinement action based on the given spurious path.
     fn select_refinement_action(&self, path: &MultiGraphPath) -> VASSReachRefinementAction {
+        return VASSReachRefinementAction::BuildAutomaton;
+
         let path_final_valuation = path.get_path_final_valuation(&self.state.initial_valuation);
 
         tracing::debug!("Path final valuation: {:?}", path_final_valuation);
@@ -599,7 +602,7 @@ impl VASSReachSolver {
     }
 }
 
-fn log_scc_dag_route_summary_before_mgts<NIndex: GIndex>(
+fn log_scc_dag_route_summary_before_linear_graph<NIndex: GIndex>(
     product: &'static str,
     dag: &SCCDag<NIndex, CFGCounterUpdate>,
 ) {
@@ -620,6 +623,6 @@ fn log_scc_dag_route_summary_before_mgts<NIndex: GIndex>(
         accepting_states,
         accepting_component_routes,
         accepting_state_routes,
-        "SCC-DAG accepting routes before MGTS refinement"
+        "SCC-DAG accepting routes before LinearGraph refinement"
     );
 }
