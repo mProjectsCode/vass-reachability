@@ -8,7 +8,7 @@ use vass_reach_lib::{
         },
         dfa::node::DfaNode,
         implicit_cfg_product::{
-            ImplicitCFGProduct, bounded_counting_indices, state::MultiGraphState,
+            ImplicitCFGProduct, bounded_counting_indices, modulo_indices, state::MultiGraphState,
         },
         vass::counter::{VASSCounterIndex, VASSCounterValuation},
     },
@@ -62,6 +62,34 @@ fn implicit_product_test() {
 }
 
 #[test]
+fn implicit_product_reach_paths_collects_multiple_accepting_paths() {
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(2));
+
+    let q0 = cfg.add_node(DfaNode::non_accepting(()));
+    let q1 = cfg.add_node(DfaNode::accepting(()));
+    let q2 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(q0);
+    cfg.add_edge(&q0, &q1, cfg_inc!(0));
+    cfg.add_edge(&q0, &q2, cfg_inc!(1));
+
+    let product =
+        ImplicitCFGProduct::new_without_counting_cfgs(2, vec![0, 0].into(), vec![0, 0].into(), cfg);
+
+    let paths = product.reach_paths(3);
+
+    assert_eq!(paths.len(), 2);
+    assert_eq!(
+        paths
+            .iter()
+            .map(|path| path.transitions.as_slice())
+            .collect::<Vec<_>>(),
+        vec![&[cfg_inc!(0)][..], &[cfg_inc!(1)][..]]
+    );
+    assert_eq!(product.reach(), Some(paths[0].clone()));
+}
+
+#[test]
 fn implicit_product_predecessors() {
     // dimension = 1 => alphabet {+c0, -c0}
     let mut a = VASSCFG::new(CFGCounterUpdate::alphabet(1));
@@ -106,6 +134,161 @@ fn implicit_product_predecessors() {
     expected.insert(MultiGraphState::from(vec![a1, b1]));
 
     assert_eq!(predecessors, expected);
+}
+
+#[test]
+fn implicit_product_full_view_matches_product_transitions() {
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+
+    let q0 = cfg.add_node(DfaNode::non_accepting(()));
+    let q1 = cfg.add_node(DfaNode::accepting(()));
+
+    cfg.set_initial(q0);
+    cfg.add_edge(&q0, &q1, cfg_inc!(0));
+    cfg.add_edge(&q1, &q1, cfg_inc!(0));
+    cfg.add_edge(&q0, &q0, cfg_dec!(0));
+    cfg.add_edge(&q1, &q0, cfg_dec!(0));
+    cfg.set_complete_unchecked();
+
+    let product = ImplicitCFGProduct::new_without_counting_cfgs(
+        1,
+        VASSCounterValuation::from(vec![0]),
+        VASSCounterValuation::from(vec![1]),
+        cfg,
+    );
+    let view = product.full_view();
+    let initial = product.initial();
+    let view_initial = view.get_initial();
+
+    assert_eq!(view.active_cfg_indices(), &[0]);
+    assert_eq!(view_initial, initial);
+    assert_eq!(
+        view.successor(&view_initial, &cfg_inc!(0)),
+        product.successor(&initial, &cfg_inc!(0))
+    );
+    assert!(view.is_accepting(&view.successor(&view_initial, &cfg_inc!(0)).unwrap()));
+}
+
+#[test]
+fn implicit_product_subset_view_uses_only_active_cfgs() {
+    let mut a = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+    let a0 = a.add_node(DfaNode::new(false, false, ()));
+    let a1 = a.add_node(DfaNode::new(false, false, ()));
+    a.add_edge(&a0, &a1, cfg_inc!(0));
+    a.add_edge(&a1, &a1, cfg_inc!(0));
+    a.add_edge(&a0, &a0, cfg_dec!(0));
+    a.add_edge(&a1, &a0, cfg_dec!(0));
+    a.set_initial(a0);
+    a.set_complete_unchecked();
+
+    let mut b = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+    let b0 = b.add_node(DfaNode::new(false, false, ()));
+    let b1 = b.add_node(DfaNode::new(false, false, ()));
+    b.add_edge(&b0, &b0, cfg_inc!(0));
+    b.add_edge(&b1, &b0, cfg_inc!(0));
+    b.add_edge(&b0, &b1, cfg_dec!(0));
+    b.add_edge(&b1, &b1, cfg_dec!(0));
+    b.set_initial(b0);
+    b.set_complete_unchecked();
+
+    let mut product = ImplicitCFGProduct::new_without_counting_cfgs(
+        1,
+        VASSCounterValuation::from(vec![0]),
+        VASSCounterValuation::from(vec![0]),
+        a,
+    );
+    product.add_cfg(b);
+
+    let view = product.view_from_indices([1]);
+    let initial = view.get_initial();
+    let successor = view.successor(&initial, &cfg_dec!(0)).unwrap();
+    let predecessors = view
+        .predecessors(&MultiGraphState::from(vec![b0]))
+        .collect::<HashSet<_>>();
+
+    assert_eq!(view.active_cfg_indices(), &[1]);
+    assert_eq!(initial, MultiGraphState::from(vec![b0]));
+    assert_eq!(successor, MultiGraphState::from(vec![b1]));
+    assert_eq!(
+        predecessors,
+        HashSet::from_iter([
+            MultiGraphState::from(vec![b0]),
+            MultiGraphState::from(vec![b1])
+        ])
+    );
+}
+
+#[test]
+fn implicit_product_view_projects_paths_to_compact_states() {
+    let mut a = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+    let a0 = a.add_node(DfaNode::new(false, false, ()));
+    let a1 = a.add_node(DfaNode::new(false, false, ()));
+    a.add_edge(&a0, &a1, cfg_inc!(0));
+    a.add_edge(&a1, &a1, cfg_inc!(0));
+    a.add_edge(&a0, &a0, cfg_dec!(0));
+    a.add_edge(&a1, &a0, cfg_dec!(0));
+    a.set_initial(a0);
+    a.set_complete_unchecked();
+
+    let mut b = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+    let b0 = b.add_node(DfaNode::new(false, false, ()));
+    let b1 = b.add_node(DfaNode::new(false, false, ()));
+    b.add_edge(&b0, &b1, cfg_inc!(0));
+    b.add_edge(&b1, &b1, cfg_inc!(0));
+    b.add_edge(&b0, &b0, cfg_dec!(0));
+    b.add_edge(&b1, &b0, cfg_dec!(0));
+    b.set_initial(b0);
+    b.set_complete_unchecked();
+
+    let mut product = ImplicitCFGProduct::new_without_counting_cfgs(
+        1,
+        VASSCounterValuation::from(vec![0]),
+        VASSCounterValuation::from(vec![0]),
+        a,
+    );
+    product.add_cfg(b);
+
+    let full_path = vass_reach_lib::automaton::path::Path::from_word(
+        product.initial(),
+        &[cfg_inc!(0)],
+        &product,
+    )
+    .unwrap();
+    let view = product.view_from_indices([1]);
+    let projected = view.project_path(&full_path);
+
+    assert_eq!(projected.transitions, full_path.transitions);
+    assert_eq!(projected.start(), &MultiGraphState::from(vec![b0]));
+    assert_eq!(projected.end(), &MultiGraphState::from(vec![b1]));
+}
+
+#[test]
+fn implicit_product_view_without_modulo_cfgs_excludes_modulo_indices() {
+    let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(2));
+    let q0 = cfg.add_node(DfaNode::accepting(()));
+    cfg.set_initial(q0);
+    cfg.add_edge(&q0, &q0, cfg_inc!(0));
+    cfg.add_edge(&q0, &q0, cfg_dec!(0));
+    cfg.add_edge(&q0, &q0, cfg_inc!(1));
+    cfg.add_edge(&q0, &q0, cfg_dec!(1));
+    cfg.set_complete_unchecked();
+
+    let product = ImplicitCFGProduct::new(
+        2,
+        VASSCounterValuation::from(vec![0, 0]),
+        VASSCounterValuation::from(vec![0, 0]),
+        cfg,
+        false,
+    );
+    let view = product.view_without_modulo_cfgs();
+
+    assert!(
+        !view
+            .active_cfg_indices()
+            .iter()
+            .any(|index| modulo_indices(2).contains(index))
+    );
+    assert_eq!(view.active_cfg_indices(), &[0, 3, 4, 5, 6]);
 }
 
 #[test]

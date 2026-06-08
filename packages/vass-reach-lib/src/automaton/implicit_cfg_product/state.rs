@@ -35,11 +35,8 @@ impl MultiGraphState {
 
         for (i, cfg) in graphs.iter().enumerate() {
             let current_state = self.states[i];
-            if let Some(target) = cfg.successor(&current_state, letter) {
-                new_states.push(target);
-            } else {
-                return None;
-            }
+            let target = cfg.successor(&current_state, letter)?;
+            new_states.push(target);
         }
 
         Some(MultiGraphState {

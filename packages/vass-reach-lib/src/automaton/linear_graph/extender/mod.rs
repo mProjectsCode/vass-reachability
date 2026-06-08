@@ -5,7 +5,7 @@ use hashbrown::HashSet;
 use crate::{
     automaton::{
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
-        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
+        implicit_cfg_product::{state::MultiGraphState, view::ImplicitCFGProductView},
         linear_graph::LinearGraph,
         path::Path,
         scc::{SCCAlgorithms, SCCDag},
@@ -23,6 +23,7 @@ mod layout;
 use layout::{CandidateSeed, InterpolationLayout};
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
+type ProductViewLinearGraph<'a> = LinearGraph<'a, MultiGraphState, ImplicitCFGProductView<'a>>;
 
 /// Builds a large unreachable LinearGraph between one or more seed-language
 /// lower bounds and the full SCCs of the current product approximation.
@@ -30,20 +31,14 @@ type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 pub struct LinearGraphExtender<'a> {
     primary_path: MultiGraphPath,
     auxiliary_paths: Vec<MultiGraphPath>,
-    /// The subset of seed paths currently represented by `seed_linear_graph`.
-    selected_path_indices: Vec<usize>,
     /// Reference to the underlying CFG.
-    pub product: &'a ImplicitCFGProduct,
+    pub product: &'a ImplicitCFGProductView<'a>,
     /// Dimension of the CFG.
     pub dimension: usize,
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
     /// Extender search and solver options.
     options: LinearGraphExtenderOptions,
-    /// The best seed-language LinearGraph found for the selected seed subset.
-    seed_linear_graph: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
-    /// Interpolation layout for the selected seed subset.
-    layout: Option<InterpolationLayout<'a>>,
     /// Optional SCC DAG supplied by a caller that already computed it.
     scc_dag: Option<SCCDag<MultiGraphState, CFGCounterUpdate>>,
 }
@@ -100,7 +95,7 @@ impl<'a> LinearGraphExtender<'a> {
     /// `from_paths`, which owns the multi-seed setup.
     pub fn new(
         path: MultiGraphPath,
-        product: &'a ImplicitCFGProduct,
+        product: &'a ImplicitCFGProductView<'a>,
         dimension: usize,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
@@ -124,7 +119,7 @@ impl<'a> LinearGraphExtender<'a> {
     /// primary path when they take the same SCC-DAG route.
     pub fn from_paths(
         paths: Vec<MultiGraphPath>,
-        product: &'a ImplicitCFGProduct,
+        product: &'a ImplicitCFGProductView<'a>,
         dimension: usize,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
@@ -152,7 +147,7 @@ impl<'a> LinearGraphExtender<'a> {
     pub fn from_primary_path(
         primary_path: MultiGraphPath,
         auxiliary_paths: Vec<MultiGraphPath>,
-        product: &'a ImplicitCFGProduct,
+        product: &'a ImplicitCFGProductView<'a>,
         dimension: usize,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
@@ -172,25 +167,20 @@ impl<'a> LinearGraphExtender<'a> {
     fn from_primary_path_with_options(
         primary_path: MultiGraphPath,
         auxiliary_paths: Vec<MultiGraphPath>,
-        product: &'a ImplicitCFGProduct,
+        product: &'a ImplicitCFGProductView<'a>,
         dimension: usize,
         initial_valuation: VASSCounterValuation,
         final_valuation: VASSCounterValuation,
         options: LinearGraphExtenderOptions,
     ) -> Self {
-        let initial_linear_graph = LinearGraph::from_path(primary_path.clone(), product, dimension);
-
         LinearGraphExtender {
             primary_path,
             auxiliary_paths,
-            selected_path_indices: vec![0],
             dimension,
             product,
             initial_valuation,
             final_valuation,
             options,
-            seed_linear_graph: initial_linear_graph,
-            layout: None,
             scc_dag: None,
         }
     }
@@ -204,108 +194,102 @@ impl<'a> LinearGraphExtender<'a> {
 
     /// Creates a single-path extender using dimension and boundary valuations
     /// from the implicit product.
-    pub fn from_cfg_product(
+    pub fn from_product_view(
         path: MultiGraphPath,
-        cfg_product: &'a ImplicitCFGProduct,
+        product_view: &'a ImplicitCFGProductView<'a>,
         max_refinements: u64,
     ) -> Self {
-        Self::new(
+        let (initial_valuation, final_valuation) = product_view_boundary_valuations(product_view);
+
+        Self::from_primary_path_with_options(
             path,
-            cfg_product,
-            cfg_product.dimension,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
-            max_refinements,
+            Vec::new(),
+            product_view,
+            product_view.dimension(),
+            initial_valuation,
+            final_valuation,
+            LinearGraphExtenderOptions::from_refinement_steps(max_refinements),
         )
     }
 
     /// Creates a single-path extender using the LinearGraph configuration.
-    pub fn from_cfg_product_with_config(
+    pub fn from_product_view_with_config(
         path: MultiGraphPath,
-        cfg_product: &'a ImplicitCFGProduct,
+        product_view: &'a ImplicitCFGProductView<'a>,
         config: &LinearGraphConfig,
     ) -> Self {
-        Self::from_primary_path_with_options(
-            path,
-            Vec::new(),
-            cfg_product,
-            cfg_product.dimension,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
-            LinearGraphExtenderOptions::from_config(config),
-        )
+        Self::from_product_view_primary_path_with_config(path, Vec::new(), product_view, config)
     }
 
     /// Creates a multi-path extender using dimension and boundary valuations
     /// from the implicit product.
-    pub fn from_cfg_product_paths(
+    pub fn from_product_view_paths(
         paths: Vec<MultiGraphPath>,
-        cfg_product: &'a ImplicitCFGProduct,
+        product_view: &'a ImplicitCFGProductView<'a>,
         max_refinements: u64,
     ) -> Self {
-        Self::from_paths(
-            paths,
-            cfg_product,
-            cfg_product.dimension,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
+        let (primary_path, auxiliary_paths) = split_primary_path(paths);
+        Self::from_product_view_primary_path(
+            primary_path,
+            auxiliary_paths,
+            product_view,
             max_refinements,
         )
     }
 
     /// Creates a multi-path extender using the LinearGraph configuration.
-    pub fn from_cfg_product_paths_with_config(
+    pub fn from_product_view_paths_with_config(
         paths: Vec<MultiGraphPath>,
-        cfg_product: &'a ImplicitCFGProduct,
+        product_view: &'a ImplicitCFGProductView<'a>,
         config: &LinearGraphConfig,
     ) -> Self {
         let (primary_path, auxiliary_paths) = split_primary_path(paths);
-
-        Self::from_primary_path_with_options(
+        Self::from_product_view_primary_path_with_config(
             primary_path,
             auxiliary_paths,
-            cfg_product,
-            cfg_product.dimension,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
-            LinearGraphExtenderOptions::from_config(config),
+            product_view,
+            config,
         )
     }
 
     /// Creates a primary-path extender with auxiliary paths using dimension and
     /// boundary valuations from the implicit product.
-    pub fn from_cfg_product_primary_path(
+    pub fn from_product_view_primary_path(
         primary_path: MultiGraphPath,
         auxiliary_paths: Vec<MultiGraphPath>,
-        cfg_product: &'a ImplicitCFGProduct,
+        product_view: &'a ImplicitCFGProductView<'a>,
         max_refinements: u64,
     ) -> Self {
-        Self::from_primary_path(
+        let (initial_valuation, final_valuation) = product_view_boundary_valuations(product_view);
+
+        Self::from_primary_path_with_options(
             primary_path,
             auxiliary_paths,
-            cfg_product,
-            cfg_product.dimension,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
-            max_refinements,
+            product_view,
+            product_view.dimension(),
+            initial_valuation,
+            final_valuation,
+            LinearGraphExtenderOptions::from_refinement_steps(max_refinements),
         )
     }
 
     /// Creates a primary-path extender with auxiliary paths using the
     /// LinearGraph configuration.
-    pub fn from_cfg_product_primary_path_with_config(
+    pub fn from_product_view_primary_path_with_config(
         primary_path: MultiGraphPath,
         auxiliary_paths: Vec<MultiGraphPath>,
-        cfg_product: &'a ImplicitCFGProduct,
+        product_view: &'a ImplicitCFGProductView<'a>,
         config: &LinearGraphConfig,
     ) -> Self {
+        let (initial_valuation, final_valuation) = product_view_boundary_valuations(product_view);
+
         Self::from_primary_path_with_options(
             primary_path,
             auxiliary_paths,
-            cfg_product,
-            cfg_product.dimension,
-            cfg_product.initial_valuation.clone(),
-            cfg_product.final_valuation.clone(),
+            product_view,
+            product_view.dimension(),
+            initial_valuation,
+            final_valuation,
             LinearGraphExtenderOptions::from_config(config),
         )
     }
@@ -322,7 +306,7 @@ impl<'a> LinearGraphExtender<'a> {
     /// The public `run` method still returns a CFG because that is what the
     /// VASS reachability refinement consumes, but tests and future call sites
     /// can use this method to inspect the chosen LinearGraph directly.
-    pub fn run_linear_graph(&mut self) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
+    pub fn run_linear_graph(&mut self) -> ProductViewLinearGraph<'a> {
         let _span = tracing::span!(
             tracing::Level::DEBUG,
             "LinearGraphExtender::run_linear_graph"
@@ -336,8 +320,7 @@ impl<'a> LinearGraphExtender<'a> {
             return self.fallback_to_exact_primary_path();
         };
 
-        let layout = self.install_initial_seed(seed, seed_checks);
-        let best = self.seed_linear_graph.clone();
+        let (layout, best) = self.install_initial_seed(seed, seed_checks);
         let mut checks = 0usize;
 
         if self.interpolation_is_exhausted(&layout, checks, self.options.max_interpolation_steps) {
@@ -367,9 +350,7 @@ impl<'a> LinearGraphExtender<'a> {
 
     /// Keeps the exact primary path when no larger seed-language candidate can
     /// be proved unreachable.
-    fn fallback_to_exact_primary_path(
-        &mut self,
-    ) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
+    fn fallback_to_exact_primary_path(&mut self) -> ProductViewLinearGraph<'a> {
         tracing::debug!(
             "No seed LinearGraph was proved unreachable; keeping exact first path LinearGraph"
         );
@@ -393,24 +374,21 @@ impl<'a> LinearGraphExtender<'a> {
 
     /// Records the selected seed as the lower bound for interpolation.
     fn install_initial_seed(
-        &mut self,
+        &self,
         seed: CandidateSeed<'a>,
         seed_checks: usize,
-    ) -> InterpolationLayout<'a> {
-        let layout = seed.layout;
-
-        self.selected_path_indices = seed.path_indices;
-        self.seed_linear_graph = seed.seed_linear_graph;
-        self.layout = Some(layout.clone());
+    ) -> (InterpolationLayout<'a>, ProductViewLinearGraph<'a>) {
+        let selected_paths = seed.path_indices.len();
+        let size = seed.seed_linear_graph.size();
 
         tracing::debug!(
-            size = self.seed_linear_graph.size(),
-            selected_paths = self.selected_path_indices.len(),
+            size,
+            selected_paths,
             seed_checks,
             "Seed-language LinearGraph is unreachable; using it as search lower bound"
         );
 
-        layout
+        (seed.layout, seed.seed_linear_graph)
     }
 
     /// Returns true when there are no SCC regions left to expand, or the
@@ -441,7 +419,7 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         layout: &InterpolationLayout<'a>,
         checks: &mut usize,
-    ) -> Option<LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>> {
+    ) -> Option<ProductViewLinearGraph<'a>> {
         let full_mask = vec![true; layout.regions.len()];
         let full = layout.build_candidate(&full_mask);
         let full_result = self.solve_candidate(&full.linear_graph);
@@ -464,10 +442,10 @@ impl<'a> LinearGraphExtender<'a> {
     fn search_interpolated_regions(
         &self,
         layout: &InterpolationLayout<'a>,
-        mut best: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+        mut best: ProductViewLinearGraph<'a>,
         mut checks: usize,
         max_checks: usize,
-    ) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
+    ) -> ProductViewLinearGraph<'a> {
         let mut accepted = vec![false; layout.regions.len()];
         let mut pending = self.ordered_regions(layout);
         let mut strategy =
@@ -612,7 +590,7 @@ impl<'a> LinearGraphExtender<'a> {
     /// configured boundary valuations.
     fn solve_candidate(
         &self,
-        linear_graph: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+        linear_graph: &ProductViewLinearGraph<'a>,
     ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
         LinearGraphReachSolverOptions::default()
             .with_optional_iteration_limit(self.options.reach_solver_max_iterations)
@@ -656,6 +634,15 @@ fn split_primary_path(mut paths: Vec<MultiGraphPath>) -> (MultiGraphPath, Vec<Mu
 
     let primary_path = paths.remove(0);
     (primary_path, paths)
+}
+
+fn product_view_boundary_valuations(
+    product_view: &ImplicitCFGProductView<'_>,
+) -> (VASSCounterValuation, VASSCounterValuation) {
+    (
+        product_view.product.initial_valuation.clone(),
+        product_view.product.final_valuation.clone(),
+    )
 }
 
 fn refinement_steps_to_usize(max_refinements: u64) -> usize {

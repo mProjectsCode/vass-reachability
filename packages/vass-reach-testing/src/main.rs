@@ -78,7 +78,7 @@ fn run() -> anyhow::Result<()> {
         Mode::Test => test(&args),
         Mode::Visualize => visualize(&args),
     }
-    .with_context(|| format!("failed in mode: {}", &args.mode))
+    .with_context(|| format!("failed in mode: {}", args.mode))
 }
 
 // #[derive(Debug)]

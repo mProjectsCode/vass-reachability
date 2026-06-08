@@ -5,7 +5,9 @@ use vass_reach_lib::{
         Language, ModifiableAutomaton,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
-        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
+        implicit_cfg_product::{
+            ImplicitCFGProduct, state::MultiGraphState, view::ImplicitCFGProductView,
+        },
         linear_graph::{LinearGraph, extender::LinearGraphExtender, part::LinearGraphRegion},
         path::Path,
         vass::{VASS, VASSEdge},
@@ -18,13 +20,13 @@ use vass_reach_lib::{
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
 fn assert_linear_graph_is_unreachable(
-    linear_graph: &LinearGraph<'_, MultiGraphState, ImplicitCFGProduct>,
+    linear_graph: &LinearGraph<'_, MultiGraphState, ImplicitCFGProductView<'_>>,
 ) {
     let res = LinearGraphReachSolverOptions::default()
         .to_solver(
             linear_graph,
-            &linear_graph.automaton.initial_valuation,
-            &linear_graph.automaton.final_valuation,
+            &linear_graph.automaton.product.initial_valuation,
+            &linear_graph.automaton.product.final_valuation,
         )
         .solve();
 
@@ -525,7 +527,8 @@ fn linear_graph_extender_selects_full_scc_when_unreachable() {
     let word = [cfg_inc!(0), cfg_dec!(0)];
     let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
 
-    let mut extender = LinearGraphExtender::from_cfg_product(path, &product, 10);
+    let product_view = product.full_view();
+    let mut extender = LinearGraphExtender::from_product_view(path, &product_view, 10);
     let linear_graph = extender.run_linear_graph();
 
     assert_linear_graph_is_unreachable(&linear_graph);
@@ -557,7 +560,8 @@ fn linear_graph_extender_rejects_full_scc_when_reachable() {
     let word = [cfg_inc!(0), cfg_dec!(0)];
     let path = MultiGraphPath::from_word(product.initial(), &word, &product).unwrap();
 
-    let mut extender = LinearGraphExtender::from_cfg_product(path, &product, 10);
+    let product_view = product.full_view();
+    let mut extender = LinearGraphExtender::from_product_view(path, &product_view, 10);
     let linear_graph = extender.run_linear_graph();
 
     assert_linear_graph_is_unreachable(&linear_graph);
@@ -587,8 +591,9 @@ fn linear_graph_extender_drops_auxiliary_paths_with_different_dag_route() {
     let first = MultiGraphPath::from_word(product.initial(), &first_word, &product).unwrap();
     let second = MultiGraphPath::from_word(product.initial(), &second_word, &product).unwrap();
 
+    let product_view = product.full_view();
     let mut extender =
-        LinearGraphExtender::from_cfg_product_paths(vec![first, second], &product, 10);
+        LinearGraphExtender::from_product_view_paths(vec![first, second], &product_view, 10);
     let linear_graph = extender.run_linear_graph();
 
     assert_linear_graph_is_unreachable(&linear_graph);
@@ -630,8 +635,9 @@ fn linear_graph_extender_merges_auxiliary_paths_on_same_dag_route() {
     let auxiliary =
         MultiGraphPath::from_word(product.initial(), &auxiliary_word, &product).unwrap();
 
+    let product_view = product.full_view();
     let mut extender =
-        LinearGraphExtender::from_cfg_product_paths(vec![primary, auxiliary], &product, 10);
+        LinearGraphExtender::from_product_view_paths(vec![primary, auxiliary], &product_view, 10);
     let linear_graph = extender.run_linear_graph();
 
     assert_linear_graph_is_unreachable(&linear_graph);
@@ -672,8 +678,13 @@ fn linear_graph_extender_drops_auxiliary_paths_with_different_scc_sequence() {
     let auxiliary =
         MultiGraphPath::from_word(product.initial(), &auxiliary_word, &product).unwrap();
 
-    let mut extender =
-        LinearGraphExtender::from_cfg_product_primary_path(primary, vec![auxiliary], &product, 10);
+    let product_view = product.full_view();
+    let mut extender = LinearGraphExtender::from_product_view_primary_path(
+        primary,
+        vec![auxiliary],
+        &product_view,
+        10,
+    );
     let linear_graph = extender.run_linear_graph();
 
     assert_linear_graph_is_unreachable(&linear_graph);

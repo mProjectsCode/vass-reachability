@@ -34,7 +34,7 @@ async fn start_server(_args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
 
     let cors_layer = CorsLayer::new()
         .allow_origin(
-            format!("http://localhost:{}", &config.ui_port)
+            format!("http://localhost:{}", config.ui_port)
                 .parse::<HeaderValue>()
                 .unwrap(),
         )

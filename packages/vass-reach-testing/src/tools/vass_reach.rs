@@ -262,31 +262,37 @@ impl<'a> VASSReachTool<'a> {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "instance".to_string());
 
-        let debug_root = self.test_path.join("debug-traces").join("vass-reach");
-        let instance_trace_dir = debug_root.join(&run_config.name).join(&instance_name);
+        if debug_trace_enabled(value_table) {
+            let debug_root = self.test_path.join("debug-traces").join("vass-reach");
+            let instance_trace_dir = debug_root.join(&run_config.name).join(&instance_name);
 
-        // Ensure re-runs do not mix old and new trace steps for the same run and
-        // instance.
-        if instance_trace_dir.exists() {
-            fs::remove_dir_all(&instance_trace_dir)?;
+            // Ensure re-runs do not mix old and new trace steps for the same run and
+            // instance.
+            if instance_trace_dir.exists() {
+                fs::remove_dir_all(&instance_trace_dir)?;
+            }
+
+            let debug_trace = value_table
+                .entry("debug_trace".to_string())
+                .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+                .as_table_mut()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("vass-reach debug_trace config must be a TOML table")
+                })?;
+
+            debug_trace.insert(
+                "output_root".to_string(),
+                toml::Value::String(debug_root.display().to_string()),
+            );
+            debug_trace.insert(
+                "run_name".to_string(),
+                toml::Value::String(run_config.name.clone()),
+            );
+            debug_trace.insert(
+                "instance_name".to_string(),
+                toml::Value::String(instance_name),
+            );
         }
-
-        let mut debug_trace = toml::map::Map::new();
-        debug_trace.insert("enabled".to_string(), toml::Value::Boolean(true));
-        debug_trace.insert(
-            "output_root".to_string(),
-            toml::Value::String(debug_root.display().to_string()),
-        );
-        debug_trace.insert(
-            "run_name".to_string(),
-            toml::Value::String(run_config.name.clone()),
-        );
-        debug_trace.insert(
-            "instance_name".to_string(),
-            toml::Value::String(instance_name),
-        );
-
-        value_table.insert("debug_trace".to_string(), toml::Value::Table(debug_trace));
 
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -301,4 +307,13 @@ impl<'a> VASSReachTool<'a> {
         fs::write(&temp_path, toml::to_string(&value)?)?;
         Ok(temp_path)
     }
+}
+
+fn debug_trace_enabled(config: &toml::map::Map<String, toml::Value>) -> bool {
+    config
+        .get("debug_trace")
+        .and_then(toml::Value::as_table)
+        .and_then(|debug_trace| debug_trace.get("enabled"))
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(false)
 }

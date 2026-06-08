@@ -5,6 +5,7 @@ use vass_reach_lib::{
     automaton::{
         ModifiableAutomaton,
         algorithms::EdgeAutomatonAlgorithms,
+        petri_net::{PetriNet, initialized::InitializedPetriNet, spec::PetriNetSpec},
         scc::SCCAlgorithms,
         vass::{VASS, VASSEdge},
     },
@@ -61,7 +62,8 @@ fn main() {
     // det();
     // lim_cfg_test();
 
-    difficult_instance();
+    // difficult_instance();
+    other_instance();
 }
 
 fn difficult_instance() {
@@ -97,6 +99,46 @@ fn difficult_instance() {
     let dag = cfg.find_scc_dag();
     println!("{}", dag.to_graphviz(None, None, true));
     println!("{}", cfg.to_graphviz(None, None));
+
+    let _res = VASSReachSolver::new(
+        &initialized,
+        // some time that is long enough, but makes the test run in a reasonable time
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::from_mins(5)))
+            .with_max_iterations(Some(100))
+            .with_bounded_counting_enabled(false)
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
+    )
+    .solve();
+}
+
+fn other_instance() {
+    let spec_str = "vars
+    p1 p2 p3
+rules
+    p3 >= 1 ->
+        p1' = p1+2,
+        p2' = p2+2,
+        p3' = p3-1;
+    p1 >= 2, p2 >= 2 ->
+        p1' = p1-2,
+        p2' = p2-2;
+    p1 >= 0 ->
+        p1' = p1+1,
+        p2' = p2+2,
+        p3' = p3+1;
+init
+    p1=2, p2=0, p3=1
+target
+    p1=0, p2=0, p3=0
+";
+
+    // Reachable: two times t3, to get 4 4 3, then 3 times t1 to get 10 10 0, then
+    // t2 5 times to get 0 0 0
+
+    let spec = PetriNetSpec::parse(spec_str).unwrap();
+    let petri_net = InitializedPetriNet::try_from(spec).unwrap();
+    let initialized = petri_net.to_vass();
 
     let _res = VASSReachSolver::new(
         &initialized,

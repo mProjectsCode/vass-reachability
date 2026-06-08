@@ -93,6 +93,8 @@ pub enum LinearGraphSeedOrder {
 config! {
     pub struct LinearGraphConfig {
         enabled: bool = true,
+        multiple_starting_paths_enabled: bool = false,
+        extra_auxiliary_paths: usize = 0,
         max_refinement_steps: u64 = 10,
         max_seed_checks: Option<usize> = None,
         max_interpolation_steps: Option<usize> = None,

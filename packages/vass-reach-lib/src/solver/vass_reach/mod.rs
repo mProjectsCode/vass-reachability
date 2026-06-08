@@ -13,7 +13,7 @@ use crate::{
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
         linear_graph::extender::LinearGraphExtender,
-        ltc::{self, LTC, translation::LTCTranslation},
+        ltc::{LTC, translation::LTCTranslation},
         path::Path,
         scc::{SCCAlgorithms, SCCDag, SCCDagRouteSummary},
         vass::{counter::VASSCounterIndex, initialized::InitializedVASS},
@@ -211,7 +211,7 @@ impl VASSReachSolver {
                 return Err(SolverStatus::True(()));
             }
 
-            // tracing::debug!("Spurious path: {:?}", path.to_fancy_string());
+            tracing::debug!("Spurious path of length: {:?}", path.len());
 
             if false {
                 let cfg_path = path.to_path_in_cfg(self.state.main_cfg_index());
@@ -342,71 +342,76 @@ impl VASSReachSolver {
                 );
             }
             VASSReachRefinementAction::BuildAutomaton => {
-                // let ltc_automaton = if *self.config.get_lts().get_enabled() {
-                //     tracing::debug!("Building and checking LTC");
-
-                //     Some(self.ltc(&path)?)
-                // } else {
-                //     None
-                // };
-
-                // let linear_graph_automaton = if *self.config.get_linear_graph().get_enabled()
-                // {     tracing::debug!("Building and checking LinearGraph");
-
-                //     let mut extender = LinearGraphExtender::from_cfg_product(
-                //         path,
-                //         &self.state,
-                //         *self.config.get_linear_graph().get_max_refinement_steps(),
-                //     );
-                //     let mut cfg = extender.run();
-                //     cfg.invert_mut();
-                //     Some(cfg)
-                // } else {
-                //     None
-                // };
-
-                tracing::debug!("Building and checking LinearGraph");
-                let full_dag = self.state.find_scc_dag();
-                log_scc_dag_route_summary_before_linear_graph("implicit_product", &full_dag);
-
-                let minimized_explicit_product = self.state.explicit().minimize();
-                let minimized_explicit_dag = minimized_explicit_product.find_scc_dag();
-                log_scc_dag_route_summary_before_linear_graph(
-                    "minimized_explicit_product",
-                    &minimized_explicit_dag,
-                );
-
-                let mut extender = LinearGraphExtender::from_cfg_product_with_config(
-                    path,
-                    &self.state,
-                    self.config.get_linear_graph(),
-                )
-                .with_scc_dag(full_dag);
-                let mut cfg = extender.run();
-                cfg.invert_mut();
+                let cfg = self.build_linear_graph_refinement_cfg(path);
                 self.state.add_cfg(cfg.minimize());
-
-                // match (ltc_automaton, linear_graph_automaton) {
-                //     (Some(ltc_cfg), Some(linear_graph_cfg)) => {
-                //         // We would expect both automata to be somewhat
-                // similar, they are built         // from the
-                // same path at least. So we would expect their intersection
-                //         // to not blow up too much.
-                //         let product = ltc_cfg.intersect(&linear_graph_cfg);
-                //         self.state.add_cfg(product);
-                //     }
-                //     (Some(ltc_cfg), None) => {
-                //         self.state.add_cfg(ltc_cfg);
-                //     }
-                //     (None, Some(linear_graph_cfg)) => {
-                //         self.state.add_cfg(linear_graph_cfg);
-                //     }
-                //     (None, None) => {}
-                // }
             }
         }
 
         Ok(())
+    }
+
+    fn build_linear_graph_refinement_cfg(&mut self, primary_path: MultiGraphPath) -> VASSCFG<()> {
+        tracing::debug!("Building and checking LinearGraph");
+        self.log_minimized_explicit_product_summary();
+
+        let starting_paths = self.linear_graph_starting_paths(primary_path);
+        let product_view = self.state.full_view();
+        let view_paths = starting_paths
+            .iter()
+            .map(|path| product_view.project_path(path))
+            .collect::<Vec<_>>();
+        let full_dag = product_view.find_scc_dag();
+        log_scc_dag_route_summary_before_linear_graph("implicit_product", &full_dag);
+
+        let mut extender = LinearGraphExtender::from_product_view_paths_with_config(
+            view_paths,
+            &product_view,
+            self.config.get_linear_graph(),
+        )
+        .with_scc_dag(full_dag);
+        let mut cfg = extender.run();
+        cfg.invert_mut();
+        cfg
+    }
+
+    fn log_minimized_explicit_product_summary(&mut self) {
+        let minimized_explicit_product = self.state.explicit().minimize();
+        let minimized_explicit_dag = minimized_explicit_product.find_scc_dag();
+        log_scc_dag_route_summary_before_linear_graph(
+            "minimized_explicit_product",
+            &minimized_explicit_dag,
+        );
+    }
+
+    fn linear_graph_starting_paths(&self, primary_path: MultiGraphPath) -> Vec<MultiGraphPath> {
+        let config = self.config.get_linear_graph();
+        let extra_paths = *config.get_extra_auxiliary_paths();
+
+        if !*config.get_multiple_starting_paths_enabled() || extra_paths == 0 {
+            return vec![primary_path];
+        }
+
+        let max_paths = extra_paths.saturating_add(1);
+        let mut paths = vec![primary_path];
+
+        for candidate in self.state.reach_paths(max_paths) {
+            if paths.len() >= max_paths {
+                break;
+            }
+
+            if !paths.iter().any(|path| path == &candidate) {
+                paths.push(candidate);
+            }
+        }
+
+        tracing::debug!(
+            starting_paths = paths.len(),
+            extra_auxiliary_paths = paths.len().saturating_sub(1),
+            configured_extra_auxiliary_paths = extra_paths,
+            "Collected LinearGraph starting paths"
+        );
+
+        paths
     }
 
     /// Selects a refinement action based on the given spurious path.

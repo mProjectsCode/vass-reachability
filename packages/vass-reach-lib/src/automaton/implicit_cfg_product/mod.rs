@@ -20,6 +20,7 @@ use crate::automaton::{
 };
 
 pub mod state;
+pub mod view;
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 
@@ -277,13 +278,23 @@ impl ImplicitCFGProduct {
     }
 
     pub fn reach(&self) -> Option<MultiGraphPath> {
+        self.reach_paths(1).into_iter().next()
+    }
+
+    pub fn reach_paths(&self, max_paths: usize) -> Vec<MultiGraphPath> {
+        if max_paths == 0 {
+            return Vec::new();
+        }
+
         // For every node, we track which counter valuations we already visited.
         let mut visited = HashSet::<MultiGraphState>::new();
         let mut queue = std::collections::VecDeque::new();
+        let mut paths = Vec::new();
 
         let start = self.initial();
         if self.is_accepting(&start) {
-            return Some(MultiGraphPath::new(start));
+            paths.push(MultiGraphPath::new(start));
+            return paths;
         }
 
         queue.push_back(MultiGraphTraversalState::new(vec![], start.clone()));
@@ -311,11 +322,10 @@ impl ImplicitCFGProduct {
                     let new_state = MultiGraphTraversalState::new(word, target);
 
                     if self.is_accepting(&new_state.last_state) {
-                        // paths.push(new_path);
-                        // Optimization: we only search for the shortest path, so we can stop when
-                        // we find one
-
-                        return Some(new_state.to_path(self));
+                        paths.push(new_state.to_path(self));
+                        if paths.len() >= max_paths {
+                            return paths;
+                        }
                     } else {
                         queue.push_back(new_state);
                     }
@@ -323,7 +333,7 @@ impl ImplicitCFGProduct {
             }
         }
 
-        None
+        paths
     }
 
     pub fn find_scc_surrounding(&self, node: MultiGraphState) -> HashSet<MultiGraphState> {
@@ -429,6 +439,21 @@ impl ImplicitCFGProduct {
 
     pub fn reset_explicit(&mut self) {
         self.explicit = None;
+    }
+
+    pub fn full_view(&self) -> view::ImplicitCFGProductView<'_> {
+        view::ImplicitCFGProductView::full(self)
+    }
+
+    pub fn view_from_indices(
+        &self,
+        active_cfg_indices: impl IntoIterator<Item = usize>,
+    ) -> view::ImplicitCFGProductView<'_> {
+        view::ImplicitCFGProductView::from_indices(self, active_cfg_indices)
+    }
+
+    pub fn view_without_modulo_cfgs(&self) -> view::ImplicitCFGProductView<'_> {
+        view::ImplicitCFGProductView::without_indices(self, modulo_indices(self.dimension))
     }
 }
 

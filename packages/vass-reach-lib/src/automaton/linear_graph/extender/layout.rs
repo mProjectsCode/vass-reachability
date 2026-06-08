@@ -5,8 +5,9 @@ use hashbrown::{HashMap, HashSet};
 use super::MultiGraphPath;
 use crate::{
     automaton::{
+        InitializedAutomaton,
         cfg::update::CFGCounterUpdate,
-        implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
+        implicit_cfg_product::{state::MultiGraphState, view::ImplicitCFGProductView},
         linear_graph::{
             LinearGraph,
             part::{LinearGraphPart, LinearGraphRegion},
@@ -17,9 +18,11 @@ use crate::{
     solver::linear_graph_reach::LinearGraphSolution,
 };
 
+type ProductViewLinearGraph<'a> = LinearGraph<'a, MultiGraphState, ImplicitCFGProductView<'a>>;
+
 #[derive(Debug, Clone)]
 pub(super) struct InterpolationLayout<'a> {
-    automaton: &'a ImplicitCFGProduct,
+    automaton: &'a ImplicitCFGProductView<'a>,
     dimension: usize,
     items: Vec<InterpolationItem>,
     pub(super) regions: Vec<SccRegion<'a>>,
@@ -33,14 +36,14 @@ enum InterpolationItem {
 
 #[derive(Debug, Clone)]
 pub(super) struct SccRegion<'a> {
-    seed: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+    seed: ProductViewLinearGraph<'a>,
     full_size: usize,
     full_graph: Arc<LinearGraphRegion<MultiGraphState>>,
 }
 
 #[derive(Debug)]
 pub(super) struct CandidateBuildResult<'a> {
-    pub(super) linear_graph: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+    pub(super) linear_graph: ProductViewLinearGraph<'a>,
     graph_to_full_region: Vec<Option<usize>>,
 }
 
@@ -48,12 +51,18 @@ pub(super) struct CandidateBuildResult<'a> {
 pub(super) struct CandidateSeed<'a> {
     pub(super) path_indices: Vec<usize>,
     pub(super) layout: InterpolationLayout<'a>,
-    pub(super) seed_linear_graph: LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+    pub(super) seed_linear_graph: ProductViewLinearGraph<'a>,
 }
 
 #[derive(Debug, Clone)]
 struct SegmentedPath {
     segments: Vec<PathSegment>,
+}
+
+#[derive(Debug, Clone)]
+struct IndexedSegmentedPath {
+    path_index: usize,
+    segmented: SegmentedPath,
 }
 
 #[derive(Debug, Clone)]
@@ -119,7 +128,7 @@ impl<'a> InterpolationLayout<'a> {
     pub(super) fn from_compatible_path_groups(
         primary_path: &MultiGraphPath,
         auxiliary_paths: &[MultiGraphPath],
-        automaton: &'a ImplicitCFGProduct,
+        automaton: &'a ImplicitCFGProductView<'a>,
         dimension: usize,
         dag: &SCCDag<MultiGraphState, CFGCounterUpdate>,
     ) -> Vec<CandidateSeed<'a>> {
@@ -138,29 +147,18 @@ impl<'a> InterpolationLayout<'a> {
             return Vec::new();
         };
 
-        let mut compatible_auxiliaries = auxiliary_paths
-            .iter()
-            .enumerate()
-            .filter_map(|(auxiliary_index, path)| {
-                let route = dag_route_for_path(&dag, path)?;
-                if route != primary_route {
-                    return None;
-                }
-
-                let segmented = segment_path_by_full_linear_graph(path, &full_linear_graph, &dag)?;
-                Some((auxiliary_index + 1, segmented))
-            })
-            .collect::<Vec<_>>();
-
-        compatible_auxiliaries
-            .sort_by_key(|(_, segmented)| std::cmp::Reverse(segmented_path_size(segmented)));
+        let compatible_auxiliaries =
+            compatible_auxiliary_paths(auxiliary_paths, &dag, &primary_route, &full_linear_graph);
 
         candidate_auxiliary_counts(compatible_auxiliaries.len())
             .into_iter()
             .filter_map(|auxiliary_count| {
-                let group = std::iter::once((0, primary.clone()))
-                    .chain(compatible_auxiliaries.iter().take(auxiliary_count).cloned())
-                    .collect();
+                let group = std::iter::once(IndexedSegmentedPath {
+                    path_index: 0,
+                    segmented: primary.clone(),
+                })
+                .chain(compatible_auxiliaries.iter().take(auxiliary_count).cloned())
+                .collect();
 
                 Self::from_segmented_group(group, &full_linear_graph, automaton, dimension)
             })
@@ -183,16 +181,13 @@ impl<'a> InterpolationLayout<'a> {
     /// candidate builds can toggle each region without changing the
     /// DAG-route shape.
     fn from_segmented_group(
-        group: Vec<(usize, SegmentedPath)>,
-        full_linear_graph: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
-        automaton: &'a ImplicitCFGProduct,
+        group: Vec<IndexedSegmentedPath>,
+        full_linear_graph: &ProductViewLinearGraph<'a>,
+        automaton: &'a ImplicitCFGProductView<'a>,
         dimension: usize,
     ) -> Option<(Vec<usize>, Self)> {
-        let first = &group.first()?.1;
-        let path_indices = group
-            .iter()
-            .map(|(path_index, _)| *path_index)
-            .collect::<Vec<_>>();
+        let first = &group.first()?.segmented;
+        let path_indices = group.iter().map(|path| path.path_index).collect::<Vec<_>>();
         let mut items = Vec::new();
         let mut regions = Vec::new();
 
@@ -204,7 +199,7 @@ impl<'a> InterpolationLayout<'a> {
                 PathSegment::Region { .. } => {
                     let paths = group
                         .iter()
-                        .map(|(_, segmented)| match &segmented.segments[segment_index] {
+                        .map(|path| match &path.segmented.segments[segment_index] {
                             PathSegment::Region { path } => path.clone(),
                             PathSegment::Fixed(_) => unreachable!("signature mismatch"),
                         })
@@ -238,9 +233,7 @@ impl<'a> InterpolationLayout<'a> {
 
     /// Builds the lower-bound candidate where every SCC region uses the
     /// selected seed-language graph.
-    pub(super) fn build_seed_linear_graph(
-        &self,
-    ) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
+    pub(super) fn build_seed_linear_graph(&self) -> ProductViewLinearGraph<'a> {
         let mask = vec![false; self.regions.len()];
         self.build_candidate(&mask).linear_graph
     }
@@ -280,6 +273,33 @@ impl<'a> InterpolationLayout<'a> {
             graph_to_full_region,
         }
     }
+}
+
+fn compatible_auxiliary_paths(
+    auxiliary_paths: &[MultiGraphPath],
+    dag: &DagContext<'_>,
+    primary_route: &DagRoute,
+    full_linear_graph: &ProductViewLinearGraph<'_>,
+) -> Vec<IndexedSegmentedPath> {
+    let mut paths = auxiliary_paths
+        .iter()
+        .enumerate()
+        .filter_map(|(auxiliary_index, path)| {
+            let route = dag_route_for_path(dag, path)?;
+            if &route != primary_route {
+                return None;
+            }
+
+            let segmented = segment_path_by_full_linear_graph(path, full_linear_graph, dag)?;
+            Some(IndexedSegmentedPath {
+                path_index: auxiliary_index + 1,
+                segmented,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    paths.sort_by_key(|path| std::cmp::Reverse(segmented_path_size(&path.segmented)));
+    paths
 }
 
 fn dag_route_for_path(dag: &DagContext<'_>, path: &MultiGraphPath) -> Option<DagRoute> {
@@ -327,14 +347,14 @@ fn dag_route_for_path(dag: &DagContext<'_>, path: &MultiGraphPath) -> Option<Dag
 }
 
 fn build_full_linear_graph_from_dag_route<'a>(
-    automaton: &'a ImplicitCFGProduct,
+    automaton: &'a ImplicitCFGProductView<'a>,
     dimension: usize,
     dag: &DagContext<'_>,
     route: &DagRoute,
-) -> Option<LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>> {
+) -> Option<ProductViewLinearGraph<'a>> {
     let mut linear_graph = LinearGraph::empty(automaton, dimension);
-    let mut current_path = MultiGraphPath::new(automaton.initial());
-    let mut entry_node = automaton.initial();
+    let mut current_path = MultiGraphPath::new(automaton.get_initial());
+    let mut entry_node = automaton.get_initial();
     let mut component_index = dag.dag.root_component;
 
     for route_edge in &route.edges {
@@ -401,7 +421,7 @@ fn build_full_linear_graph_from_dag_route<'a>(
 
 fn segment_path_by_full_linear_graph(
     path: &MultiGraphPath,
-    full_linear_graph: &LinearGraph<'_, MultiGraphState, ImplicitCFGProduct>,
+    full_linear_graph: &ProductViewLinearGraph<'_>,
     dag: &DagContext<'_>,
 ) -> Option<SegmentedPath> {
     let mut segments = Vec::with_capacity(full_linear_graph.sequence.len());
@@ -458,7 +478,7 @@ fn segment_path_by_full_linear_graph(
 }
 
 fn full_graph_for_segment<'a>(
-    full_linear_graph: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+    full_linear_graph: &ProductViewLinearGraph<'a>,
     segment_index: usize,
 ) -> Option<Arc<LinearGraphRegion<MultiGraphState>>> {
     let LinearGraphPart::Graph(graph_index) = full_linear_graph.sequence.get(segment_index)? else {
@@ -494,10 +514,10 @@ fn segmented_path_size(path: &SegmentedPath) -> usize {
 }
 
 fn build_seed_region<'a>(
-    automaton: &'a ImplicitCFGProduct,
+    automaton: &'a ImplicitCFGProductView<'a>,
     dimension: usize,
     paths: &[MultiGraphPath],
-) -> LinearGraph<'a, MultiGraphState, ImplicitCFGProduct> {
+) -> ProductViewLinearGraph<'a> {
     if paths.len() == 1 {
         return LinearGraph::from_path_roll_up(paths[0].clone(), automaton, dimension);
     }
@@ -544,8 +564,8 @@ impl CandidateBuildResult<'_> {
 }
 
 fn append_linear_graph<'a>(
-    target: &mut LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
-    source: &LinearGraph<'a, MultiGraphState, ImplicitCFGProduct>,
+    target: &mut ProductViewLinearGraph<'a>,
+    source: &ProductViewLinearGraph<'a>,
     graph_to_full_region: &mut Vec<Option<usize>>,
 ) {
     for part in &source.sequence {
