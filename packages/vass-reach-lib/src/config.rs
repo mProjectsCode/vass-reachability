@@ -45,10 +45,19 @@ config! {
 config! {
     pub struct DebugTraceConfig {
         enabled: bool = false,
+        level: DebugTraceLevel = DebugTraceLevel::Full,
         output_root: Option<String> = None,
         run_name: Option<String> = None,
         instance_name: Option<String> = None,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DebugTraceLevel {
+    Disabled,
+    Light,
+    Full,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

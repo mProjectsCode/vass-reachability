@@ -7,15 +7,17 @@ use vass_reach_lib::{
         algorithms::EdgeAutomatonAlgorithms,
         petri_net::{PetriNet, initialized::InitializedPetriNet, spec::PetriNetSpec},
         scc::SCCAlgorithms,
-        vass::{VASS, VASSEdge},
+        vass::{VASS, VASSEdge, initialized::InitializedVASS},
     },
     config::{PreprocessingConfig, VASSReachConfig},
-    solver::vass_reach::VASSReachSolver,
+    solver::{SolverStatus, vass_reach::VASSReachSolver},
 };
+
+mod minimization;
 
 fn main() {
     let filter = tracing_subscriber::filter::Targets::new()
-        .with_default(tracing::Level::DEBUG)
+        .with_default(tracing::Level::INFO)
         .with_target("z3", tracing::Level::INFO);
 
     tracing_subscriber::registry()
@@ -63,7 +65,8 @@ fn main() {
     // lim_cfg_test();
 
     // difficult_instance();
-    other_instance();
+    // other_instance();
+    new_difficult_instances();
 }
 
 fn difficult_instance() {
@@ -150,4 +153,121 @@ target
             .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
     )
     .solve();
+}
+
+fn new_difficult_instances() {
+    let instances = [
+        ("new_difficult_instance_1", new_difficult_instance_1()),
+        ("new_difficult_instance_2", new_difficult_instance_2()),
+        ("new_difficult_instance_3", new_difficult_instance_3()),
+    ];
+
+    let results = instances
+        .into_iter()
+        .map(|(name, instance)| solve_difficult(name, instance))
+        .collect::<Vec<_>>();
+
+    println!("\nSolver overview");
+    println!(
+        "{:<28} {:>3} {:>6} {:>11} {:<32} {:>5} {:>10}",
+        "instance", "dim", "states", "transitions", "status", "steps", "time"
+    );
+    for result in results {
+        println!(
+            "{:<28} {:>3} {:>6} {:>11} {:<32} {:>5} {:>9.3}s",
+            result.name,
+            result.dimension,
+            result.states,
+            result.transitions,
+            result.status,
+            result.steps,
+            result.elapsed.as_secs_f64()
+        );
+    }
+}
+
+fn new_difficult_instance_1() -> InitializedVASS<(), usize> {
+    let mut vass = VASS::new(2, (0..3).collect());
+    let q = vass.add_node(());
+
+    vass.add_edge(&q, &q, VASSEdge::new(0, vec![1, -2].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(1, vec![1, 0].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(2, vec![-1, 1].into()));
+
+    vass.init(vec![1, 0].into(), vec![0, 0].into(), q, q)
+}
+
+fn new_difficult_instance_2() -> InitializedVASS<(), usize> {
+    let mut vass = VASS::new(2, (0..3).collect());
+    let q = vass.add_node(());
+
+    vass.add_edge(&q, &q, VASSEdge::new(0, vec![-1, 1].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(1, vec![0, 1].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(2, vec![1, -2].into()));
+
+    vass.init(vec![0, 1].into(), vec![0, 0].into(), q, q)
+}
+
+fn new_difficult_instance_3() -> InitializedVASS<(), usize> {
+    let mut vass = VASS::new(1, (0..3).collect());
+    let q0 = vass.add_node(());
+    let q1 = vass.add_node(());
+
+    vass.add_edge(&q0, &q1, VASSEdge::new(0, vec![1].into()));
+    vass.add_edge(&q1, &q0, VASSEdge::new(1, vec![0].into()));
+    vass.add_edge(&q0, &q0, VASSEdge::new(2, vec![-1].into()));
+
+    vass.init(vec![0].into(), vec![0].into(), q0, q1)
+}
+
+struct DifficultInstanceResult {
+    name: &'static str,
+    dimension: usize,
+    states: usize,
+    transitions: usize,
+    status: String,
+    steps: u64,
+    elapsed: Duration,
+}
+
+fn solve_difficult(
+    name: &'static str,
+    initialized: InitializedVASS<(), usize>,
+) -> DifficultInstanceResult {
+    tracing::info!(name, "solving difficult instance");
+    let dimension = initialized.dimension();
+    let states = initialized.state_count();
+    let transitions = initialized.transition_count();
+    
+    let result = VASSReachSolver::new(
+        &initialized,
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::from_secs(30)))
+            .with_max_iterations(Some(200))
+            .with_bounded_counting_enabled(false)
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
+    )
+    .solve();
+
+    let mut cfg = initialized.to_cfg();
+    cfg.remove_trapping_states();
+    println!("{}", cfg.to_graphviz(None, None));
+
+    tracing::info!(
+        name,
+        status = ?result.status,
+        steps = result.statistics.step_count,
+        elapsed = ?result.statistics.time,
+        "solver finished"
+    );
+
+    DifficultInstanceResult {
+        name,
+        dimension,
+        states,
+        transitions,
+        status: format!("{:?}", result.status),
+        steps: result.statistics.step_count,
+        elapsed: result.statistics.time,
+    }
 }

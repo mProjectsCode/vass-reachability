@@ -1,0 +1,10 @@
+timeout = { secs = 2, nanos = 0 }
+max_iterations = 8
+bounded_counting_enabled = false
+
+[preprocessing]
+enabled = false
+
+[debug_trace]
+enabled = false
+level = "disabled"

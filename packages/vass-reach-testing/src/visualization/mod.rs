@@ -48,6 +48,10 @@ async fn start_server(_args: &Args, ui_config: UIConfig) -> anyhow::Result<()> {
         )
         .route("/api/test_data", post(api::test_data_handler))
         .route("/api/list_traces", post(api::list_traces_handler))
+        .route(
+            "/api/list_light_summaries",
+            post(api::list_light_summaries_handler),
+        )
         .route("/api/list_trace_steps", post(api::list_trace_steps_handler))
         .route("/api/trace_step_seed", post(api::trace_step_seed_handler))
         .route(

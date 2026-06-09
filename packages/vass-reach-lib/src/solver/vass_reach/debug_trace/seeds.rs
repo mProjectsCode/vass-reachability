@@ -8,6 +8,33 @@ use crate::automaton::{
 pub(super) const TRACE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct LightTraceSummary {
+    pub schema_version: u32,
+    pub run_name: String,
+    pub instance_name: Option<String>,
+    pub created_at_unix_ms: u128,
+    pub dimension: usize,
+    pub state_count: usize,
+    pub transition_count: usize,
+    pub initial_valuation: Vec<i32>,
+    pub final_valuation: Vec<i32>,
+    pub initial_graph_dot: String,
+    #[serde(default)]
+    pub result: Option<LightTraceResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LightTraceResult {
+    pub status: String,
+    pub reason: Option<String>,
+    pub elapsed_ms: u128,
+    pub step_count: u64,
+    pub mu: Vec<i32>,
+    pub forwards_bound: Vec<u32>,
+    pub backwards_bound: Vec<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StepTraceSeed {
     pub schema_version: u32,
     pub step: u64,

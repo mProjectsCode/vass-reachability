@@ -56,12 +56,31 @@ export interface TestData {
 
 export interface InstanceConfig {
 	num_instances: number;
-	seed: number;
+	seed: string;
 	petri_net_counters: number;
 	petri_net_transitions: number;
 	petri_net_max_tokens_per_transition: number;
 	petri_net_no_guards: boolean;
 	hand_picked_instances: string[];
+	generate_vass: boolean;
+}
+
+export interface HardCandidateSummary {
+	schema_version: number;
+	run_name: string;
+	instance_name: string;
+	seed: number;
+	result_reason: string;
+	repetitions: number;
+	elapsed_ms: number[];
+	step_counts: number[];
+	dimension: number;
+	state_count: number;
+	transition_count: number;
+	initial_valuation: number[];
+	final_valuation: number[];
+	max_update_magnitude: number;
+	initial_graph_dot: string;
 }
 
 export interface TestConfig {

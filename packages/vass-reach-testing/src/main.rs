@@ -3,9 +3,15 @@ use std::{fmt::Display, fs, str::FromStr};
 use anyhow::Context;
 use clap::Parser;
 
-use crate::{generation::generate, testing::test, visualization::visualize};
+use crate::{
+    discovery::search,
+    generation::generate,
+    testing::test,
+    visualization::visualize,
+};
 
 pub mod config;
+pub mod discovery;
 pub mod generation;
 pub mod random;
 pub mod testing;
@@ -28,6 +34,7 @@ pub enum Mode {
     Test,
     Generate,
     Visualize,
+    Search,
 }
 
 impl FromStr for Mode {
@@ -38,6 +45,7 @@ impl FromStr for Mode {
             "test" => Ok(Mode::Test),
             "generate" | "gen" => Ok(Mode::Generate),
             "visualize" | "vis" => Ok(Mode::Visualize),
+            "search" => Ok(Mode::Search),
             _ => Err(anyhow::anyhow!("Invalid mode: {}", s)),
         }
     }
@@ -49,6 +57,7 @@ impl Display for Mode {
             Mode::Test => write!(f, "Test"),
             Mode::Generate => write!(f, "Generate"),
             Mode::Visualize => write!(f, "Visualize"),
+            Mode::Search => write!(f, "Search"),
         }
     }
 }
@@ -77,6 +86,7 @@ fn run() -> anyhow::Result<()> {
         Mode::Generate => generate(&args),
         Mode::Test => test(&args),
         Mode::Visualize => visualize(&args),
+        Mode::Search => search(&args),
     }
     .with_context(|| format!("failed in mode: {}", args.mode))
 }

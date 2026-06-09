@@ -9,28 +9,31 @@ use serde::Serialize;
 
 use super::{
     seeds::{
-        FoundPathSeed, SCCComponentEdgeSeed, SCCComponentSeed, SCCDagEdgeSeed, SCCDagSeed,
-        StepTraceSeed, TRACE_SCHEMA_VERSION,
+        FoundPathSeed, LightTraceResult, LightTraceSummary, SCCComponentEdgeSeed, SCCComponentSeed,
+        SCCDagEdgeSeed, SCCDagSeed, StepTraceSeed, TRACE_SCHEMA_VERSION,
     },
     state::{default_run_name, path_to_seed},
 };
 use crate::{
     automaton::{
         Alphabet, TransitionSystem,
+        algorithms::EdgeAutomatonAlgorithms,
         cfg::update::CFGCounterUpdate,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
         path::Path,
         scc::SCCDag,
-        vass::counter::VASSCounterValuation,
+        vass::{counter::VASSCounterValuation, initialized::InitializedVASS},
     },
-    config::VASSReachConfig,
+    config::{DebugTraceLevel, VASSReachConfig},
+    solver::vass_reach::{VASSReachSolverResult, VASSReachSolverStatistics},
     utils::{now_unix_ms, sanitize_path_component, write_json_pretty_atomic},
 };
 
 #[derive(Debug)]
 pub struct DebugTraceWriter {
     run_dir: PathBuf,
-    steps_dir: PathBuf,
+    steps_dir: Option<PathBuf>,
+    light_summary: Option<LightTraceSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,9 +45,16 @@ struct RunTraceIndex {
 }
 
 impl DebugTraceWriter {
-    pub fn from_config(config: &VASSReachConfig) -> anyhow::Result<Option<Self>> {
+    pub fn from_config<N, E>(
+        config: &VASSReachConfig,
+        ivass: &InitializedVASS<N, E>,
+    ) -> anyhow::Result<Option<Self>>
+    where
+        N: crate::automaton::AutomatonNode,
+        E: crate::automaton::AutomatonEdge + crate::automaton::FromLetter,
+    {
         let trace_cfg = config.get_debug_trace();
-        if !*trace_cfg.get_enabled() {
+        if !*trace_cfg.get_enabled() || *trace_cfg.get_level() == DebugTraceLevel::Disabled {
             return Ok(None);
         }
 
@@ -69,10 +79,8 @@ impl DebugTraceWriter {
             run_dir = run_dir.join(instance_name);
         }
 
-        let steps_dir = run_dir.join("steps");
-        fs::create_dir_all(&steps_dir).with_context(|| {
-            format!("failed to create trace directory: {}", steps_dir.display())
-        })?;
+        fs::create_dir_all(&run_dir)
+            .with_context(|| format!("failed to create trace directory: {}", run_dir.display()))?;
 
         let index = RunTraceIndex {
             schema_version: TRACE_SCHEMA_VERSION,
@@ -83,7 +91,39 @@ impl DebugTraceWriter {
 
         write_json_pretty_atomic(&run_dir.join("run.json"), &index)?;
 
-        Ok(Some(Self { run_dir, steps_dir }))
+        let (steps_dir, light_summary) = match trace_cfg.get_level() {
+            DebugTraceLevel::Full => {
+                let steps_dir = run_dir.join("steps");
+                fs::create_dir_all(&steps_dir).with_context(|| {
+                    format!("failed to create trace directory: {}", steps_dir.display())
+                })?;
+                (Some(steps_dir), None)
+            }
+            DebugTraceLevel::Light => {
+                let summary = LightTraceSummary {
+                    schema_version: TRACE_SCHEMA_VERSION,
+                    run_name: index.run_name,
+                    instance_name: index.instance_name,
+                    created_at_unix_ms: index.created_at_unix_ms,
+                    dimension: ivass.dimension(),
+                    state_count: ivass.state_count(),
+                    transition_count: ivass.transition_count(),
+                    initial_valuation: ivass.initial_valuation.iter().copied().collect(),
+                    final_valuation: ivass.final_valuation.iter().copied().collect(),
+                    initial_graph_dot: ivass.to_graphviz(None, None),
+                    result: None,
+                };
+                write_json_pretty_atomic(&run_dir.join("summary.json"), &summary)?;
+                (None, Some(summary))
+            }
+            DebugTraceLevel::Disabled => unreachable!("disabled traces return before setup"),
+        };
+
+        Ok(Some(Self {
+            run_dir,
+            steps_dir,
+            light_summary,
+        }))
     }
 
     pub fn write_step_seed(
@@ -95,8 +135,11 @@ impl DebugTraceWriter {
         product: &ImplicitCFGProduct,
         n_reaching: bool,
     ) -> anyhow::Result<()> {
+        let Some(steps_dir) = &self.steps_dir else {
+            return Ok(());
+        };
         let file_name = format!("step_{step:06}.json");
-        let step_path = self.steps_dir.join(file_name);
+        let step_path = steps_dir.join(file_name);
 
         let payload = StepTraceSeed {
             schema_version: TRACE_SCHEMA_VERSION,
@@ -112,8 +155,82 @@ impl DebugTraceWriter {
         write_json_pretty_atomic(&step_path, &payload)
     }
 
+    pub fn write_light_result(&mut self, result: &VASSReachSolverResult) -> anyhow::Result<()> {
+        let Some(summary) = &mut self.light_summary else {
+            return Ok(());
+        };
+
+        summary.result = Some(light_result(&result.status, &result.statistics));
+        write_json_pretty_atomic(&self.run_dir.join("summary.json"), summary)
+    }
+
     pub fn run_dir(&self) -> &FsPath {
         &self.run_dir
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::{
+        automaton::{
+            ModifiableAutomaton,
+            vass::{VASS, VASSEdge},
+        },
+        config::{DebugTraceConfig, DebugTraceLevel, VASSReachConfig},
+        solver::vass_reach::VASSReachSolver,
+    };
+
+    #[test]
+    fn light_trace_writes_summary_without_steps() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vass-light-trace-{unique}"));
+        let mut vass = VASS::<usize, usize>::new(1, vec![0]);
+        let node = vass.add_node(0);
+        vass.add_edge(&node, &node, VASSEdge::new(0, vec![1].into()));
+        let instance = vass.init(vec![0].into(), vec![0].into(), node, node);
+        let trace = DebugTraceConfig::default()
+            .with_enabled(true)
+            .with_level(DebugTraceLevel::Light)
+            .with_output_root(Some(root.display().to_string()))
+            .with_run_name(Some("test-run".to_string()))
+            .with_instance_name(Some("test-instance".to_string()));
+
+        let _ = VASSReachSolver::new(
+            &instance,
+            VASSReachConfig::default().with_debug_trace(trace),
+        )
+        .solve();
+
+        let instance_dir = root.join("test-run").join("test-instance");
+        assert!(instance_dir.join("summary.json").is_file());
+        assert!(!instance_dir.join("steps").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+fn light_result(
+    status: &crate::solver::vass_reach::VASSReachSolverStatus,
+    statistics: &VASSReachSolverStatistics,
+) -> LightTraceResult {
+    let (status, reason) = match status {
+        crate::solver::SolverStatus::True(()) => ("reachable", None),
+        crate::solver::SolverStatus::False(()) => ("unreachable", None),
+        crate::solver::SolverStatus::Unknown(reason) => ("unknown", Some(format!("{reason:?}"))),
+    };
+
+    LightTraceResult {
+        status: status.to_string(),
+        reason,
+        elapsed_ms: statistics.time.as_millis(),
+        step_count: statistics.step_count,
+        mu: statistics.mu.to_vec(),
+        forwards_bound: statistics.forwards_bound.to_vec(),
+        backwards_bound: statistics.backwards_bound.to_vec(),
     }
 }
 

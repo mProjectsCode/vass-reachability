@@ -133,7 +133,7 @@ impl VASSReachSolver {
             bounded_counting_enabled,
         );
 
-        let debug_trace_writer = match DebugTraceWriter::from_config(&config) {
+        let debug_trace_writer = match DebugTraceWriter::from_config(&config, ivass) {
             Ok(writer) => writer,
             Err(err) => {
                 tracing::warn!(error = %err, "failed to initialize debug trace writer; continuing without trace output");
@@ -161,6 +161,11 @@ impl VASSReachSolver {
             .solve_inner()
             .expect_err("expected solve_inner to return the result as an Err value");
         let result = VASSReachSolverResult::new(status, self.get_solver_statistics());
+        if let Some(writer) = &mut self.debug_trace_writer
+            && let Err(err) = writer.write_light_result(&result)
+        {
+            tracing::warn!(error = %err, "failed to write light debug trace result");
+        }
         self.print_end_banner(&result);
 
         result
@@ -416,7 +421,7 @@ impl VASSReachSolver {
 
     /// Selects a refinement action based on the given spurious path.
     fn select_refinement_action(&self, path: &MultiGraphPath) -> VASSReachRefinementAction {
-        return VASSReachRefinementAction::BuildAutomaton;
+        // return VASSReachRefinementAction::BuildAutomaton;
 
         let path_final_valuation = path.get_path_final_valuation(&self.state.initial_valuation);
 

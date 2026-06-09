@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "verification_config": "vass_reach_verification.toml",
+  "selected": [
+    {
+      "instance": "hard_000261_seed_16785644424513408845.vass.json",
+      "dimension": 2,
+      "states": 2,
+      "transitions": 4,
+      "search_elapsed_ms": [2311, 2299],
+      "search_step_counts": [50, 50],
+      "verification_status": "False",
+      "verification_step_count": 1,
+      "reason": "Smallest retained candidate. The ranking x + y + p(q), with p(0) = 2 and p(1) = 0, never increases. Exhaustive exploration of its 14 ranking-bounded configurations does not reach the target."
+    },
+    {
+      "instance": "hard_000084_seed_12263285792980920390.vass.json",
+      "dimension": 2,
+      "states": 2,
+      "transitions": 5,
+      "search_elapsed_ms": [2264, 2295],
+      "search_step_counts": [50, 50],
+      "verification_status": "False",
+      "verification_step_count": 1,
+      "reason": "Small bidirectional control graph with loops on both states; representative of post-target-state cycling."
+    },
+    {
+      "instance": "hard_000525_seed_13031362950951053910.vass.json",
+      "dimension": 2,
+      "states": 2,
+      "transitions": 5,
+      "search_elapsed_ms": [3614, 3605],
+      "search_step_counts": [50, 50],
+      "verification_status": "False",
+      "verification_step_count": 1,
+      "reason": "Small strongly connected example with mostly increasing transitions; the baseline search spent the most time on it among the selected cases."
+    },
+    {
+      "instance": "hard_000949_seed_3680613245318247541.vass.json",
+      "dimension": 2,
+      "states": 2,
+      "transitions": 5,
+      "search_elapsed_ms": [3710, 3707],
+      "search_step_counts": [50, 50],
+      "verification_status": "False",
+      "verification_step_count": 1,
+      "reason": "Small strongly connected example with loops on both states and mixed positive and negative updates."
+    }
+  ],
+  "alternate": {
+    "instance": "hard_000516_seed_12796374311834879621.vass.json",
+    "dimension": 2,
+    "states": 2,
+    "transitions": 7,
+    "search_elapsed_ms": [1428, 1426],
+    "search_step_counts": [50, 50],
+    "verification_status": "False",
+    "verification_step_count": 1,
+    "reason": "The ranking x + y + p(q), with p(0) = 6 and p(1) = 0, never increases. Exhaustive exploration of its 30 ranking-bounded configurations does not reach the target."
+  }
+}

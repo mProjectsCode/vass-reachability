@@ -1,4 +1,4 @@
-import type { DerivedSCCMetadata, StepTraceSeed, TestData, TraceRunInfo, TraceStepSccCounterEffectSet, TraceStepSccView } from './types';
+import type { DerivedSCCMetadata, HardCandidateSummary, StepTraceSeed, TestData, TraceRunInfo, TraceStepSccCounterEffectSet, TraceStepSccView } from './types';
 
 declare global {
 	interface Window {
@@ -45,6 +45,16 @@ export async function API_test_data(test_folder: string): Promise<TestData> {
 
 export async function API_list_traces(test_folder: string): Promise<TraceRunInfo[]> {
 	return await fetch_json<TraceRunInfo[]>('/api/list_traces', {
+		method: 'POST',
+		body: JSON.stringify(test_folder),
+		headers: {
+			'Content-Type': 'application/json',
+		},
+	});
+}
+
+export async function API_list_light_summaries(test_folder: string): Promise<HardCandidateSummary[]> {
+	return await fetch_json<HardCandidateSummary[]>('/api/list_light_summaries', {
 		method: 'POST',
 		body: JSON.stringify(test_folder),
 		headers: {

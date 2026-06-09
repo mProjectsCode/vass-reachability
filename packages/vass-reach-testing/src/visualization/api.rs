@@ -10,11 +10,14 @@ use vass_reach_lib::solver::vass_reach::debug_trace::{
 use super::{
     handle_error,
     trace_store::{
-        TraceRunInfo, list_test_folders_inner, list_trace_steps_inner, list_traces_inner,
-        test_data_inner, trace_step_seed_inner,
+        TraceRunInfo, list_light_summaries_inner, list_test_folders_inner, list_trace_steps_inner,
+        list_traces_inner, test_data_inner, trace_step_seed_inner,
     },
 };
-use crate::config::{TestData, UIConfig};
+use crate::{
+    config::{TestData, UIConfig},
+    discovery::HardCandidateSummary,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct TraceStepRequest {
@@ -76,6 +79,16 @@ pub(crate) async fn list_traces_handler(
     Json(folder): Json<String>,
 ) -> Result<Json<Vec<TraceRunInfo>>, (StatusCode, String)> {
     match list_traces_inner(folder, config).await {
+        Ok(x) => Ok(Json(x)),
+        Err(e) => Err(handle_error(e)),
+    }
+}
+
+pub(crate) async fn list_light_summaries_handler(
+    State(config): State<Arc<UIConfig>>,
+    Json(folder): Json<String>,
+) -> Result<Json<Vec<HardCandidateSummary>>, (StatusCode, String)> {
+    match list_light_summaries_inner(folder, config).await {
         Ok(x) => Ok(Json(x)),
         Err(e) => Err(handle_error(e)),
     }

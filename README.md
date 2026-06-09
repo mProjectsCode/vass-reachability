@@ -16,6 +16,9 @@ cargo test
 
 Or with `RUST_BACKTRACE=1 cargo test --release -- --test-threads=1 --nocapture` to get fast, non overlapping tests with debug output.
 
+See [`packages/vass-reach-testing/README.md`](packages/vass-reach-testing/README.md)
+for benchmark, hard-instance search, minimization, and visualization workflows.
+
 ## Authors and Contact
 
 This is a project by the [Institute of Theoretical Computer Science](https://www.tcs.cs.tu-bs.de) of the Technical University Brunswick.

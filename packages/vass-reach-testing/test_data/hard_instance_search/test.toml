@@ -1,0 +1,8 @@
+timeout = 10
+memory_max_gb = 4
+
+[[runs]]
+name = "vass-reach"
+tool = "vass-reach"
+config = "./vass_reach.toml"
+max_parallel = 1

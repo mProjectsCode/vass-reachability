@@ -4,7 +4,10 @@ use anyhow::Context;
 use serde::Serialize;
 use vass_reach_lib::solver::vass_reach::debug_trace::StepTraceSeed;
 
-use crate::config::{Test, TestData, UIConfig};
+use crate::{
+    config::{Test, TestData, UIConfig},
+    discovery::HardCandidateSummary,
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TraceRunInfo {
@@ -88,6 +91,48 @@ pub(crate) async fn list_traces_inner(
 
     runs.sort_by(|left, right| left.run_name.cmp(&right.run_name));
     Ok(runs)
+}
+
+pub(crate) async fn list_light_summaries_inner(
+    folder: String,
+    config: Arc<UIConfig>,
+) -> anyhow::Result<Vec<HardCandidateSummary>> {
+    let test = Test::from_string(folder)?;
+    if !test.is_inside_folder(&config.test_folders_path)? {
+        anyhow::bail!("Test folder is not in configured test folder");
+    }
+
+    let root = test.path.join("light-traces").join("vass-reach");
+    if !root.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut summaries: Vec<HardCandidateSummary> = vec![];
+    for run in fs::read_dir(root)? {
+        let run = run?.path();
+        if !run.is_dir() {
+            continue;
+        }
+        for instance in fs::read_dir(run)? {
+            let summary_path = instance?.path().join("summary.json");
+            if !summary_path.is_file() {
+                continue;
+            }
+            let content = fs::read_to_string(&summary_path)?;
+            summaries.push(serde_json::from_str(&content).with_context(|| {
+                format!("failed to parse light summary: {}", summary_path.display())
+            })?);
+        }
+    }
+    summaries.sort_by_key(|summary| {
+        (
+            summary.dimension,
+            summary.transition_count,
+            summary.state_count,
+            summary.instance_name.clone(),
+        )
+    });
+    Ok(summaries)
 }
 
 pub(crate) async fn trace_step_seed_inner(

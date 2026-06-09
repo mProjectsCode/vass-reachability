@@ -2,6 +2,7 @@
 	import { API_list_test_folders, API_test_data } from './fetch';
 	import Plot from './lib/Plot.svelte';
 	import TraceExplorer from './lib/TraceExplorer.svelte';
+	import CandidateExplorer from './lib/CandidateExplorer.svelte';
 	import { type PlotDatum, PlotDatumState, map_datum_state } from './types';
 
 	let selected: string | undefined = $state();
@@ -63,6 +64,7 @@
 			{/if}
 		</div>
 
+		<CandidateExplorer {selected} />
 		<TraceExplorer {selected} />
 	{/if}
 </main>

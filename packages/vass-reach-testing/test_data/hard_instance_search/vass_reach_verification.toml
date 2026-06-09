@@ -1,0 +1,10 @@
+timeout = { secs = 30, nanos = 0 }
+max_iterations = 500
+bounded_counting_enabled = true
+
+[preprocessing]
+enabled = true
+z_reach_precheck_enabled = true
+
+[debug_trace]
+enabled = false

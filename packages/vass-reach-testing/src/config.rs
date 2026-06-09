@@ -95,9 +95,32 @@ impl Test {
         Ok(())
     }
 
+    pub fn write_vass_instances(
+        &self,
+        instances: &[vass_reach_lib::automaton::vass::initialized::InitializedVASS<usize, usize>],
+    ) -> anyhow::Result<()> {
+        let instances_folder = self.instances_folder();
+        if !instances_folder.exists() {
+            fs::create_dir_all(&instances_folder)?
+        }
+
+        for (i, instance) in instances.iter().enumerate() {
+            let file_path = instances_folder.join(format!("vass_{i}.vass.json"));
+            instance.to_json_file(
+                file_path
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("instance path is not valid UTF-8"))?,
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn read_results(&self) -> anyhow::Result<Vec<ToolResult>> {
         let results_folder = self.results_folder();
         let mut res = vec![];
+        if !results_folder.exists() {
+            return Ok(res);
+        }
 
         for entry in results_folder.read_dir()? {
             let entry = entry?;
@@ -159,7 +182,7 @@ pub struct TestRunConfig {
     pub max_parallel: u64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct InstanceConfig {
     pub num_instances: usize,
@@ -169,12 +192,88 @@ pub struct InstanceConfig {
     pub petri_net_max_tokens_per_transition: usize,
     pub petri_net_no_guards: bool,
     pub hand_picked_instances: Vec<String>,
+    pub generate_vass: bool,
+    pub vass_counters: InclusiveUsizeRange,
+    pub vass_states: InclusiveUsizeRange,
+    pub vass_transitions: InclusiveUsizeRange,
+    pub vass_updates: InclusiveI32Range,
+    pub vass_valuations: InclusiveI32Range,
+    pub search_timeout_ms: u64,
+    pub search_max_iterations: u64,
+    pub search_repetitions: usize,
+    pub minimize_instance: Option<String>,
+}
+
+impl Default for InstanceConfig {
+    fn default() -> Self {
+        Self {
+            num_instances: 0,
+            seed: 0,
+            petri_net_counters: 0,
+            petri_net_transitions: 0,
+            petri_net_max_tokens_per_transition: 0,
+            petri_net_no_guards: false,
+            hand_picked_instances: vec![],
+            generate_vass: false,
+            vass_counters: InclusiveUsizeRange { min: 2, max: 4 },
+            vass_states: InclusiveUsizeRange { min: 1, max: 4 },
+            vass_transitions: InclusiveUsizeRange { min: 3, max: 10 },
+            vass_updates: InclusiveI32Range { min: -3, max: 3 },
+            vass_valuations: InclusiveI32Range { min: 0, max: 3 },
+            search_timeout_ms: 2_000,
+            search_max_iterations: 8,
+            search_repetitions: 2,
+            minimize_instance: None,
+        }
+    }
 }
 
 impl InstanceConfig {
     pub fn load_from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let content = fs::read_to_string(path)?;
         Ok(toml::from_str(&content)?)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct InclusiveUsizeRange {
+    pub min: usize,
+    pub max: usize,
+}
+
+impl InclusiveUsizeRange {
+    pub fn validate(&self, name: &str) -> anyhow::Result<()> {
+        if self.min > self.max {
+            anyhow::bail!("{name}.min must be <= {name}.max");
+        }
+        Ok(())
+    }
+}
+
+impl Default for InclusiveUsizeRange {
+    fn default() -> Self {
+        Self { min: 0, max: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct InclusiveI32Range {
+    pub min: i32,
+    pub max: i32,
+}
+
+impl InclusiveI32Range {
+    pub fn validate(&self, name: &str) -> anyhow::Result<()> {
+        if self.min > self.max {
+            anyhow::bail!("{name}.min must be <= {name}.max");
+        }
+        Ok(())
+    }
+}
+
+impl Default for InclusiveI32Range {
+    fn default() -> Self {
+        Self { min: 0, max: 0 }
     }
 }
 

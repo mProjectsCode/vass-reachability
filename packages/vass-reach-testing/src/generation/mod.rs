@@ -1,7 +1,9 @@
 use crate::{
     Args,
     config::Test,
-    random::{RandomOptions, petri_net::generate_random_petri_net},
+    random::{
+        RandomOptions, petri_net::generate_random_petri_net, vass::generate_random_vass_in_ranges,
+    },
 };
 
 pub fn generate(args: &Args) -> anyhow::Result<()> {
@@ -17,8 +19,22 @@ pub fn generate(args: &Args) -> anyhow::Result<()> {
         );
     }
 
-    tracing::info!("Generating random Petri nets...");
+    if config.generate_vass {
+        tracing::info!("Generating random VASS instances...");
+        let instances = generate_random_vass_in_ranges(
+            RandomOptions::new(config.seed, config.num_instances),
+            config.vass_counters,
+            config.vass_states,
+            config.vass_transitions,
+            config.vass_updates,
+            config.vass_valuations,
+        )?;
+        test.write_vass_instances(&instances)?;
+        tracing::info!("Generated {} random VASS instances.", instances.len());
+        return Ok(());
+    }
 
+    tracing::info!("Generating random Petri nets...");
     let random_petri_nets = generate_random_petri_net(
         RandomOptions::new(config.seed, config.num_instances),
         config.petri_net_counters,
