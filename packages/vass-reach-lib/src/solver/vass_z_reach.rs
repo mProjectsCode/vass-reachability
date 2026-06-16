@@ -13,7 +13,10 @@ use crate::{
     config::VASSZReachConfig,
     solver::{
         SolverResult, SolverStatus,
-        utils::{forbid_parikh_image, parikh_image_from_edge_map},
+        utils::{
+            add_cfg_update_to_sums, assert_non_negative, assert_sums_match_valuation,
+            forbid_parikh_image, parikh_image_from_edge_map,
+        },
     },
 };
 
@@ -140,11 +143,10 @@ impl<'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'c, C> {
             // we need one variable for each edge
             let edge_var = Int::new_const(format!("edge_{}", edge.index()));
             // CONSTRAINT: an edge can only be taken positive times
-            solver.assert(edge_var.ge(Int::from_i64(0)));
+            assert_non_negative(solver, &edge_var);
 
             // add the edges effect to the counter sum
-            let i = update.counter();
-            sums[i.to_usize()] = &sums[i.to_usize()] + &edge_var * update.op_i64();
+            add_cfg_update_to_sums(&mut sums, &edge_var, update);
 
             edge_map.insert(edge, edge_var);
         }
@@ -167,7 +169,7 @@ impl<'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'c, C> {
                 // for each accepting node, we need some additional variable that denotes
                 // whether the node is used as the final node
                 let final_var = Int::new_const(format!("node_{}_final", node.index()));
-                solver.assert(final_var.ge(Int::from_i64(0)));
+                assert_non_negative(solver, &final_var);
 
                 outgoing_sum += &final_var;
                 final_var_sum += &final_var;
@@ -192,9 +194,7 @@ impl<'c, C: ExplicitEdgeCFG + Sync> VASSZReachSolver<'c, C> {
         solver.assert(final_var_sum.eq(Int::from_i64(1)));
 
         // CONSTRAINT: the final valuation must be equal to the counter sums
-        for (sum, target) in sums.iter().zip(self.final_valuation.iter()) {
-            solver.assert(sum.eq(Int::from_i64(*target as i64)));
-        }
+        assert_sums_match_valuation(solver, &sums, &self.final_valuation);
 
         self.step_count = 1;
         let status;

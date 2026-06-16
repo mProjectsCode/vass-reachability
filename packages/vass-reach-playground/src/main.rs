@@ -18,10 +18,9 @@ use vass_reach_lib::{
 
 mod minimization;
 
-
 fn main() {
     let filter = tracing_subscriber::filter::Targets::new()
-        .with_default(tracing::Level::INFO)
+        .with_default(tracing::Level::TRACE)
         .with_target("z3", tracing::Level::INFO);
 
     tracing_subscriber::registry()
@@ -249,7 +248,7 @@ fn solve_difficult(
         &initialized,
         VASSReachConfig::default()
             .with_timeout(Some(Duration::from_secs(30)))
-            .with_max_iterations(Some(1))
+            .with_max_iterations(Some(10))
             .with_bounded_counting_enabled(false)
             .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
     )

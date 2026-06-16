@@ -5,7 +5,11 @@ use z3::{
 };
 
 use crate::automaton::{
-    CompactGIndex, cfg::ExplicitEdgeCFG, index_map::OptionIndexMap, path::parikh_image::ParikhImage,
+    CompactGIndex,
+    cfg::{ExplicitEdgeCFG, update::CFGCounterUpdate},
+    index_map::OptionIndexMap,
+    path::parikh_image::ParikhImage,
+    vass::counter::VASSCounterValuation,
 };
 
 pub fn parikh_image_from_edge_map<EIndex: CompactGIndex>(
@@ -49,4 +53,23 @@ pub fn forbid_parikh_image<C: ExplicitEdgeCFG>(
     // outgoing edges don't work because we my leave the component via a final
     // state
     solver.assert(edges_ast.implies(incoming_ast));
+}
+
+pub fn assert_non_negative(solver: &z3::Solver, value: &Int) {
+    solver.assert(value.ge(Int::from_i64(0)));
+}
+
+pub fn add_cfg_update_to_sums(sums: &mut [Int], multiplier: &Int, update: &CFGCounterUpdate) {
+    let counter = update.counter().to_usize();
+    sums[counter] = &sums[counter] + multiplier * update.op_i64();
+}
+
+pub fn assert_sums_match_valuation(
+    solver: &z3::Solver,
+    sums: &[Int],
+    valuation: &VASSCounterValuation,
+) {
+    for (sum, target) in sums.iter().zip(valuation.iter()) {
+        solver.assert(sum.eq(Int::from_i64(*target as i64)));
+    }
 }
