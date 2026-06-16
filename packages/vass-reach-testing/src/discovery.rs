@@ -1,17 +1,9 @@
-use std::{
-    collections::BTreeSet ,
-    fs,
-    path::Path,
-    time::Duration,
-};
+use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use vass_reach_lib::{
-    automaton::{
-        algorithms::EdgeAutomatonAlgorithms,
-        vass::initialized::InitializedVASS,
-    },
+    automaton::{algorithms::EdgeAutomatonAlgorithms, vass::initialized::InitializedVASS},
     config::{PreprocessingConfig, VASSReachConfig},
     solver::{
         SolverStatus,

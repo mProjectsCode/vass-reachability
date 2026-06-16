@@ -6,7 +6,7 @@ use vass_reach_lib::{
         petri_net::PetriNet,
         vass::{VASS, VASSEdge},
     },
-    config::VASSReachConfig,
+    config::{PreprocessingConfig, VASSReachConfig},
     solver::vass_reach::VASSReachSolver,
 };
 
@@ -30,6 +30,68 @@ fn test_vass_n_reach_1() {
     .solve();
 
     assert!(res.is_success());
+}
+
+#[test]
+fn difficult_instance_3_without_bounded_counting_is_unreachable() {
+    let mut vass = VASS::new(1, (0..3).collect());
+    let q0 = vass.add_node(());
+    let q1 = vass.add_node(());
+
+    vass.add_edge(&q0, &q1, VASSEdge::new(0, vec![1].into()));
+    vass.add_edge(&q1, &q0, VASSEdge::new(1, vec![0].into()));
+    vass.add_edge(&q0, &q0, VASSEdge::new(2, vec![-1].into()));
+
+    let initialized = vass.init(vec![0].into(), vec![0].into(), q0, q1);
+    let result = VASSReachSolver::new(
+        &initialized,
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::from_secs(5)))
+            .with_max_iterations(Some(20))
+            .with_bounded_counting_enabled(false)
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
+    )
+    .solve();
+
+    assert!(result.is_failure(), "{:?}", result.status);
+}
+
+fn difficult_instance_config() -> VASSReachConfig {
+    VASSReachConfig::default()
+        .with_timeout(Some(Duration::from_secs(5)))
+        .with_max_iterations(Some(20))
+        .with_bounded_counting_enabled(false)
+        .with_preprocessing(PreprocessingConfig::default().with_enabled(false))
+}
+
+#[test]
+fn difficult_instance_1_with_relational_forward_bounds_is_unreachable() {
+    let mut vass = VASS::new(2, (0..3).collect());
+    let q = vass.add_node(());
+
+    vass.add_edge(&q, &q, VASSEdge::new(0, vec![1, -2].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(1, vec![1, 0].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(2, vec![-1, 1].into()));
+
+    let initialized = vass.init(vec![1, 0].into(), vec![0, 0].into(), q, q);
+    let result = VASSReachSolver::new(&initialized, difficult_instance_config()).solve();
+
+    assert!(result.is_failure(), "{:?}", result.status);
+}
+
+#[test]
+fn difficult_instance_2_with_relational_forward_bounds_is_unreachable() {
+    let mut vass = VASS::new(2, (0..3).collect());
+    let q = vass.add_node(());
+
+    vass.add_edge(&q, &q, VASSEdge::new(0, vec![-1, 1].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(1, vec![0, 1].into()));
+    vass.add_edge(&q, &q, VASSEdge::new(2, vec![1, -2].into()));
+
+    let initialized = vass.init(vec![0, 1].into(), vec![0, 0].into(), q, q);
+    let result = VASSReachSolver::new(&initialized, difficult_instance_config()).solve();
+
+    assert!(result.is_failure(), "{:?}", result.status);
 }
 
 #[test]

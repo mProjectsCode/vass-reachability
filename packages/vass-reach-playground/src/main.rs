@@ -1,10 +1,13 @@
+#![allow(dead_code, unused_imports)]
+
 use std::time::Duration;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use vass_reach_lib::{
     automaton::{
-        ModifiableAutomaton,
+        AutomatonIterators, InitializedAutomaton, ModifiableAutomaton,
         algorithms::EdgeAutomatonAlgorithms,
+        linear_graph::{LinearGraph, part::LinearGraphRegion},
         petri_net::{PetriNet, initialized::InitializedPetriNet, spec::PetriNetSpec},
         scc::SCCAlgorithms,
         vass::{VASS, VASSEdge, initialized::InitializedVASS},
@@ -14,6 +17,7 @@ use vass_reach_lib::{
 };
 
 mod minimization;
+
 
 fn main() {
     let filter = tracing_subscriber::filter::Targets::new()
@@ -238,20 +242,18 @@ fn solve_difficult(
     let dimension = initialized.dimension();
     let states = initialized.state_count();
     let transitions = initialized.transition_count();
-    
+
+    print_rooted_linear_decomposition(name, &initialized);
+
     let result = VASSReachSolver::new(
         &initialized,
         VASSReachConfig::default()
             .with_timeout(Some(Duration::from_secs(30)))
-            .with_max_iterations(Some(200))
+            .with_max_iterations(Some(1))
             .with_bounded_counting_enabled(false)
             .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
     )
     .solve();
-
-    let mut cfg = initialized.to_cfg();
-    cfg.remove_trapping_states();
-    println!("{}", cfg.to_graphviz(None, None));
 
     tracing::info!(
         name,
@@ -269,5 +271,52 @@ fn solve_difficult(
         status: format!("{:?}", result.status),
         steps: result.statistics.step_count,
         elapsed: result.statistics.time,
+    }
+}
+
+fn print_rooted_linear_decomposition(name: &str, initialized: &InitializedVASS<(), usize>) {
+    let mut cfg = initialized.to_cfg();
+    cfg.remove_trapping_states();
+
+    println!("\n// {name}: source CFG");
+    println!("{}", cfg.to_graphviz(None, None));
+
+    let nodes = cfg.iter_node_indices().collect::<Vec<_>>();
+    let accepting = nodes
+        .iter()
+        .copied()
+        .filter(|node| cfg.is_accepting(node))
+        .collect::<Vec<_>>();
+
+    for (accepting_index, final_state) in accepting.into_iter().enumerate() {
+        let region = LinearGraphRegion::from_subset(&cfg, &nodes, cfg.get_initial(), final_state);
+        let mut linear_graph = LinearGraph::empty(&cfg, initialized.dimension());
+        linear_graph.add_graph(region);
+
+        match linear_graph.refine_to_rooted() {
+            Ok(rooted_graphs) if rooted_graphs.is_empty() => {
+                println!(
+                    "// {name}: accepting CFG state {} has an empty rooted decomposition",
+                    final_state.index()
+                );
+            }
+            Ok(rooted_graphs) => {
+                for (decomposition_index, rooted) in rooted_graphs.iter().enumerate() {
+                    println!(
+                        "\n// {name}: rooted decomposition {}.{} for accepting CFG state {}",
+                        accepting_index + 1,
+                        decomposition_index + 1,
+                        final_state.index()
+                    );
+                    println!("{}", rooted.to_graphviz());
+                }
+            }
+            Err(error) => {
+                println!(
+                    "// {name}: failed to build rooted decomposition for accepting CFG state {}: {error}",
+                    final_state.index()
+                );
+            }
+        }
     }
 }

@@ -3,12 +3,7 @@ use std::{fmt::Display, fs, str::FromStr};
 use anyhow::Context;
 use clap::Parser;
 
-use crate::{
-    discovery::search,
-    generation::generate,
-    testing::test,
-    visualization::visualize,
-};
+use crate::{discovery::search, generation::generate, testing::test, visualization::visualize};
 
 pub mod config;
 pub mod discovery;

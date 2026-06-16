@@ -341,10 +341,35 @@ impl<NIndex: GIndex> From<GenericPath<NIndex>> for LinearGraphPathSegment<NIndex
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LinearGraphRepeatPath<NIndex: GIndex> {
+    pub path: GenericPath<NIndex>,
+}
+
+impl<NIndex: GIndex> LinearGraphRepeatPath<NIndex> {
+    pub fn new(path: GenericPath<NIndex>) -> Self {
+        assert!(!path.is_empty(), "Repeated paths must be non-empty");
+        assert_eq!(
+            path.start(),
+            path.end(),
+            "Repeated paths must start and end in the same state"
+        );
+
+        Self { path }
+    }
+}
+
+impl<NIndex: GIndex> From<GenericPath<NIndex>> for LinearGraphRepeatPath<NIndex> {
+    fn from(path: GenericPath<NIndex>) -> Self {
+        Self::new(path)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum LinearGraphPart {
     Graph(usize),
     Path(usize),
+    RepeatPath(usize),
 }
 
 impl LinearGraphPart {
@@ -365,6 +390,9 @@ impl LinearGraphPart {
                 .node_weights()
                 .any(|n| n == node),
             LinearGraphPart::Path(i) => linear_graph.path(*i).path.contains_state(node),
+            LinearGraphPart::RepeatPath(i) => {
+                linear_graph.repeat_path(*i).path.contains_state(node)
+            }
         }
     }
 
@@ -386,6 +414,7 @@ impl LinearGraphPart {
                 linear_graph.path(*i).path.start() == node
                     || linear_graph.path(*i).path.end() == node
             }
+            LinearGraphPart::RepeatPath(i) => linear_graph.repeat_path(*i).path.start() == node,
         }
     }
 
@@ -401,6 +430,9 @@ impl LinearGraphPart {
         match self {
             LinearGraphPart::Graph(i) => Box::new(linear_graph.graph(*i).graph.node_weights()),
             LinearGraphPart::Path(i) => Box::new(linear_graph.path(*i).path.iter_states()),
+            LinearGraphPart::RepeatPath(i) => {
+                Box::new(linear_graph.repeat_path(*i).path.iter_states())
+            }
         }
     }
 
@@ -416,6 +448,7 @@ impl LinearGraphPart {
         match self {
             LinearGraphPart::Graph(i) => linear_graph.graph(*i).product_start(),
             LinearGraphPart::Path(i) => linear_graph.path(*i).path.start(),
+            LinearGraphPart::RepeatPath(i) => linear_graph.repeat_path(*i).path.start(),
         }
     }
 
@@ -431,6 +464,7 @@ impl LinearGraphPart {
         match self {
             LinearGraphPart::Graph(i) => linear_graph.graph(*i).product_end(),
             LinearGraphPart::Path(i) => linear_graph.path(*i).path.end(),
+            LinearGraphPart::RepeatPath(i) => linear_graph.repeat_path(*i).path.end(),
         }
     }
 
@@ -453,6 +487,11 @@ impl LinearGraphPart {
                 let node_index = random.random_range(0..path.path.state_len());
                 &path.path.states[node_index]
             }
+            LinearGraphPart::RepeatPath(i) => {
+                let path = linear_graph.repeat_path(*i);
+                let node_index = random.random_range(0..path.path.state_len());
+                &path.path.states[node_index]
+            }
         }
     }
 
@@ -463,6 +502,7 @@ impl LinearGraphPart {
         match self {
             LinearGraphPart::Graph(i) => linear_graph.graph(*i).graph.node_count(),
             LinearGraphPart::Path(i) => linear_graph.path(*i).path.state_len(),
+            LinearGraphPart::RepeatPath(i) => linear_graph.repeat_path(*i).path.state_len(),
         }
     }
 
@@ -474,6 +514,10 @@ impl LinearGraphPart {
         matches!(self, LinearGraphPart::Graph(_))
     }
 
+    pub fn is_repeat_path(&self) -> bool {
+        matches!(self, LinearGraphPart::RepeatPath(_))
+    }
+
     pub fn as_path<'a, NIndex: GIndex, A>(
         &self,
         linear_graph: &'a LinearGraph<'a, NIndex, A>,
@@ -483,7 +527,7 @@ impl LinearGraphPart {
     {
         match self {
             LinearGraphPart::Path(i) => Some(linear_graph.path(*i)),
-            LinearGraphPart::Graph(_) => None,
+            LinearGraphPart::Graph(_) | LinearGraphPart::RepeatPath(_) => None,
         }
     }
 
@@ -496,7 +540,7 @@ impl LinearGraphPart {
     {
         match self {
             LinearGraphPart::Graph(i) => Some(linear_graph.graph(*i)),
-            LinearGraphPart::Path(_) => None,
+            LinearGraphPart::Path(_) | LinearGraphPart::RepeatPath(_) => None,
         }
     }
 
@@ -509,7 +553,9 @@ impl LinearGraphPart {
     {
         match self {
             LinearGraphPart::Path(i) => linear_graph.path(*i),
-            LinearGraphPart::Graph(_) => panic!("Called unwrap_path on a Graph part"),
+            LinearGraphPart::Graph(_) | LinearGraphPart::RepeatPath(_) => {
+                panic!("Called unwrap_path on a non-Path part")
+            }
         }
     }
 
@@ -522,7 +568,9 @@ impl LinearGraphPart {
     {
         match self {
             LinearGraphPart::Graph(i) => linear_graph.graph(*i),
-            LinearGraphPart::Path(_) => panic!("Called unwrap_graph on a Path part"),
+            LinearGraphPart::Path(_) | LinearGraphPart::RepeatPath(_) => {
+                panic!("Called unwrap_graph on a non-Graph part")
+            }
         }
     }
 }

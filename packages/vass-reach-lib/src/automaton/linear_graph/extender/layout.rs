@@ -467,6 +467,7 @@ fn segment_path_by_full_linear_graph(
                 });
                 state_index = run_end;
             }
+            LinearGraphPart::RepeatPath(_) => return None,
         }
     }
 
@@ -576,6 +577,9 @@ fn append_linear_graph<'a>(
             LinearGraphPart::Graph(graph_index) => {
                 target.add_graph(Arc::clone(&source.graphs[*graph_index]));
                 graph_to_full_region.push(None);
+            }
+            LinearGraphPart::RepeatPath(path_index) => {
+                target.add_repeat_path(source.repeat_path(*path_index).clone());
             }
         }
     }

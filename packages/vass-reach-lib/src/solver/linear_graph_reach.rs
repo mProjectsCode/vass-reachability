@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use hashbrown::HashMap;
 use petgraph::graph::EdgeIndex;
 use z3::{Config, Context, Solver, ast::Int, with_z3_config};
 
@@ -18,7 +19,9 @@ use crate::{
         index_map::OptionIndexMap,
         linear_graph::{
             LinearGraph,
-            part::{LinearGraphPart, LinearGraphPathSegment, LinearGraphRegion},
+            part::{
+                LinearGraphPart, LinearGraphPathSegment, LinearGraphRegion, LinearGraphRepeatPath,
+            },
         },
         path::{Path, parikh_image::ParikhImage},
         scc::SCCAlgorithms,
@@ -30,6 +33,12 @@ use crate::{
         utils::{forbid_parikh_image, parikh_image_from_edge_map},
     },
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LinearTemplateLowerBound {
+    pub coefficients: Box<[i32]>,
+    pub bound: i32,
+}
 
 #[derive(Debug, Default)]
 pub struct LinearGraphReachSolverOptions {
@@ -64,7 +73,7 @@ impl LinearGraphReachSolverOptions {
         self
     }
 
-    pub fn to_solver<'g, NIndex: GIndex + Send + Sync, A>(
+    pub fn into_solver<'g, NIndex: GIndex + Send + Sync, A>(
         self,
         linear_graph: &'g LinearGraph<'g, NIndex, A>,
         initial_valuation: &'g VASSCounterValuation,
@@ -80,16 +89,97 @@ impl LinearGraphReachSolverOptions {
     {
         LinearGraphReachSolver::new(linear_graph, initial_valuation, final_valuation, self)
     }
+
+    pub(crate) fn into_solver_with_boundary_lower_bounds<'g, NIndex: GIndex + Send + Sync, A>(
+        self,
+        linear_graph: &'g LinearGraph<'g, NIndex, A>,
+        initial_valuation: &'g VASSCounterValuation,
+        final_valuation: &'g VASSCounterValuation,
+        boundary_lower_bounds: HashMap<NIndex, Vec<LinearTemplateLowerBound>>,
+    ) -> LinearGraphReachSolver<'g, NIndex, A>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>
+            + Send
+            + Sync,
+    {
+        LinearGraphReachSolver::new_with_boundary_lower_bounds(
+            linear_graph,
+            initial_valuation,
+            final_valuation,
+            self,
+            boundary_lower_bounds,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct LinearGraphSolution {
     pub sub_graph_parikh_images: Vec<ParikhImage<EdgeIndex>>,
+    pub repeat_path_counts: Vec<u32>,
     pub initial_valuation: VASSCounterValuation,
     pub final_valuation: VASSCounterValuation,
 }
 
 impl LinearGraphSolution {
+    pub(crate) fn boundary_valuations<'a, NIndex: GIndex, A>(
+        &self,
+        linear_graph: &LinearGraph<'a, NIndex, A>,
+    ) -> Vec<(NIndex, VASSCounterValuation)>
+    where
+        A: InitializedAutomaton<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + TransitionSystem<Deterministic, NIndex = NIndex, Letter = CFGCounterUpdate>
+            + SCCAlgorithms
+            + Alphabet<Letter = CFGCounterUpdate>,
+    {
+        let mut valuation = self.initial_valuation.clone();
+        let mut boundaries = Vec::with_capacity(linear_graph.sequence.len() + 1);
+
+        let Some(first) = linear_graph.sequence.first() else {
+            return boundaries;
+        };
+        boundaries.push((first.start(linear_graph).clone(), valuation.clone()));
+
+        for part in &linear_graph.sequence {
+            match part {
+                LinearGraphPart::Graph(idx) => {
+                    valuation.apply_update(
+                        &self.sub_graph_parikh_images[*idx].get_total_counter_effect(
+                            linear_graph.graph(*idx),
+                            linear_graph.dimension,
+                        ),
+                    );
+                }
+                LinearGraphPart::Path(idx) => {
+                    valuation.apply_update(&cfg_updates_to_counter_update(
+                        linear_graph.path(*idx).path.transitions.iter().cloned(),
+                        linear_graph.dimension,
+                    ));
+                }
+                LinearGraphPart::RepeatPath(idx) => {
+                    let effect = cfg_updates_to_counter_update(
+                        linear_graph
+                            .repeat_path(*idx)
+                            .path
+                            .transitions
+                            .iter()
+                            .cloned(),
+                        linear_graph.dimension,
+                    );
+                    for _ in 0..self.repeat_path_counts[*idx] {
+                        valuation.apply_update(&effect);
+                    }
+                }
+            }
+
+            boundaries.push((part.end(linear_graph).clone(), valuation.clone()));
+        }
+
+        boundaries
+    }
+
     pub fn build_run<'a, NIndex: GIndex, A>(
         &self,
         linear_graph: &LinearGraph<'a, NIndex, A>,
@@ -153,6 +243,19 @@ impl LinearGraphSolution {
 
                     // then we can simply add the edges to the path
                     product_path.concat(path.path.clone());
+                }
+                LinearGraphPart::RepeatPath(idx) => {
+                    let repeated = linear_graph.repeat_path(*idx);
+                    let count = self.repeat_path_counts[*idx];
+                    let update = cfg_updates_to_counter_update(
+                        repeated.path.transitions.iter().cloned(),
+                        dimension,
+                    );
+
+                    for _ in 0..count {
+                        current_valuation.apply_update(&update);
+                        product_path.concat(repeated.path.clone());
+                    }
                 }
             }
         }
@@ -225,6 +328,7 @@ where
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
     stop_signal: Arc<AtomicBool>,
+    boundary_lower_bounds: HashMap<NIndex, Vec<LinearTemplateLowerBound>>,
 }
 
 impl<'g, NIndex: GIndex + Send + Sync, A> LinearGraphReachSolver<'g, NIndex, A>
@@ -242,6 +346,22 @@ where
         final_valuation: &'g VASSCounterValuation,
         options: LinearGraphReachSolverOptions,
     ) -> Self {
+        Self::new_with_boundary_lower_bounds(
+            linear_graph,
+            initial_valuation,
+            final_valuation,
+            options,
+            HashMap::new(),
+        )
+    }
+
+    pub(crate) fn new_with_boundary_lower_bounds(
+        linear_graph: &'g LinearGraph<'g, NIndex, A>,
+        initial_valuation: &'g VASSCounterValuation,
+        final_valuation: &'g VASSCounterValuation,
+        options: LinearGraphReachSolverOptions,
+        boundary_lower_bounds: HashMap<NIndex, Vec<LinearTemplateLowerBound>>,
+    ) -> Self {
         let stop_signal = options
             .stop_signal
             .clone()
@@ -257,6 +377,7 @@ where
             step_count: 0,
             solver_start_time: None,
             stop_signal,
+            boundary_lower_bounds,
         }
     }
 
@@ -317,15 +438,19 @@ where
             .map(|x| Int::from_i64(*x as i64))
             .collect();
 
-        let edge_maps = self
-            .linear_graph
-            .sequence
-            .iter()
-            .enumerate()
-            .filter_map(|(i, part)| match part {
+        let mut edge_maps = Vec::new();
+        let mut repeat_vars = vec![None; self.linear_graph.repeat_paths.len()];
+
+        for (i, part) in self.linear_graph.sequence.iter().enumerate() {
+            self.build_boundary_lower_bound_constraints(
+                part.start(self.linear_graph),
+                solver,
+                &sums,
+            );
+
+            match part {
                 LinearGraphPart::Path(idx) => {
                     self.build_path_constraints(self.linear_graph.path(*idx), solver, &mut sums);
-                    None
                 }
                 LinearGraphPart::Graph(idx) => {
                     let edge_map = self.build_graph_constraints(
@@ -334,10 +459,23 @@ where
                         solver,
                         &mut sums,
                     );
-                    Some(edge_map)
+                    edge_maps.push(edge_map);
                 }
-            })
-            .collect::<Vec<_>>();
+                LinearGraphPart::RepeatPath(idx) => {
+                    let count = self.build_repeat_path_constraints(
+                        i,
+                        self.linear_graph.repeat_path(*idx),
+                        solver,
+                        &mut sums,
+                    );
+                    repeat_vars[*idx] = Some(count);
+                }
+            }
+        }
+
+        if let Some(last) = self.linear_graph.sequence.last() {
+            self.build_boundary_lower_bound_constraints(last.end(self.linear_graph), solver, &sums);
+        }
 
         for (sum, target) in sums.iter().zip(self.final_valuation.iter()) {
             solver.assert(sum.eq(Int::from_i64(*target as i64)));
@@ -372,6 +510,20 @@ where
                                 sub_graph_parikh_images: parikh_image_components
                                     .into_iter()
                                     .map(|(_, _, main_component, _)| main_component)
+                                    .collect(),
+                                repeat_path_counts: repeat_vars
+                                    .iter()
+                                    .map(|var| {
+                                        let var = var
+                                            .as_ref()
+                                            .expect("every repeated path must have a variable");
+                                        model
+                                            .get_const_interp(var)
+                                            .expect("repeat count must be in the model")
+                                            .as_u64()
+                                            .expect("repeat count must be a non-negative integer")
+                                            as u32
+                                    })
                                     .collect(),
                                 initial_valuation: self.initial_valuation.clone(),
                                 final_valuation: self.final_valuation.clone(),
@@ -502,6 +654,64 @@ where
         }
 
         edge_map
+    }
+
+    fn build_repeat_path_constraints(
+        &self,
+        part_index: usize,
+        repeated: &LinearGraphRepeatPath<NIndex>,
+        solver: &Solver,
+        sums: &mut Box<[Int]>,
+    ) -> Int {
+        let count = Int::new_const(format!("repeat_path_{part_index}_count"));
+        let zero = Int::from_i64(0);
+        let one = Int::from_i64(1);
+        solver.assert(count.ge(&zero));
+
+        let (required, after_credit) = cfg_updates_to_counter_updates(
+            repeated.path.transitions.iter().cloned(),
+            self.linear_graph.dimension,
+        );
+        let positive_count = count.gt(&zero);
+
+        for i in 0..self.linear_graph.dimension {
+            let required_value = required[i];
+            let effect = after_credit[i] - required_value;
+            let required_ast = Int::from_i64(required_value as i64);
+            solver.assert(positive_count.implies(sums[i].ge(&required_ast)));
+
+            if effect < 0 {
+                let last_iteration_start =
+                    &sums[i] + (&count - &one) * Int::from_i64(effect as i64);
+                solver.assert(positive_count.implies(last_iteration_start.ge(&required_ast)));
+            }
+
+            sums[i] = &sums[i] + &count * Int::from_i64(effect as i64);
+        }
+
+        count
+    }
+
+    fn build_boundary_lower_bound_constraints(
+        &self,
+        state: &NIndex,
+        solver: &Solver,
+        sums: &[Int],
+    ) {
+        let Some(lower_bound) = self.boundary_lower_bounds.get(state) else {
+            return;
+        };
+
+        for template in lower_bound {
+            let value = sums
+                .iter()
+                .zip(template.coefficients.iter())
+                .filter(|(_, coefficient)| **coefficient != 0)
+                .fold(Int::from_i64(0), |value, (sum, coefficient)| {
+                    value + sum * Int::from_i64(*coefficient as i64)
+                });
+            solver.assert(value.ge(Int::from_i64(template.bound as i64)));
+        }
     }
 
     fn max_iterations_reached(&self) -> bool {

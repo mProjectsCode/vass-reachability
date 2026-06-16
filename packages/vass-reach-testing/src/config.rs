@@ -182,6 +182,7 @@ pub struct TestRunConfig {
     pub max_parallel: u64,
 }
 
+// TODO: migrate to std::range::RangeInclusive, once serde supports it
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct InstanceConfig {
@@ -235,7 +236,7 @@ impl InstanceConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
 pub struct InclusiveUsizeRange {
     pub min: usize,
     pub max: usize,
@@ -250,13 +251,7 @@ impl InclusiveUsizeRange {
     }
 }
 
-impl Default for InclusiveUsizeRange {
-    fn default() -> Self {
-        Self { min: 0, max: 0 }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
 pub struct InclusiveI32Range {
     pub min: i32,
     pub max: i32,
@@ -268,12 +263,6 @@ impl InclusiveI32Range {
             anyhow::bail!("{name}.min must be <= {name}.max");
         }
         Ok(())
-    }
-}
-
-impl Default for InclusiveI32Range {
-    fn default() -> Self {
-        Self { min: 0, max: 0 }
     }
 }
 

@@ -19,6 +19,10 @@ Or with `RUST_BACKTRACE=1 cargo test --release -- --test-threads=1 --nocapture` 
 See [`packages/vass-reach-testing/README.md`](packages/vass-reach-testing/README.md)
 for benchmark, hard-instance search, minimization, and visualization workflows.
 
+See [`docs/linear-template-invariants.md`](docs/linear-template-invariants.md)
+for the forward relational-invariant analysis, exact SMT transfer, dynamic
+template synthesis, soundness argument, and planned extensions.
+
 ## Authors and Contact
 
 This is a project by the [Institute of Theoretical Computer Science](https://www.tcs.cs.tu-bs.de) of the Technical University Brunswick.

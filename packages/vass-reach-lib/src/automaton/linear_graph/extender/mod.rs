@@ -1,9 +1,11 @@
-use std::fmt::Debug;
+use std::{cell::RefCell, collections::VecDeque, fmt::Debug};
 
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
+use z3::{Optimize, SatResult, ast::Int};
 
 use crate::{
     automaton::{
+        Alphabet, Automaton, InitializedAutomaton, TransitionSystem,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         implicit_cfg_product::{state::MultiGraphState, view::ImplicitCFGProductView},
         linear_graph::LinearGraph,
@@ -15,7 +17,10 @@ use crate::{
         LinearGraphConfig, LinearGraphInterpolationStrategy, LinearGraphRegionOrder,
         LinearGraphSeedOrder,
     },
-    solver::{SolverStatus, linear_graph_reach::LinearGraphReachSolverOptions},
+    solver::{
+        SolverStatus,
+        linear_graph_reach::{LinearGraphReachSolverOptions, LinearTemplateLowerBound},
+    },
 };
 
 mod layout;
@@ -41,6 +46,7 @@ pub struct LinearGraphExtender<'a> {
     options: LinearGraphExtenderOptions,
     /// Optional SCC DAG supplied by a caller that already computed it.
     scc_dag: Option<SCCDag<MultiGraphState, CFGCounterUpdate>>,
+    template_lower_bounds: RefCell<MainCFGTemplateLowerBounds>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +179,9 @@ impl<'a> LinearGraphExtender<'a> {
         final_valuation: VASSCounterValuation,
         options: LinearGraphExtenderOptions,
     ) -> Self {
+        let template_lower_bounds =
+            main_cfg_template_lower_bounds(product.product.main_cfg(), &initial_valuation);
+
         LinearGraphExtender {
             primary_path,
             auxiliary_paths,
@@ -182,6 +191,7 @@ impl<'a> LinearGraphExtender<'a> {
             final_valuation,
             options,
             scc_dag: None,
+            template_lower_bounds: RefCell::new(template_lower_bounds),
         }
     }
 
@@ -317,6 +327,11 @@ impl<'a> LinearGraphExtender<'a> {
 
         let Some(seed) = self.select_initial_seed(self.options.max_seed_checks, &mut seed_checks)
         else {
+            if let Some(repeated_seed) =
+                self.select_repeated_path_seed(self.options.max_seed_checks, &mut seed_checks)
+            {
+                return repeated_seed;
+            }
             return self.fallback_to_exact_primary_path();
         };
 
@@ -370,6 +385,106 @@ impl<'a> LinearGraphExtender<'a> {
         }
 
         exact
+    }
+
+    fn select_repeated_path_seed(
+        &self,
+        max_checks: usize,
+        checks: &mut usize,
+    ) -> Option<ProductViewLinearGraph<'a>> {
+        let computed_dag;
+        let dag = if let Some(dag) = &self.scc_dag {
+            dag
+        } else {
+            computed_dag = self.product.find_scc_dag();
+            &computed_dag
+        };
+
+        let first_negative_position = self
+            .primary_path
+            .find_negative_counter_forward(&self.initial_valuation)
+            .map(|(_, transition)| transition + 1)
+            .unwrap_or(0);
+        let mut positions = self
+            .primary_path
+            .states
+            .iter()
+            .enumerate()
+            .skip(first_negative_position)
+            .map(|(position, state)| (position, state.clone()))
+            .collect::<Vec<_>>();
+        positions.sort_by_key(|(position, _)| {
+            let is_control_self_loop = *position < self.primary_path.len()
+                && self.primary_path.states[*position].cfg_state(0)
+                    == self.primary_path.states[*position + 1].cfg_state(0);
+            (!is_control_self_loop, *position)
+        });
+
+        let mut repeated_paths = Vec::new();
+        for (position, state) in &positions {
+            let Some(component) = dag
+                .components
+                .iter()
+                .find(|component| component.nodes.contains(state))
+            else {
+                continue;
+            };
+            let allowed = component.nodes.iter().cloned().collect::<HashSet<_>>();
+            let preferred = self.primary_path.transitions.get(*position);
+            if let Some(cycle) = preferred_rooted_cycle(self.product, state, &allowed, preferred) {
+                repeated_paths.push((*position, cycle));
+            }
+        }
+
+        if !repeated_paths.is_empty() && *checks < max_checks {
+            let candidate = LinearGraph::from_path_with_repeats_at(
+                self.primary_path.clone(),
+                repeated_paths.clone(),
+                self.product,
+                self.dimension,
+            );
+            let result = self.solve_candidate(&candidate);
+            *checks += 1;
+
+            if matches!(result.status, SolverStatus::False(_)) {
+                tracing::debug!(
+                    repeat_paths = candidate.repeat_paths.len(),
+                    first_negative_position,
+                    checks = *checks,
+                    "Repeated-path suffix LinearGraph is unreachable"
+                );
+                return Some(candidate);
+            }
+        }
+
+        for (position, cycle) in &repeated_paths {
+            if *checks >= max_checks {
+                break;
+            }
+
+            let candidate = LinearGraph::from_path_with_repeat_at(
+                self.primary_path.clone(),
+                cycle.clone(),
+                *position,
+                self.product,
+                self.dimension,
+            );
+            let result = self.solve_candidate(&candidate);
+            *checks += 1;
+
+            if matches!(result.status, SolverStatus::False(_)) {
+                tracing::debug!(
+                    repeat_position = *position,
+                    repeat_length = cycle.len(),
+                    first_negative_position,
+                    checks = *checks,
+                    "Witness-aligned repeated-path LinearGraph is unreachable"
+                );
+                return Some(candidate);
+            }
+        }
+
+        None
     }
 
     /// Records the selected seed as the lower bound for interpolation.
@@ -592,11 +707,85 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         linear_graph: &ProductViewLinearGraph<'a>,
     ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
+        const MAX_SYNTHESIS_STEPS: usize = 8;
+
+        for synthesis_step in 0..=MAX_SYNTHESIS_STEPS {
+            let result = self.solve_candidate_once(linear_graph);
+            let Some(solution) = result.get_solution() else {
+                return result;
+            };
+
+            if solution.build_run(linear_graph, true).is_some()
+                || synthesis_step == MAX_SYNTHESIS_STEPS
+            {
+                return result;
+            }
+
+            let model_boundaries = solution.boundary_valuations(linear_graph);
+            let Some((template, analysis)) =
+                self.synthesize_template_excluding_boundaries(&model_boundaries)
+            else {
+                return result;
+            };
+
+            tracing::debug!(
+                coefficients = ?template.coefficients,
+                synthesis_step,
+                "Synthesized relational lower-bound template from spurious LinearGraph model"
+            );
+            *self.template_lower_bounds.borrow_mut() = analysis;
+        }
+
+        unreachable!("template synthesis loop always returns")
+    }
+
+    fn solve_candidate_once(
+        &self,
+        linear_graph: &ProductViewLinearGraph<'a>,
+    ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
+        let template_lower_bounds = self.template_lower_bounds.borrow();
+        let boundary_lower_bounds = linear_graph_boundary_template_lower_bounds(
+            linear_graph,
+            &template_lower_bounds,
+            self.product.product.main_cfg_index(),
+        );
+
         LinearGraphReachSolverOptions::default()
             .with_optional_iteration_limit(self.options.reach_solver_max_iterations)
             .with_optional_time_limit(self.options.reach_solver_timeout)
-            .to_solver(linear_graph, &self.initial_valuation, &self.final_valuation)
+            .into_solver_with_boundary_lower_bounds(
+                linear_graph,
+                &self.initial_valuation,
+                &self.final_valuation,
+                boundary_lower_bounds,
+            )
             .solve()
+    }
+
+    fn synthesize_template_excluding_boundaries(
+        &self,
+        model_boundaries: &[(MultiGraphState, VASSCounterValuation)],
+    ) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
+        const MAX_COEFFICIENT: i32 = 2;
+        const MAX_CANDIDATES: usize = 256;
+
+        let main_boundaries = model_boundaries
+            .iter()
+            .map(|(state, valuation)| {
+                (
+                    state.cfg_state(self.product.product.main_cfg_index()),
+                    valuation.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        synthesize_template_for_boundaries(
+            self.product.product.main_cfg(),
+            &self.initial_valuation,
+            &self.template_lower_bounds.borrow(),
+            &main_boundaries,
+            MAX_COEFFICIENT,
+            MAX_CANDIDATES,
+        )
     }
 
     fn ordered_regions(&self, layout: &InterpolationLayout<'a>) -> Vec<usize> {
@@ -645,8 +834,394 @@ fn product_view_boundary_valuations(
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LinearTemplate {
+    coefficients: Box<[i32]>,
+}
+
+#[derive(Debug, Clone)]
+struct MainCFGTemplateLowerBounds {
+    templates: Vec<LinearTemplate>,
+    state_bounds: Vec<Option<Box<[i32]>>>,
+}
+
+fn linear_templates(dimension: usize) -> Vec<LinearTemplate> {
+    let mut supports = (0..dimension)
+        .map(|counter| vec![counter])
+        .collect::<Vec<_>>();
+
+    for left in 0..dimension {
+        for right in left + 1..dimension {
+            supports.push(vec![left, right]);
+        }
+    }
+
+    if dimension > 2 {
+        supports.push((0..dimension).collect());
+    }
+
+    supports
+        .into_iter()
+        .map(|support| {
+            let mut coefficients = vec![0; dimension];
+            for counter in &support {
+                coefficients[*counter] = 1;
+            }
+            LinearTemplate {
+                coefficients: coefficients.into_boxed_slice(),
+            }
+        })
+        .collect()
+}
+
+fn template_value(template: &LinearTemplate, valuation: &VASSCounterValuation) -> i32 {
+    template
+        .coefficients
+        .iter()
+        .zip(valuation.iter())
+        .map(|(coefficient, value)| coefficient * value)
+        .sum()
+}
+
+fn main_cfg_template_lower_bounds(
+    cfg: &VASSCFG<()>,
+    initial_valuation: &VASSCounterValuation,
+) -> MainCFGTemplateLowerBounds {
+    analyze_templates(
+        cfg,
+        initial_valuation,
+        linear_templates(initial_valuation.dimension()),
+    )
+}
+
+fn analyze_templates(
+    cfg: &VASSCFG<()>,
+    initial_valuation: &VASSCounterValuation,
+    templates: Vec<LinearTemplate>,
+) -> MainCFGTemplateLowerBounds {
+    // Clamping makes the abstract domain finite and only weakens each lower bound.
+    let cap = i32::try_from(cfg.node_count()).unwrap_or(i32::MAX);
+    let initial_bound = templates
+        .iter()
+        .map(|template| template_value(template, initial_valuation).clamp(0, cap))
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    let mut bounds = vec![None; cfg.node_count()];
+    let initial = cfg.get_initial();
+    bounds[initial.index()] = Some(initial_bound);
+
+    let mut queue = VecDeque::from([initial]);
+    let mut queued = vec![false; cfg.node_count()];
+    queued[initial.index()] = true;
+
+    while let Some(source) = queue.pop_front() {
+        queued[source.index()] = false;
+        let source_bound = bounds[source.index()]
+            .as_ref()
+            .expect("queued states have a lower bound")
+            .clone();
+
+        for update in cfg.alphabet() {
+            let Some(target) = cfg.successor(&source, update) else {
+                continue;
+            };
+
+            let mut candidate = source_bound.clone();
+
+            for template_index in 0..templates.len() {
+                candidate[template_index] = exact_successor_template_bound(
+                    &templates,
+                    &source_bound,
+                    update,
+                    template_index,
+                    cap,
+                );
+            }
+            let changed = if let Some(current) = &mut bounds[target.index()] {
+                let previous = current.clone();
+                for (current_bound, candidate_bound) in current.iter_mut().zip(candidate.iter()) {
+                    *current_bound = (*current_bound).min(*candidate_bound);
+                }
+                *current != previous
+            } else {
+                bounds[target.index()] = Some(candidate);
+                true
+            };
+
+            if changed && !queued[target.index()] {
+                queued[target.index()] = true;
+                queue.push_back(target);
+            }
+        }
+    }
+
+    MainCFGTemplateLowerBounds {
+        templates,
+        state_bounds: bounds,
+    }
+}
+
+fn exact_successor_template_bound(
+    templates: &[LinearTemplate],
+    source_bounds: &[i32],
+    update: &CFGCounterUpdate,
+    objective_index: usize,
+    cap: i32,
+) -> i32 {
+    let optimizer = Optimize::new();
+    let counters = (0..templates[objective_index].coefficients.len())
+        .map(|counter| Int::new_const(format!("template_transfer_c{counter}")))
+        .collect::<Vec<_>>();
+
+    for counter in &counters {
+        optimizer.assert(counter.ge(Int::from_i64(0)));
+    }
+    if update.op() < 0 {
+        optimizer.assert(counters[update.counter().to_usize()].ge(Int::from_i64(1)));
+    }
+
+    for (template, bound) in templates.iter().zip(source_bounds.iter()) {
+        optimizer.assert(template_expression(template, &counters).ge(Int::from_i64(*bound as i64)));
+    }
+
+    let objective_template = &templates[objective_index];
+    let objective = template_expression(objective_template, &counters)
+        + Int::from_i64(
+            (objective_template.coefficients[update.counter().to_usize()] * update.op()) as i64,
+        );
+    optimizer.minimize(&objective);
+
+    match optimizer.check(&[]) {
+        SatResult::Sat => optimizer
+            .get_model()
+            .and_then(|model| model.eval(&objective, true))
+            .and_then(|value| value.as_i64())
+            .and_then(|value| i32::try_from(value).ok())
+            .unwrap_or(0)
+            .clamp(0, cap),
+        SatResult::Unsat | SatResult::Unknown => 0,
+    }
+}
+
+fn template_expression(template: &LinearTemplate, counters: &[Int]) -> Int {
+    counters
+        .iter()
+        .zip(template.coefficients.iter())
+        .filter(|(_, coefficient)| **coefficient != 0)
+        .fold(Int::from_i64(0), |sum, (counter, coefficient)| {
+            sum + counter * Int::from_i64(*coefficient as i64)
+        })
+}
+
+fn candidate_templates(
+    dimension: usize,
+    max_coefficient: i32,
+    max_candidates: usize,
+    existing: &[LinearTemplate],
+) -> Vec<LinearTemplate> {
+    fn enumerate(
+        position: usize,
+        coefficients: &mut [i32],
+        max_coefficient: i32,
+        max_candidates: usize,
+        existing: &[LinearTemplate],
+        result: &mut Vec<LinearTemplate>,
+    ) {
+        if result.len() >= max_candidates {
+            return;
+        }
+        if position == coefficients.len() {
+            let support = coefficients
+                .iter()
+                .enumerate()
+                .filter_map(|(counter, coefficient)| (*coefficient != 0).then_some(counter))
+                .collect::<Vec<_>>();
+            if support.len() < 2
+                || existing
+                    .iter()
+                    .any(|template| template.coefficients.as_ref() == coefficients)
+            {
+                return;
+            }
+            result.push(LinearTemplate {
+                coefficients: coefficients.to_vec().into_boxed_slice(),
+            });
+            return;
+        }
+
+        for coefficient in 0..=max_coefficient {
+            coefficients[position] = coefficient;
+            enumerate(
+                position + 1,
+                coefficients,
+                max_coefficient,
+                max_candidates,
+                existing,
+                result,
+            );
+        }
+    }
+
+    let mut result = Vec::new();
+    enumerate(
+        0,
+        &mut vec![0; dimension],
+        max_coefficient,
+        max_candidates,
+        existing,
+        &mut result,
+    );
+    result
+}
+
+fn synthesize_template_for_boundaries(
+    cfg: &VASSCFG<()>,
+    initial_valuation: &VASSCounterValuation,
+    current: &MainCFGTemplateLowerBounds,
+    model_boundaries: &[(petgraph::graph::NodeIndex, VASSCounterValuation)],
+    max_coefficient: i32,
+    max_candidates: usize,
+) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
+    let candidates = candidate_templates(
+        initial_valuation.dimension(),
+        max_coefficient,
+        max_candidates,
+        &current.templates,
+    );
+
+    for template in candidates {
+        let mut templates = current.templates.clone();
+        templates.push(template.clone());
+        let analysis = analyze_templates(cfg, initial_valuation, templates);
+        let template_index = analysis.templates.len() - 1;
+
+        let excludes_model = model_boundaries.iter().any(|(state, valuation)| {
+            let Some(bounds) = &analysis.state_bounds[state.index()] else {
+                return false;
+            };
+            template_value(&template, valuation) < bounds[template_index]
+        });
+
+        if excludes_model {
+            return Some((template, analysis));
+        }
+    }
+
+    None
+}
+
+fn linear_graph_boundary_template_lower_bounds(
+    linear_graph: &ProductViewLinearGraph<'_>,
+    main_bounds: &MainCFGTemplateLowerBounds,
+    main_cfg_index: usize,
+) -> HashMap<MultiGraphState, Vec<LinearTemplateLowerBound>> {
+    linear_graph
+        .iter_parts()
+        .flat_map(|part| part.iter_nodes(linear_graph))
+        .filter_map(|state| {
+            main_bounds.state_bounds[state.cfg_state(main_cfg_index).index()]
+                .as_ref()
+                .map(|bounds| {
+                    let lower_bounds = main_bounds
+                        .templates
+                        .iter()
+                        .zip(bounds.iter())
+                        .filter(|(_, bound)| **bound > 0)
+                        .map(|(template, bound)| LinearTemplateLowerBound {
+                            coefficients: template.coefficients.clone(),
+                            bound: *bound,
+                        })
+                        .collect();
+                    (state.clone(), lower_bounds)
+                })
+        })
+        .collect()
+}
+
 fn refinement_steps_to_usize(max_refinements: u64) -> usize {
     usize::try_from(max_refinements.max(1)).unwrap_or(usize::MAX)
+}
+
+fn preferred_rooted_cycle(
+    product: &ImplicitCFGProductView<'_>,
+    root: &MultiGraphState,
+    allowed: &HashSet<MultiGraphState>,
+    preferred: Option<&CFGCounterUpdate>,
+) -> Option<MultiGraphPath> {
+    let mut first_letters = product.alphabet().iter().collect::<Vec<_>>();
+    first_letters.sort_by_key(|letter| preferred != Some(*letter));
+    let mut fallback = None;
+
+    for first in first_letters {
+        let Some(target) = product.successor(root, first) else {
+            continue;
+        };
+        if !allowed.contains(&target) {
+            continue;
+        }
+
+        let mut first_path = MultiGraphPath::new(root.clone());
+        first_path.add(*first, target.clone());
+        let cycle = if &target == root {
+            Some(first_path)
+        } else {
+            shortest_path_to_root(product, first_path, root, allowed)
+        };
+
+        let Some(cycle) = cycle else {
+            continue;
+        };
+        let nonzero_effect = cycle
+            .transitions
+            .iter()
+            .fold(vec![0i32; product.dimension()], |mut effect, update| {
+                effect[update.counter().to_usize()] += update.op();
+                effect
+            })
+            .into_iter()
+            .any(|effect| effect != 0);
+
+        if nonzero_effect {
+            return Some(cycle);
+        }
+        fallback.get_or_insert(cycle);
+    }
+
+    fallback
+}
+
+fn shortest_path_to_root(
+    product: &ImplicitCFGProductView<'_>,
+    initial_path: MultiGraphPath,
+    root: &MultiGraphState,
+    allowed: &HashSet<MultiGraphState>,
+) -> Option<MultiGraphPath> {
+    let mut queue = VecDeque::from([initial_path.clone()]);
+    let mut visited = HashSet::new();
+    visited.insert(initial_path.end().clone());
+
+    while let Some(path) = queue.pop_front() {
+        for letter in product.alphabet() {
+            let Some(target) = product.successor(path.end(), letter) else {
+                continue;
+            };
+            if !allowed.contains(&target) {
+                continue;
+            }
+
+            let mut next = path.clone();
+            next.add(*letter, target.clone());
+            if &target == root {
+                return Some(next);
+            }
+
+            if visited.insert(target) {
+                queue.push_back(next);
+            }
+        }
+    }
+
+    None
 }
 
 trait InterpolationStrategy {
@@ -758,4 +1333,175 @@ fn remove_batch(pending: &mut Vec<usize>, batch: &[usize]) {
 
 fn next_halving_batch_size(len: usize) -> usize {
     len.div_ceil(2).max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        LinearTemplate, analyze_templates, candidate_templates, exact_successor_template_bound,
+        main_cfg_template_lower_bounds, synthesize_template_for_boundaries,
+    };
+    use crate::automaton::{
+        ModifiableAutomaton,
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::node::DfaNode,
+    };
+
+    #[test]
+    fn lower_bounds_preserve_a_mandatory_increment() {
+        let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+        let initial = cfg.add_node(DfaNode::non_accepting(()));
+        let accepting = cfg.add_node(DfaNode::accepting(()));
+        cfg.set_initial(initial);
+        cfg.add_edge(&initial, &accepting, CFGCounterUpdate::new(0, true));
+        cfg.add_edge(&accepting, &initial, CFGCounterUpdate::new(0, false));
+
+        let bounds = main_cfg_template_lower_bounds(&cfg, &vec![0].into());
+
+        assert_eq!(
+            bounds.state_bounds[initial.index()].as_deref(),
+            Some(&[0][..])
+        );
+        assert_eq!(
+            bounds.state_bounds[accepting.index()].as_deref(),
+            Some(&[1][..])
+        );
+    }
+
+    #[test]
+    fn lower_bounds_are_weakened_by_decrement_cycles() {
+        let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(1));
+        let initial = cfg.add_node(DfaNode::accepting(()));
+        cfg.set_initial(initial);
+        cfg.add_edge(&initial, &initial, CFGCounterUpdate::new(0, false));
+
+        let bounds = main_cfg_template_lower_bounds(&cfg, &vec![100].into());
+
+        assert_eq!(
+            bounds.state_bounds[initial.index()].as_deref(),
+            Some(&[0][..])
+        );
+    }
+
+    #[test]
+    fn template_lower_bounds_preserve_guarded_nonzero_sum() {
+        let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(2));
+        let initial = cfg.add_node(DfaNode::accepting(()));
+        let first_decrement = cfg.add_node(DfaNode::non_accepting(()));
+        let second_decrement = cfg.add_node(DfaNode::non_accepting(()));
+        let transfer = cfg.add_node(DfaNode::non_accepting(()));
+        cfg.set_initial(initial);
+
+        cfg.add_edge(&initial, &first_decrement, CFGCounterUpdate::new(0, true));
+        cfg.add_edge(
+            &first_decrement,
+            &second_decrement,
+            CFGCounterUpdate::new(1, false),
+        );
+        cfg.add_edge(&second_decrement, &initial, CFGCounterUpdate::new(1, false));
+        cfg.add_edge(&initial, &transfer, CFGCounterUpdate::new(0, false));
+        cfg.add_edge(&transfer, &initial, CFGCounterUpdate::new(1, true));
+
+        let bounds = main_cfg_template_lower_bounds(&cfg, &vec![1, 0].into());
+        let sum_template = bounds
+            .templates
+            .iter()
+            .position(|template| template.coefficients.as_ref() == [1, 1])
+            .unwrap();
+
+        assert_eq!(
+            bounds.state_bounds[initial.index()].as_ref().unwrap()[sum_template],
+            1
+        );
+    }
+
+    #[test]
+    fn exact_transfer_combines_relational_constraints() {
+        let templates = super::linear_templates(3);
+        let source_bounds = vec![0, 0, 0, 2, 2, 2, 0];
+        let all_counters = templates.len() - 1;
+        let bound = exact_successor_template_bound(
+            &templates,
+            &source_bounds,
+            &CFGCounterUpdate::new(0, true),
+            all_counters,
+            10,
+        );
+
+        assert_eq!(bound, 4);
+    }
+
+    #[test]
+    fn candidate_generation_includes_weighted_templates() {
+        let existing = super::linear_templates(2);
+        let candidates = candidate_templates(2, 2, 32, &existing);
+
+        assert!(candidates.iter().any(|template| {
+            template.coefficients.as_ref() == [2, 1] || template.coefficients.as_ref() == [1, 2]
+        }));
+    }
+
+    #[test]
+    fn weighted_template_proves_a_non_default_invariant() {
+        let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(2));
+        let initial = cfg.add_node(DfaNode::accepting(()));
+        let dec_c0 = cfg.add_node(DfaNode::non_accepting(()));
+        let first_inc_c1 = cfg.add_node(DfaNode::non_accepting(()));
+        let inc_c0 = cfg.add_node(DfaNode::non_accepting(()));
+        let first_dec_c1 = cfg.add_node(DfaNode::non_accepting(()));
+        cfg.set_initial(initial);
+
+        cfg.add_edge(&initial, &dec_c0, CFGCounterUpdate::new(0, false));
+        cfg.add_edge(&dec_c0, &first_inc_c1, CFGCounterUpdate::new(1, true));
+        cfg.add_edge(&first_inc_c1, &initial, CFGCounterUpdate::new(1, true));
+        cfg.add_edge(&initial, &inc_c0, CFGCounterUpdate::new(0, true));
+        cfg.add_edge(&inc_c0, &first_dec_c1, CFGCounterUpdate::new(1, false));
+        cfg.add_edge(&first_dec_c1, &initial, CFGCounterUpdate::new(1, false));
+
+        let mut templates = super::linear_templates(2);
+        templates.push(LinearTemplate {
+            coefficients: vec![2, 1].into_boxed_slice(),
+        });
+        let analysis = analyze_templates(&cfg, &vec![1, 0].into(), templates);
+        let weighted = analysis.templates.len() - 1;
+
+        assert_eq!(
+            analysis.state_bounds[initial.index()].as_ref().unwrap()[weighted],
+            2
+        );
+    }
+
+    #[test]
+    fn synthesis_discovers_a_weighted_separating_template() {
+        let mut cfg = VASSCFG::new(CFGCounterUpdate::alphabet(2));
+        let initial = cfg.add_node(DfaNode::accepting(()));
+        let dec_c0 = cfg.add_node(DfaNode::non_accepting(()));
+        let first_inc_c1 = cfg.add_node(DfaNode::non_accepting(()));
+        let inc_c0 = cfg.add_node(DfaNode::non_accepting(()));
+        let first_dec_c1 = cfg.add_node(DfaNode::non_accepting(()));
+        cfg.set_initial(initial);
+
+        cfg.add_edge(&initial, &dec_c0, CFGCounterUpdate::new(0, false));
+        cfg.add_edge(&dec_c0, &first_inc_c1, CFGCounterUpdate::new(1, true));
+        cfg.add_edge(&first_inc_c1, &initial, CFGCounterUpdate::new(1, true));
+        cfg.add_edge(&initial, &inc_c0, CFGCounterUpdate::new(0, true));
+        cfg.add_edge(&inc_c0, &first_dec_c1, CFGCounterUpdate::new(1, false));
+        cfg.add_edge(&first_dec_c1, &initial, CFGCounterUpdate::new(1, false));
+
+        let initial_valuation = vec![1, 0].into();
+        let current = main_cfg_template_lower_bounds(&cfg, &initial_valuation);
+        let (template, _) = synthesize_template_for_boundaries(
+            &cfg,
+            &initial_valuation,
+            &current,
+            &[(initial, vec![0, 1].into())],
+            2,
+            32,
+        )
+        .unwrap();
+
+        assert!(
+            template.coefficients.as_ref() == [2, 1] || template.coefficients.as_ref() == [1, 2]
+        );
+    }
 }

@@ -89,7 +89,7 @@ pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
         };
 
         let solver_result = LinearGraphReachSolverOptions::default()
-            .to_solver(&linear_graph, initial_valuation, final_valuation)
+            .into_solver(&linear_graph, initial_valuation, final_valuation)
             .solve();
 
         match solver_result.status {

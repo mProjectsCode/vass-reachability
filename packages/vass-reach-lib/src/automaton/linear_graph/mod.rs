@@ -1,4 +1,4 @@
-use std::{iter::Peekable, sync::Arc};
+use std::sync::Arc;
 
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
@@ -15,7 +15,9 @@ use crate::automaton::{
     cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
     dfa::node::DfaNode,
     implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-    linear_graph::part::{LinearGraphPart, LinearGraphPathSegment, LinearGraphRegion},
+    linear_graph::part::{
+        LinearGraphPart, LinearGraphPathSegment, LinearGraphRegion, LinearGraphRepeatPath,
+    },
     nfa::NFA,
     path::Path,
 };
@@ -24,6 +26,9 @@ type CFGPath<NIndex> = Path<NIndex, CFGCounterUpdate>;
 
 pub mod extender;
 pub mod part;
+pub mod rooted;
+
+pub use rooted::{RootedLinearGraph, RootedLinearGraphError};
 
 #[derive(Debug, Clone, Copy)]
 enum NeighborPart {
@@ -74,6 +79,7 @@ where
     pub sequence: Vec<LinearGraphPart>,
     pub graphs: Vec<Arc<LinearGraphRegion<NIndex>>>,
     pub paths: Vec<LinearGraphPathSegment<NIndex>>,
+    pub repeat_paths: Vec<LinearGraphRepeatPath<NIndex>>,
     pub automaton: &'a A,
     pub dimension: usize,
 }
@@ -87,6 +93,7 @@ where
             sequence: self.sequence.clone(),
             graphs: self.graphs.clone(),
             paths: self.paths.clone(),
+            repeat_paths: self.repeat_paths.clone(),
             automaton: self.automaton,
             dimension: self.dimension,
         }
@@ -100,6 +107,65 @@ where
     pub fn from_path(path: CFGPath<NIndex>, automaton: &'a A, dimension: usize) -> Self {
         let mut instance = Self::empty(automaton, dimension);
         instance.add_path(path.into());
+        instance.assert_consistent();
+        instance
+    }
+
+    pub fn from_path_with_repeat_at(
+        path: CFGPath<NIndex>,
+        repeated: CFGPath<NIndex>,
+        repeat_position: usize,
+        automaton: &'a A,
+        dimension: usize,
+    ) -> Self {
+        Self::from_path_with_repeats_at(
+            path,
+            vec![(repeat_position, repeated)],
+            automaton,
+            dimension,
+        )
+    }
+
+    pub fn from_path_with_repeats_at(
+        path: CFGPath<NIndex>,
+        mut repeated: Vec<(usize, CFGPath<NIndex>)>,
+        automaton: &'a A,
+        dimension: usize,
+    ) -> Self {
+        repeated.sort_unstable_by_key(|(position, _)| *position);
+        for (position, repeated_path) in &repeated {
+            assert!(
+                *position <= path.len(),
+                "Repeat position must be a path-state index"
+            );
+            assert_eq!(
+                &path.states[*position],
+                repeated_path.start(),
+                "Repeated path must be rooted at the selected path state"
+            );
+        }
+        assert!(
+            repeated.windows(2).all(|window| window[0].0 != window[1].0),
+            "At most one repeated path may be attached to each path state"
+        );
+
+        let mut instance = Self::empty(automaton, dimension);
+        let mut repeats = repeated.into_iter().peekable();
+
+        for position in 0..=path.len() {
+            if repeats
+                .peek()
+                .is_some_and(|(repeat_at, _)| *repeat_at == position)
+            {
+                let (_, repeated_path) = repeats.next().expect("peeked repeated path must exist");
+                instance.add_repeat_path(repeated_path.into());
+            }
+
+            if position < path.len() {
+                instance.add_path(path.slice(position..position + 1).into());
+            }
+        }
+
         instance.assert_consistent();
         instance
     }
@@ -121,6 +187,7 @@ where
             sequence: Vec::new(),
             graphs: Vec::new(),
             paths: Vec::new(),
+            repeat_paths: Vec::new(),
             automaton,
             dimension,
         }
@@ -134,6 +201,7 @@ where
     pub fn assert_consistent(&self) {
         let mut used_graphs = vec![0usize; self.graphs.len()];
         let mut used_paths = vec![0usize; self.paths.len()];
+        let mut used_repeat_paths = vec![0usize; self.repeat_paths.len()];
 
         for (part_index, part) in self.sequence.iter().enumerate() {
             match part {
@@ -159,6 +227,17 @@ where
                     };
                     *used += 1;
                 }
+                LinearGraphPart::RepeatPath(idx) => {
+                    let Some(used) = used_repeat_paths.get_mut(*idx) else {
+                        panic!(
+                            "Part {} references missing repeated path {} (have {})",
+                            part_index,
+                            idx,
+                            self.repeat_paths.len()
+                        );
+                    };
+                    *used += 1;
+                }
             }
         }
 
@@ -175,6 +254,26 @@ where
                 *uses, 1,
                 "Path {} must be referenced exactly once, found {} uses",
                 index, uses
+            );
+        }
+
+        for (index, uses) in used_repeat_paths.iter().enumerate() {
+            assert_eq!(
+                *uses, 1,
+                "Repeated path {} must be referenced exactly once, found {} uses",
+                index, uses
+            );
+            let path = &self.repeat_paths[index].path;
+            assert!(
+                !path.is_empty(),
+                "Repeated path {} must be non-empty",
+                index
+            );
+            assert_eq!(
+                path.start(),
+                path.end(),
+                "Repeated path {} must be closed",
+                index
             );
         }
 
@@ -210,11 +309,14 @@ where
     fn compact_parts_storage(&mut self) {
         let old_graphs = std::mem::take(&mut self.graphs);
         let old_paths = std::mem::take(&mut self.paths);
+        let old_repeat_paths = std::mem::take(&mut self.repeat_paths);
 
         let mut graph_map = HashMap::new();
         let mut path_map = HashMap::new();
+        let mut repeat_path_map = HashMap::new();
         let mut graphs = Vec::with_capacity(old_graphs.len());
         let mut paths = Vec::with_capacity(old_paths.len());
+        let mut repeat_paths = Vec::with_capacity(old_repeat_paths.len());
 
         for part in &mut self.sequence {
             match *part {
@@ -242,11 +344,27 @@ where
 
                     *part = LinearGraphPart::Path(new_idx);
                 }
+                LinearGraphPart::RepeatPath(old_idx) => {
+                    let new_idx = *repeat_path_map.entry(old_idx).or_insert_with(|| {
+                        let Some(path) = old_repeat_paths.get(old_idx) else {
+                            panic!(
+                                "Part references missing repeated path {} while compacting",
+                                old_idx
+                            );
+                        };
+
+                        repeat_paths.push(path.clone());
+                        repeat_paths.len() - 1
+                    });
+
+                    *part = LinearGraphPart::RepeatPath(new_idx);
+                }
             }
         }
 
         self.graphs = graphs;
         self.paths = paths;
+        self.repeat_paths = repeat_paths;
     }
 
     pub fn add_graph(&mut self, graph: impl Into<Arc<LinearGraphRegion<NIndex>>>) {
@@ -263,12 +381,23 @@ where
         self.assert_consistent();
     }
 
+    pub fn add_repeat_path(&mut self, path: LinearGraphRepeatPath<NIndex>) {
+        let index = self.repeat_paths.len();
+        self.repeat_paths.push(path);
+        self.sequence.push(LinearGraphPart::RepeatPath(index));
+        self.assert_consistent();
+    }
+
     pub fn graph(&self, index: usize) -> &LinearGraphRegion<NIndex> {
         self.graphs[index].as_ref()
     }
 
     pub fn path(&self, index: usize) -> &LinearGraphPathSegment<NIndex> {
         &self.paths[index]
+    }
+
+    pub fn repeat_path(&self, index: usize) -> &LinearGraphRepeatPath<NIndex> {
+        &self.repeat_paths[index]
     }
 
     /// Adds a node from the CFG to the LinearGraph. The node needs to be
@@ -294,6 +423,9 @@ where
                 LinearGraphPart::Graph(idx) => {
                     result.add_graph(Arc::clone(&self.graphs[*idx]));
                 }
+                LinearGraphPart::RepeatPath(idx) => {
+                    result.add_repeat_path(self.repeat_paths[*idx].clone());
+                }
             }
         }
 
@@ -318,6 +450,17 @@ where
                         // matter at the segment boundary.
                         if part.start(&result) == neighbor || part.end(&result) == neighbor {
                             neighbor_parts.push(NeighborPart::Boundary(i));
+                            break;
+                        }
+                    }
+                    LinearGraphPart::RepeatPath(_) => {
+                        if part.start(&result) == neighbor {
+                            neighbor_parts.push(NeighborPart::Boundary(i));
+                            break;
+                        }
+
+                        if part.contains_node(&result, neighbor) {
+                            neighbor_parts.push(NeighborPart::Interior(i));
                             break;
                         }
                     }
@@ -443,6 +586,9 @@ where
                 LinearGraphPart::Graph(idx) => {
                     result.sequence.push(LinearGraphPart::Graph(*idx));
                 }
+                LinearGraphPart::RepeatPath(idx) => {
+                    result.add_repeat_path(self.repeat_paths[*idx].clone());
+                }
             }
         }
 
@@ -505,6 +651,9 @@ where
                 match part {
                     LinearGraphPart::Path(idx) => result.add_path(self.paths[*idx].clone()),
                     LinearGraphPart::Graph(idx) => result.add_graph(Arc::clone(&self.graphs[*idx])),
+                    LinearGraphPart::RepeatPath(idx) => {
+                        result.add_repeat_path(self.repeat_paths[*idx].clone())
+                    }
                 }
             }
         }
@@ -625,6 +774,29 @@ where
                         nfa.add_edge(&src, &dst, NFAEdge::Symbol(weight));
                     }
                 }
+                LinearGraphPart::RepeatPath(idx) => {
+                    let path = self.repeat_path(*idx);
+                    let loop_start = prev_state;
+
+                    for update in path
+                        .path
+                        .transitions
+                        .iter()
+                        .take(path.path.transitions.len() - 1)
+                    {
+                        let next_state = nfa.add_node(DfaNode::non_accepting(()));
+                        nfa.add_edge(&prev_state, &next_state, NFAEdge::Symbol(*update));
+                        prev_state = next_state;
+                    }
+
+                    let last = path
+                        .path
+                        .transitions
+                        .last()
+                        .expect("repeated path must be non-empty");
+                    nfa.add_edge(&prev_state, &loop_start, NFAEdge::Symbol(*last));
+                    prev_state = loop_start;
+                }
             }
         }
 
@@ -654,7 +826,7 @@ where
     ) -> impl Iterator<Item = &'b LinearGraphPathSegment<NIndex>> + 'b {
         self.sequence.iter().filter_map(|part| match part {
             LinearGraphPart::Path(idx) => Some(self.path(*idx)),
-            LinearGraphPart::Graph(_) => None,
+            LinearGraphPart::Graph(_) | LinearGraphPart::RepeatPath(_) => None,
         })
     }
 
@@ -663,7 +835,16 @@ where
     ) -> impl Iterator<Item = &'b LinearGraphRegion<NIndex>> + 'b {
         self.sequence.iter().filter_map(|part| match part {
             LinearGraphPart::Graph(idx) => Some(self.graph(*idx)),
-            LinearGraphPart::Path(_) => None,
+            LinearGraphPart::Path(_) | LinearGraphPart::RepeatPath(_) => None,
+        })
+    }
+
+    pub fn iter_repeat_path_parts<'b>(
+        &'b self,
+    ) -> impl Iterator<Item = &'b LinearGraphRepeatPath<NIndex>> + 'b {
+        self.sequence.iter().filter_map(|part| match part {
+            LinearGraphPart::RepeatPath(idx) => Some(self.repeat_path(*idx)),
+            LinearGraphPart::Graph(_) | LinearGraphPart::Path(_) => None,
         })
     }
 }
@@ -765,60 +946,63 @@ where
     LinearGraphRegion::from_subset(automaton, &nodes, start.clone(), end.clone())
 }
 
-fn partial_accept_path<'a, NIndex: GIndex>(
-    path: &LinearGraphPathSegment<NIndex>,
-    input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
-) -> bool {
-    let mut index = 0;
-
-    if path.path.is_empty() {
-        return true;
-    }
-
-    while let Some(symbol) = input.peek() {
-        let update = path.path.transitions[index];
-
-        if update == **symbol {
-            index += 1;
-            input.next();
-        } else {
-            return false;
-        }
-
-        if index == path.path.len() {
-            return true;
-        }
-    }
-
-    index == path.path.len()
-}
-
-fn partial_accept_graph<'a, NIndex: GIndex>(
+fn graph_accepting_end_positions<NIndex: GIndex>(
     graph: &LinearGraphRegion<NIndex>,
-    input: &mut Peekable<impl Iterator<Item = &'a CFGCounterUpdate>>,
-) -> bool {
+    input: &[&CFGCounterUpdate],
+    start_position: usize,
+) -> Vec<usize> {
     let mut current_state = graph.start;
+    let mut positions = Vec::new();
 
-    while let Some(symbol) = input.peek() {
-        let mut found_next_state = false;
+    if current_state == graph.end {
+        positions.push(start_position);
+    }
+
+    for (offset, symbol) in input[start_position..].iter().enumerate() {
+        let mut next_state = None;
         for edge_ref in graph
             .graph
             .edges_directed(current_state, petgraph::Direction::Outgoing)
         {
-            if edge_ref.weight() == *symbol {
-                current_state = edge_ref.target();
-                found_next_state = true;
-                input.next();
+            if *edge_ref.weight() == **symbol {
+                next_state = Some(edge_ref.target());
                 break;
             }
         }
 
-        if !found_next_state {
+        let Some(next_state) = next_state else {
             break;
+        };
+        current_state = next_state;
+
+        if current_state == graph.end {
+            positions.push(start_position + offset + 1);
         }
     }
 
-    current_state == graph.end
+    positions
+}
+
+fn repeated_path_accepting_end_positions<NIndex: GIndex>(
+    repeated: &LinearGraphRepeatPath<NIndex>,
+    input: &[&CFGCounterUpdate],
+    start_position: usize,
+) -> Vec<usize> {
+    let word = &repeated.path.transitions;
+    let mut positions = vec![start_position];
+    let mut position = start_position;
+
+    while position + word.len() <= input.len()
+        && word
+            .iter()
+            .zip(&input[position..position + word.len()])
+            .all(|(expected, actual)| *expected == **actual)
+    {
+        position += word.len();
+        positions.push(position);
+    }
+
+    positions
 }
 
 impl<'a, NIndex: GIndex, A> Alphabet for LinearGraph<'a, NIndex, A>
@@ -842,19 +1026,52 @@ where
     {
         self.assert_consistent();
 
-        let mut input = input.into_iter().peekable();
-        for part in self.sequence.iter() {
-            let success = match part {
-                LinearGraphPart::Path(idx) => partial_accept_path(self.path(*idx), &mut input),
-                LinearGraphPart::Graph(idx) => partial_accept_graph(self.graph(*idx), &mut input),
-            };
+        let input = input.into_iter().collect::<Vec<_>>();
+        let mut positions = vec![0usize];
 
-            if !success {
+        for part in self.sequence.iter() {
+            let mut next_positions = Vec::new();
+
+            for position in positions {
+                match part {
+                    LinearGraphPart::Path(idx) => {
+                        let path = self.path(*idx);
+                        let end = position.saturating_add(path.path.len());
+                        if end <= input.len()
+                            && path
+                                .path
+                                .transitions
+                                .iter()
+                                .zip(&input[position..end])
+                                .all(|(expected, actual)| *expected == **actual)
+                        {
+                            next_positions.push(end);
+                        }
+                    }
+                    LinearGraphPart::Graph(idx) => {
+                        next_positions.extend(graph_accepting_end_positions(
+                            self.graph(*idx),
+                            &input,
+                            position,
+                        ));
+                    }
+                    LinearGraphPart::RepeatPath(idx) => {
+                        let repeated = self.repeat_path(*idx);
+                        next_positions.extend(repeated_path_accepting_end_positions(
+                            repeated, &input, position,
+                        ));
+                    }
+                }
+            }
+
+            next_positions.sort_unstable();
+            next_positions.dedup();
+            if next_positions.is_empty() {
                 return false;
             }
+            positions = next_positions;
         }
 
-        // lastly we need to check that we are at the end of the input
-        input.next().is_none()
+        positions.binary_search(&input.len()).is_ok()
     }
 }
