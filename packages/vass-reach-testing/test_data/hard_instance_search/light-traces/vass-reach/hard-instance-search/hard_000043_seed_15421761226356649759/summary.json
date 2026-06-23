@@ -3,15 +3,15 @@
   "run_name": "hard-instance-search",
   "instance_name": "hard_000043_seed_15421761226356649759",
   "seed": "15421761226356649759",
-  "result_reason": "MaxIterationsReached",
+  "result_reason": "Timeout",
   "repetitions": 2,
   "elapsed_ms": [
-    2140,
-    2167
+    12399,
+    12441
   ],
   "step_counts": [
-    50,
-    50
+    8,
+    8
   ],
   "dimension": 2,
   "state_count": 3,

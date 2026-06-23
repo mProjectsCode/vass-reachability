@@ -17,9 +17,8 @@ packages/vass-reach-testing/test_data/hard_instance_search
 Run a release-mode search with:
 
 ```sh
-cargo run --release -p vass-reach-testing -- \
-  packages/vass-reach-testing/test_data/hard_instance_search \
-  --mode search
+cd packages/vass-reach-testing
+cargo run --release -- test_data/hard_instance_search --mode search
 ```
 
 Search settings live in `instances.toml`. The default ranges cover 2–4

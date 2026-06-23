@@ -9,13 +9,19 @@ use petgraph::graph::NodeIndex;
 
 use super::{
     LinearTemplate, MainCFGTemplateLowerBounds,
-    analysis::{analyze_templates, default_templates, main_cfg_template_lower_bounds},
+    analysis::{
+        analyze_templates, analyze_with_incremental_template, default_templates,
+        main_cfg_template_lower_bounds, successor_bounds,
+    },
     synthesis::{candidate_templates, synthesize_template_for_boundaries},
     transfer::exact_successor_template_bound,
 };
-use crate::automaton::{
-    cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
-    vass::counter::VASSCounterValuation,
+use crate::{
+    automaton::{
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        vass::counter::VASSCounterValuation,
+    },
+    config::LinearGraphTemplateFamily,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,11 +34,26 @@ pub fn main_cfg_template_lower_bounds_snapshot(
     cfg: &VASSCFG<()>,
     initial_valuation: &VASSCounterValuation,
 ) -> TemplateAnalysisSnapshot {
-    snapshot(main_cfg_template_lower_bounds(cfg, initial_valuation))
+    TemplateTestCodec::snapshot(main_cfg_template_lower_bounds(
+        cfg,
+        initial_valuation,
+        true,
+        &DefaultTemplateFamilies::all(),
+    ))
 }
 
 pub fn default_template_coefficients(dimension: usize) -> Vec<Vec<i32>> {
-    coefficients(default_templates(dimension))
+    TemplateTestCodec::coefficients(default_templates(
+        dimension,
+        &DefaultTemplateFamilies::all(),
+    ))
+}
+
+pub fn default_template_coefficients_with_families(
+    dimension: usize,
+    families: &[LinearGraphTemplateFamily],
+) -> Vec<Vec<i32>> {
+    TemplateTestCodec::coefficients(default_templates(dimension, families))
 }
 
 pub fn candidate_template_coefficients(
@@ -41,12 +62,34 @@ pub fn candidate_template_coefficients(
     max_candidates: usize,
     existing: &[Vec<i32>],
 ) -> Vec<Vec<i32>> {
-    let existing = templates_from_coefficients(existing);
-    coefficients(candidate_templates(
+    let existing = TemplateTestCodec::templates_from_coefficients(existing);
+    TemplateTestCodec::coefficients(candidate_templates(
         dimension,
         max_coefficient,
         max_candidates,
         &existing,
+    ))
+}
+
+pub fn guided_candidate_template_coefficients(
+    cfg: &VASSCFG<()>,
+    initial_valuation: &VASSCounterValuation,
+    model_boundaries: &[(NodeIndex, VASSCounterValuation)],
+    max_coefficient: i32,
+    max_candidates: usize,
+) -> Vec<Vec<i32>> {
+    let current = main_cfg_template_lower_bounds(
+        cfg,
+        initial_valuation,
+        true,
+        &DefaultTemplateFamilies::all(),
+    );
+    TemplateTestCodec::coefficients(super::synthesis::candidate_templates_for_boundaries(
+        initial_valuation.dimension(),
+        max_coefficient,
+        max_candidates,
+        &current,
+        model_boundaries,
     ))
 }
 
@@ -57,8 +100,26 @@ pub fn exact_successor_bound_from_coefficients(
     objective_index: usize,
     cap: i32,
 ) -> i32 {
-    let templates = templates_from_coefficients(templates);
+    let templates = TemplateTestCodec::templates_from_coefficients(templates);
     exact_successor_template_bound(&templates, source_bounds, update, objective_index, cap)
+}
+
+pub fn successor_bound_from_coefficients_with_exact_transfer(
+    templates: &[Vec<i32>],
+    source_bounds: &[i32],
+    update: &CFGCounterUpdate,
+    objective_index: usize,
+    cap: i32,
+    exact_transfer_enabled: bool,
+) -> i32 {
+    let templates = TemplateTestCodec::templates_from_coefficients(templates);
+    successor_bounds(
+        &templates,
+        source_bounds,
+        update,
+        cap,
+        exact_transfer_enabled,
+    )[objective_index]
 }
 
 pub fn analyze_template_bounds_snapshot(
@@ -66,10 +127,32 @@ pub fn analyze_template_bounds_snapshot(
     initial_valuation: &VASSCounterValuation,
     templates: &[Vec<i32>],
 ) -> TemplateAnalysisSnapshot {
-    snapshot(analyze_templates(
+    TemplateTestCodec::snapshot(analyze_templates(
         cfg,
         initial_valuation,
-        templates_from_coefficients(templates),
+        TemplateTestCodec::templates_from_coefficients(templates),
+        true,
+    ))
+}
+
+pub fn analyze_incremental_template_bounds_snapshot(
+    cfg: &VASSCFG<()>,
+    initial_valuation: &VASSCounterValuation,
+    current_templates: &[Vec<i32>],
+    extra_template: Vec<i32>,
+) -> TemplateAnalysisSnapshot {
+    let current = analyze_templates(
+        cfg,
+        initial_valuation,
+        TemplateTestCodec::templates_from_coefficients(current_templates),
+        true,
+    );
+    TemplateTestCodec::snapshot(analyze_with_incremental_template(
+        cfg,
+        initial_valuation,
+        &current,
+        LinearTemplate::from_coefficients(extra_template),
+        true,
     ))
 }
 
@@ -80,7 +163,12 @@ pub fn synthesize_template_coefficients(
     max_coefficient: i32,
     max_candidates: usize,
 ) -> Option<Vec<i32>> {
-    let current = main_cfg_template_lower_bounds(cfg, initial_valuation);
+    let current = main_cfg_template_lower_bounds(
+        cfg,
+        initial_valuation,
+        true,
+        &DefaultTemplateFamilies::all(),
+    );
     synthesize_template_for_boundaries(
         cfg,
         initial_valuation,
@@ -88,31 +176,48 @@ pub fn synthesize_template_coefficients(
         model_boundaries,
         max_coefficient,
         max_candidates,
+        true,
     )
     .map(|(template, _)| template.coefficients.into_vec())
 }
 
-fn snapshot(analysis: MainCFGTemplateLowerBounds) -> TemplateAnalysisSnapshot {
-    TemplateAnalysisSnapshot {
-        templates: coefficients(analysis.templates),
-        state_bounds: analysis
-            .state_bounds
+struct TemplateTestCodec;
+
+impl TemplateTestCodec {
+    fn snapshot(analysis: MainCFGTemplateLowerBounds) -> TemplateAnalysisSnapshot {
+        TemplateAnalysisSnapshot {
+            templates: Self::coefficients(analysis.templates),
+            state_bounds: analysis
+                .state_bounds
+                .into_iter()
+                .map(|bounds| bounds.map(|bounds| bounds.into_vec()))
+                .collect(),
+        }
+    }
+
+    fn coefficients(templates: Vec<LinearTemplate>) -> Vec<Vec<i32>> {
+        templates
             .into_iter()
-            .map(|bounds| bounds.map(|bounds| bounds.into_vec()))
-            .collect(),
+            .map(|template| template.coefficients.into_vec())
+            .collect()
+    }
+
+    fn templates_from_coefficients(coefficients: &[Vec<i32>]) -> Vec<LinearTemplate> {
+        coefficients
+            .iter()
+            .map(|coefficients| LinearTemplate::from_coefficients(coefficients.clone()))
+            .collect()
     }
 }
 
-fn coefficients(templates: Vec<LinearTemplate>) -> Vec<Vec<i32>> {
-    templates
-        .into_iter()
-        .map(|template| template.coefficients.into_vec())
-        .collect()
-}
+struct DefaultTemplateFamilies;
 
-fn templates_from_coefficients(coefficients: &[Vec<i32>]) -> Vec<LinearTemplate> {
-    coefficients
-        .iter()
-        .map(|coefficients| LinearTemplate::from_coefficients(coefficients.clone()))
-        .collect()
+impl DefaultTemplateFamilies {
+    fn all() -> Vec<LinearGraphTemplateFamily> {
+        vec![
+            LinearGraphTemplateFamily::Singleton,
+            LinearGraphTemplateFamily::Pair,
+            LinearGraphTemplateFamily::All,
+        ]
+    }
 }

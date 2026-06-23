@@ -9,11 +9,17 @@ use std::{
 
 use hashbrown::HashMap;
 use petgraph::graph::EdgeIndex;
-use z3::{Config, Context, Solver, ast::Int, with_z3_config};
+use z3::{
+    Config, Context, Solver,
+    ast::{Bool, Int},
+    with_z3_config,
+};
 
 mod types;
 
-pub(crate) use types::LinearTemplateLowerBound;
+pub(crate) use types::{
+    LinearGraphBoundPoint, LinearGraphBoundaryConstraints, LinearTemplateLowerBound,
+};
 pub use types::{
     LinearGraphReachSolverError, LinearGraphReachSolverOptions, LinearGraphReachSolverResult,
     LinearGraphReachSolverStatistics, LinearGraphReachSolverStatus, LinearGraphSolution,
@@ -52,7 +58,7 @@ where
     step_count: u32,
     solver_start_time: Option<std::time::Instant>,
     stop_signal: Arc<AtomicBool>,
-    boundary_lower_bounds: HashMap<NIndex, Vec<LinearTemplateLowerBound>>,
+    boundary_lower_bounds: HashMap<LinearGraphBoundPoint<NIndex>, LinearGraphBoundaryConstraints>,
 }
 
 impl<'g, NIndex: GIndex + Send + Sync, A> LinearGraphReachSolver<'g, NIndex, A>
@@ -79,7 +85,10 @@ where
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
         options: LinearGraphReachSolverOptions,
-        boundary_lower_bounds: HashMap<NIndex, Vec<LinearTemplateLowerBound>>,
+        boundary_lower_bounds: HashMap<
+            LinearGraphBoundPoint<NIndex>,
+            LinearGraphBoundaryConstraints,
+        >,
     ) -> Self {
         let stop_signal = options
             .stop_signal
@@ -162,6 +171,7 @@ where
 
         for (i, part) in self.linear_graph.sequence.iter().enumerate() {
             self.build_boundary_lower_bound_constraints(
+                i,
                 part.start(self.linear_graph),
                 solver,
                 &sums,
@@ -193,7 +203,12 @@ where
         }
 
         if let Some(last) = self.linear_graph.sequence.last() {
-            self.build_boundary_lower_bound_constraints(last.end(self.linear_graph), solver, &sums);
+            self.build_boundary_lower_bound_constraints(
+                self.linear_graph.sequence.len(),
+                last.end(self.linear_graph),
+                solver,
+                &sums,
+            );
         }
 
         assert_sums_match_valuation(solver, &sums, self.final_valuation);
@@ -409,23 +424,21 @@ where
 
     fn build_boundary_lower_bound_constraints(
         &self,
+        boundary_index: usize,
         state: &NIndex,
         solver: &Solver,
         sums: &[Int],
     ) {
-        let Some(lower_bound) = self.boundary_lower_bounds.get(state) else {
+        let point = LinearGraphBoundPoint::Boundary {
+            index: boundary_index,
+            state: state.clone(),
+        };
+        let Some(constraints) = self.boundary_lower_bounds.get(&point) else {
             return;
         };
 
-        for template in lower_bound {
-            let value = sums
-                .iter()
-                .zip(template.coefficients.iter())
-                .filter(|(_, coefficient)| **coefficient != 0)
-                .fold(Int::from_i64(0), |value, (sum, coefficient)| {
-                    value + sum * Int::from_i64(*coefficient as i64)
-                });
-            solver.assert(value.ge(Int::from_i64(template.bound as i64)));
+        for template in &constraints.lower_bounds {
+            solver.assert(template_lower_bound_constraint(template, sums));
         }
     }
 
@@ -471,4 +484,15 @@ where
     fn get_solver_time(&self) -> Option<Duration> {
         self.solver_start_time.map(|x| x.elapsed())
     }
+}
+
+fn template_lower_bound_constraint(template: &LinearTemplateLowerBound, sums: &[Int]) -> Bool {
+    let value = sums
+        .iter()
+        .zip(template.coefficients.iter())
+        .filter(|(_, coefficient)| **coefficient != 0)
+        .fold(Int::from_i64(0), |value, (sum, coefficient)| {
+            value + sum * Int::from_i64(*coefficient as i64)
+        });
+    value.ge(Int::from_i64(template.bound as i64))
 }

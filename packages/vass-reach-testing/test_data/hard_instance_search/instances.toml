@@ -1,4 +1,4 @@
-num_instances = 1000
+num_instances = 100
 seed = 1
 search_timeout_ms = 10000
 search_max_iterations = 50

@@ -30,8 +30,8 @@ use layout::{CandidateSeed, InterpolationLayout};
 use options::LinearGraphExtenderOptions;
 use strategy::interpolation_strategy;
 use templates::{
-    LinearTemplate, MainCFGTemplateLowerBounds, linear_graph_boundary_template_lower_bounds,
-    main_cfg_template_lower_bounds, synthesize_template_for_boundaries,
+    LinearTemplate, MainCFGTemplateLowerBounds, main_cfg_template_lower_bounds,
+    path_sensitive_linear_graph_template_lower_bounds, synthesize_template_for_boundaries,
 };
 
 type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
@@ -141,8 +141,12 @@ impl<'a> LinearGraphExtender<'a> {
         final_valuation: VASSCounterValuation,
         options: LinearGraphExtenderOptions,
     ) -> Self {
-        let template_lower_bounds =
-            main_cfg_template_lower_bounds(product.product.main_cfg(), &initial_valuation);
+        let template_lower_bounds = main_cfg_template_lower_bounds(
+            product.product.main_cfg(),
+            &initial_valuation,
+            options.template_exact_transfer_enabled,
+            &options.initial_template_families,
+        );
 
         LinearGraphExtender {
             primary_path,
@@ -669,16 +673,18 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         linear_graph: &ProductViewLinearGraph<'a>,
     ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
-        const MAX_SYNTHESIS_STEPS: usize = 8;
+        if !self.options.template_synthesis_enabled {
+            return self.solve_candidate_once(linear_graph);
+        }
 
-        for synthesis_step in 0..=MAX_SYNTHESIS_STEPS {
+        for synthesis_step in 0..=self.options.template_synthesis_round_limit {
             let result = self.solve_candidate_once(linear_graph);
             let Some(solution) = result.get_solution() else {
                 return result;
             };
 
             if solution.build_run(linear_graph, true).is_some()
-                || synthesis_step == MAX_SYNTHESIS_STEPS
+                || synthesis_step == self.options.template_synthesis_round_limit
             {
                 return result;
             }
@@ -706,10 +712,12 @@ impl<'a> LinearGraphExtender<'a> {
         linear_graph: &ProductViewLinearGraph<'a>,
     ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
         let template_lower_bounds = self.template_lower_bounds.borrow();
-        let boundary_lower_bounds = linear_graph_boundary_template_lower_bounds(
+        let boundary_lower_bounds = path_sensitive_linear_graph_template_lower_bounds(
             linear_graph,
             &template_lower_bounds,
-            self.product.product.main_cfg_index(),
+            &self.initial_valuation,
+            &self.final_valuation,
+            self.options.template_exact_transfer_enabled,
         );
 
         LinearGraphReachSolverOptions::default()
@@ -728,9 +736,6 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         model_boundaries: &[(MultiGraphState, VASSCounterValuation)],
     ) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
-        const MAX_COEFFICIENT: i32 = 2;
-        const MAX_CANDIDATES: usize = 256;
-
         let main_boundaries = model_boundaries
             .iter()
             .map(|(state, valuation)| {
@@ -745,8 +750,9 @@ impl<'a> LinearGraphExtender<'a> {
             &self.initial_valuation,
             &self.template_lower_bounds.borrow(),
             &main_boundaries,
-            MAX_COEFFICIENT,
-            MAX_CANDIDATES,
+            self.options.template_synthesis_max_coefficient,
+            self.options.template_synthesis_candidate_limit,
+            self.options.template_exact_transfer_enabled,
         )
     }
 

@@ -25,6 +25,16 @@ pub(crate) struct LinearTemplateLowerBound {
     pub bound: i32,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LinearGraphBoundaryConstraints {
+    pub lower_bounds: Vec<LinearTemplateLowerBound>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum LinearGraphBoundPoint<NIndex> {
+    Boundary { index: usize, state: NIndex },
+}
+
 #[derive(Debug, Default)]
 pub struct LinearGraphReachSolverOptions {
     pub(super) max_iterations: Option<u32>,
@@ -75,7 +85,10 @@ impl LinearGraphReachSolverOptions {
         linear_graph: &'g LinearGraph<'g, NIndex, A>,
         initial_valuation: &'g VASSCounterValuation,
         final_valuation: &'g VASSCounterValuation,
-        boundary_lower_bounds: HashMap<NIndex, Vec<LinearTemplateLowerBound>>,
+        boundary_lower_bounds: HashMap<
+            LinearGraphBoundPoint<NIndex>,
+            LinearGraphBoundaryConstraints,
+        >,
     ) -> LinearGraphReachSolver<'g, NIndex, A>
     where
         A: LinearGraphAutomaton<NIndex> + Send + Sync,

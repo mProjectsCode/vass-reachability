@@ -2,8 +2,8 @@
 //!
 //! The domain tracks lower bounds for expressions of the form
 //! `a_0 c_0 + ... + a_n c_n` at main-CFG states. Bounds are propagated forward
-//! from the initial valuation, then projected onto LinearGraph boundary states
-//! before candidate reachability checks. See
+//! from the initial valuation and candidate-local boundary bounds are also
+//! propagated backward from the final valuation before reachability checks. See
 //! `docs/linear-template-invariants.md` for the full algorithm and soundness
 //! argument.
 
@@ -13,7 +13,7 @@ pub mod testing;
 mod transfer;
 
 pub(super) use analysis::{
-    linear_graph_boundary_template_lower_bounds, main_cfg_template_lower_bounds,
+    main_cfg_template_lower_bounds, path_sensitive_linear_graph_template_lower_bounds,
 };
 pub(super) use synthesis::synthesize_template_for_boundaries;
 use z3::ast::Int;
@@ -28,18 +28,13 @@ pub(super) struct LinearTemplate {
 
 impl LinearTemplate {
     fn from_coefficients(coefficients: Vec<i32>) -> Self {
+        debug_assert!(
+            coefficients.iter().all(|coefficient| *coefficient >= 0),
+            "signed templates are not currently supported"
+        );
         Self {
             coefficients: coefficients.into_boxed_slice(),
         }
-    }
-
-    fn from_support(dimension: usize, support: &[usize]) -> Self {
-        let mut coefficients = vec![0; dimension];
-        for counter in support {
-            coefficients[*counter] = 1;
-        }
-
-        Self::from_coefficients(coefficients)
     }
 
     fn value(&self, valuation: &VASSCounterValuation) -> i32 {
@@ -48,6 +43,14 @@ impl LinearTemplate {
             .zip(valuation.iter())
             .map(|(coefficient, value)| coefficient * value)
             .sum()
+    }
+
+    fn bottom_bound(&self) -> i32 {
+        0
+    }
+
+    fn clamp_lower_bound(&self, bound: i32, cap: i32) -> i32 {
+        bound.clamp(0, cap)
     }
 
     fn z3_expression(&self, counters: &[Int]) -> Int {

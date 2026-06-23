@@ -1,12 +1,18 @@
-use vass_reach_lib::automaton::{
-    InitializedAutomaton, ModifiableAutomaton,
-    cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
-    dfa::node::DfaNode,
-    linear_graph::extender::template_testing::{
-        analyze_template_bounds_snapshot, candidate_template_coefficients,
-        default_template_coefficients, exact_successor_bound_from_coefficients,
-        main_cfg_template_lower_bounds_snapshot, synthesize_template_coefficients,
+use vass_reach_lib::{
+    automaton::{
+        InitializedAutomaton, ModifiableAutomaton,
+        cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
+        dfa::node::DfaNode,
+        linear_graph::extender::template_testing::{
+            analyze_incremental_template_bounds_snapshot, analyze_template_bounds_snapshot,
+            candidate_template_coefficients, default_template_coefficients,
+            default_template_coefficients_with_families, exact_successor_bound_from_coefficients,
+            guided_candidate_template_coefficients, main_cfg_template_lower_bounds_snapshot,
+            successor_bound_from_coefficients_with_exact_transfer,
+            synthesize_template_coefficients,
+        },
     },
+    config::LinearGraphTemplateFamily,
 };
 
 #[test]
@@ -94,6 +100,49 @@ fn exact_transfer_combines_relational_constraints() {
 }
 
 #[test]
+fn independent_transfer_can_be_selected_for_template_analysis() {
+    let templates = default_template_coefficients(3);
+    let source_bounds = vec![0, 0, 0, 2, 2, 2, 0];
+    let all_counters = templates.len() - 1;
+
+    let exact = successor_bound_from_coefficients_with_exact_transfer(
+        &templates,
+        &source_bounds,
+        &CFGCounterUpdate::new(0, true),
+        all_counters,
+        10,
+        true,
+    );
+    let independent = successor_bound_from_coefficients_with_exact_transfer(
+        &templates,
+        &source_bounds,
+        &CFGCounterUpdate::new(0, true),
+        all_counters,
+        10,
+        false,
+    );
+
+    assert_eq!(exact, 4);
+    assert_eq!(independent, 1);
+}
+
+#[test]
+fn initial_template_families_are_configurable() {
+    let templates = default_template_coefficients_with_families(
+        3,
+        &[
+            LinearGraphTemplateFamily::Singleton,
+            LinearGraphTemplateFamily::All,
+        ],
+    );
+
+    assert_eq!(
+        templates,
+        vec![vec![1, 0, 0], vec![0, 1, 0], vec![0, 0, 1], vec![1, 1, 1]]
+    );
+}
+
+#[test]
 fn candidate_generation_includes_weighted_templates() {
     let existing = default_template_coefficients(2);
     let candidates = candidate_template_coefficients(2, 2, 32, &existing);
@@ -103,6 +152,22 @@ fn candidate_generation_includes_weighted_templates() {
             .iter()
             .any(|template| template.as_slice() == [2, 1] || template.as_slice() == [1, 2])
     );
+}
+
+#[test]
+fn witness_guided_generation_prioritizes_low_margin_counters() {
+    let cfg = weighted_template_cfg();
+    let initial = cfg.get_initial();
+    let initial_valuation = vec![1, 0].into();
+    let candidates = guided_candidate_template_coefficients(
+        &cfg,
+        &initial_valuation,
+        &[(initial, vec![0, 1].into())],
+        2,
+        1,
+    );
+
+    assert_eq!(candidates, vec![vec![2, 1]]);
 }
 
 #[test]
@@ -122,6 +187,30 @@ fn weighted_template_proves_a_non_default_invariant() {
 }
 
 #[test]
+fn incremental_template_analysis_matches_full_new_coordinate() {
+    let cfg = weighted_template_cfg();
+    let initial = cfg.get_initial();
+    let initial_valuation = vec![1, 0].into();
+    let mut templates = default_template_coefficients(2);
+    let extra_template = vec![2, 1];
+
+    let incremental = analyze_incremental_template_bounds_snapshot(
+        &cfg,
+        &initial_valuation,
+        &templates,
+        extra_template.clone(),
+    );
+    templates.push(extra_template);
+    let full = analyze_template_bounds_snapshot(&cfg, &initial_valuation, &templates);
+    let new_template = full.templates.len() - 1;
+
+    assert_eq!(
+        incremental.state_bounds[initial.index()].as_ref().unwrap()[new_template],
+        full.state_bounds[initial.index()].as_ref().unwrap()[new_template]
+    );
+}
+
+#[test]
 fn synthesis_discovers_a_weighted_separating_template() {
     let cfg = weighted_template_cfg();
     let initial = cfg.get_initial();
@@ -136,6 +225,22 @@ fn synthesis_discovers_a_weighted_separating_template() {
     .unwrap();
 
     assert!(template.as_slice() == [2, 1] || template.as_slice() == [1, 2]);
+}
+
+#[test]
+fn synthesis_uses_witness_guidance_before_candidate_limit() {
+    let cfg = weighted_template_cfg();
+    let initial = cfg.get_initial();
+    let initial_valuation = vec![1, 0].into();
+    let template = synthesize_template_coefficients(
+        &cfg,
+        &initial_valuation,
+        &[(initial, vec![0, 1].into())],
+        2,
+        1,
+    );
+
+    assert_eq!(template, Some(vec![2, 1]));
 }
 
 fn weighted_template_cfg() -> VASSCFG<()> {

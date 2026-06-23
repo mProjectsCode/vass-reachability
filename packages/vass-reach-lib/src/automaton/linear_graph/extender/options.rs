@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::config::{
     LinearGraphConfig, LinearGraphInterpolationStrategy, LinearGraphRegionOrder,
-    LinearGraphSeedOrder,
+    LinearGraphSeedOrder, LinearGraphTemplateFamily,
 };
 
 #[derive(Debug, Clone)]
@@ -15,6 +15,12 @@ pub(super) struct LinearGraphExtenderOptions {
     pub(super) seed_order: LinearGraphSeedOrder,
     pub(super) reach_solver_max_iterations: Option<u32>,
     pub(super) reach_solver_timeout: Option<Duration>,
+    pub(super) template_exact_transfer_enabled: bool,
+    pub(super) template_synthesis_enabled: bool,
+    pub(super) template_synthesis_max_coefficient: i32,
+    pub(super) template_synthesis_candidate_limit: usize,
+    pub(super) template_synthesis_round_limit: usize,
+    pub(super) initial_template_families: Vec<LinearGraphTemplateFamily>,
 }
 
 impl LinearGraphExtenderOptions {
@@ -30,6 +36,16 @@ impl LinearGraphExtenderOptions {
             seed_order: LinearGraphSeedOrder::MorePathsThenSize,
             reach_solver_max_iterations: None,
             reach_solver_timeout: None,
+            template_exact_transfer_enabled: true,
+            template_synthesis_enabled: true,
+            template_synthesis_max_coefficient: 2,
+            template_synthesis_candidate_limit: 256,
+            template_synthesis_round_limit: 8,
+            initial_template_families: vec![
+                LinearGraphTemplateFamily::Singleton,
+                LinearGraphTemplateFamily::Pair,
+                LinearGraphTemplateFamily::All,
+            ],
         }
     }
 
@@ -46,6 +62,14 @@ impl LinearGraphExtenderOptions {
             seed_order: *config.get_seed_order(),
             reach_solver_max_iterations: *config.get_reach_solver_max_iterations(),
             reach_solver_timeout: *config.get_reach_solver_timeout(),
+            template_exact_transfer_enabled: *config.get_template_exact_transfer_enabled(),
+            template_synthesis_enabled: *config.get_template_synthesis_enabled(),
+            template_synthesis_max_coefficient: *config
+                .get_template_synthesis_max_coefficient()
+                .max(&0),
+            template_synthesis_candidate_limit: *config.get_template_synthesis_candidate_limit(),
+            template_synthesis_round_limit: *config.get_template_synthesis_round_limit(),
+            initial_template_families: config.get_initial_template_families().clone(),
         }
     }
 }

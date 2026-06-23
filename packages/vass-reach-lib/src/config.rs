@@ -99,6 +99,13 @@ pub enum LinearGraphSeedOrder {
     SmallerSeedFirst,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LinearGraphTemplateFamily {
+    Singleton,
+    Pair,
+    All,
+}
+
 config! {
     pub struct LinearGraphConfig {
         enabled: bool = true,
@@ -113,6 +120,16 @@ config! {
         seed_order: LinearGraphSeedOrder = LinearGraphSeedOrder::MorePathsThenSize,
         reach_solver_max_iterations: Option<u32> = None,
         reach_solver_timeout: Option<std::time::Duration> = None,
+        template_exact_transfer_enabled: bool = true,
+        template_synthesis_enabled: bool = true,
+        template_synthesis_max_coefficient: i32 = 2,
+        template_synthesis_candidate_limit: usize = 256,
+        template_synthesis_round_limit: usize = 8,
+        initial_template_families: Vec<LinearGraphTemplateFamily> = vec![
+            LinearGraphTemplateFamily::Singleton,
+            LinearGraphTemplateFamily::Pair,
+            LinearGraphTemplateFamily::All,
+        ],
     }
 }
 

@@ -5,9 +5,13 @@
 //! forward analysis proves a bound that excludes at least one modeled boundary
 //! valuation.
 
+use std::cmp::Reverse;
+
 use petgraph::graph::NodeIndex;
 
-use super::{LinearTemplate, MainCFGTemplateLowerBounds, analysis::analyze_templates};
+use super::{
+    LinearTemplate, MainCFGTemplateLowerBounds, analysis::analyze_with_incremental_template,
+};
 use crate::automaton::{cfg::vasscfg::VASSCFG, vass::counter::VASSCounterValuation};
 
 pub(in crate::automaton::linear_graph::extender) fn synthesize_template_for_boundaries(
@@ -17,22 +21,18 @@ pub(in crate::automaton::linear_graph::extender) fn synthesize_template_for_boun
     model_boundaries: &[(NodeIndex, VASSCounterValuation)],
     max_coefficient: i32,
     max_candidates: usize,
+    exact_transfer_enabled: bool,
 ) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
-    // The initial domain already contains singleton templates. Synthesis looks
-    // only for relational templates and stops at the first candidate that cuts
-    // the current spurious model.
-    candidate_templates(
-        initial_valuation.dimension(),
+    TemplateSynthesizer::new(
+        cfg,
+        initial_valuation,
+        current,
+        model_boundaries,
         max_coefficient,
         max_candidates,
-        &current.templates,
+        exact_transfer_enabled,
     )
-    .into_iter()
-    .find_map(|template| {
-        let analysis = analyze_with_extra_template(cfg, initial_valuation, current, &template);
-        template_excludes_model(&analysis, &template, model_boundaries)
-            .then_some((template, analysis))
-    })
+    .synthesize()
 }
 
 pub(super) fn candidate_templates(
@@ -44,47 +44,186 @@ pub(super) fn candidate_templates(
     // Enumeration order is intentionally simple and deterministic. The caller
     // caps the number of candidates so synthesis remains a bounded refinement
     // step rather than an exhaustive template search.
-    let mut enumerator = CandidateTemplateEnumerator {
-        coefficients: vec![0; dimension],
+    CandidateTemplateSearch::unguided(dimension, max_coefficient, max_candidates, existing)
+        .candidates()
+}
+
+pub(super) fn candidate_templates_for_boundaries(
+    dimension: usize,
+    max_coefficient: i32,
+    max_candidates: usize,
+    current: &MainCFGTemplateLowerBounds,
+    model_boundaries: &[(NodeIndex, VASSCounterValuation)],
+) -> Vec<LinearTemplate> {
+    CandidateTemplateSearch::guided(
+        dimension,
         max_coefficient,
         max_candidates,
-        existing,
-        candidates: Vec::new(),
-    };
-    enumerator.enumerate_from(0);
-    enumerator.candidates
+        current,
+        model_boundaries,
+    )
+    .candidates()
 }
 
-fn analyze_with_extra_template(
-    cfg: &VASSCFG<()>,
-    initial_valuation: &VASSCounterValuation,
-    current: &MainCFGTemplateLowerBounds,
-    template: &LinearTemplate,
-) -> MainCFGTemplateLowerBounds {
-    let mut templates = current.templates.clone();
-    templates.push(template.clone());
-    analyze_templates(cfg, initial_valuation, templates)
+struct TemplateSynthesizer<'a> {
+    cfg: &'a VASSCFG<()>,
+    initial_valuation: &'a VASSCounterValuation,
+    current: &'a MainCFGTemplateLowerBounds,
+    model_boundaries: &'a [(NodeIndex, VASSCounterValuation)],
+    max_coefficient: i32,
+    max_candidates: usize,
+    exact_transfer_enabled: bool,
 }
 
-fn template_excludes_model(
-    analysis: &MainCFGTemplateLowerBounds,
-    template: &LinearTemplate,
-    model_boundaries: &[(NodeIndex, VASSCounterValuation)],
-) -> bool {
-    let template_index = analysis.templates.len() - 1;
+impl<'a> TemplateSynthesizer<'a> {
+    fn new(
+        cfg: &'a VASSCFG<()>,
+        initial_valuation: &'a VASSCounterValuation,
+        current: &'a MainCFGTemplateLowerBounds,
+        model_boundaries: &'a [(NodeIndex, VASSCounterValuation)],
+        max_coefficient: i32,
+        max_candidates: usize,
+        exact_transfer_enabled: bool,
+    ) -> Self {
+        Self {
+            cfg,
+            initial_valuation,
+            current,
+            model_boundaries,
+            max_coefficient,
+            max_candidates,
+            exact_transfer_enabled,
+        }
+    }
 
-    // A candidate is useful only when the recomputed fixed point proves a
-    // stronger bound than the model valuation satisfies at some boundary.
-    model_boundaries.iter().any(|(state, valuation)| {
-        analysis
-            .state_bounds(*state)
-            .is_some_and(|bounds| template.value(valuation) < bounds[template_index])
-    })
+    fn synthesize(&self) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
+        self.candidate_templates().into_iter().find_map(|template| {
+            let analysis = self.analyze_with_extra_template(&template);
+            self.template_excludes_model(&analysis, &template)
+                .then_some((template, analysis))
+        })
+    }
+
+    fn candidate_templates(&self) -> Vec<LinearTemplate> {
+        // The initial domain already contains singleton templates. Synthesis
+        // looks only for relational templates and stops at the first candidate
+        // that cuts the current spurious model. Boundary valuations guide the
+        // search order so useful sparse weighted templates are more likely to
+        // appear before the cap.
+        CandidateTemplateSearch::guided(
+            self.initial_valuation.dimension(),
+            self.max_coefficient,
+            self.max_candidates,
+            self.current,
+            self.model_boundaries,
+        )
+        .candidates()
+    }
+
+    fn analyze_with_extra_template(&self, template: &LinearTemplate) -> MainCFGTemplateLowerBounds {
+        analyze_with_incremental_template(
+            self.cfg,
+            self.initial_valuation,
+            self.current,
+            template.clone(),
+            self.exact_transfer_enabled,
+        )
+    }
+
+    fn template_excludes_model(
+        &self,
+        analysis: &MainCFGTemplateLowerBounds,
+        template: &LinearTemplate,
+    ) -> bool {
+        let template_index = analysis.templates.len() - 1;
+
+        // A candidate is useful only when the recomputed fixed point proves a
+        // stronger bound than the model valuation satisfies at some boundary.
+        self.model_boundaries.iter().any(|(state, valuation)| {
+            analysis
+                .state_bounds(*state)
+                .is_some_and(|bounds| template.value(valuation) < bounds[template_index])
+        })
+    }
+}
+
+struct CandidateTemplateSearch<'a> {
+    dimension: usize,
+    max_coefficient: i32,
+    max_candidates: usize,
+    existing: &'a [LinearTemplate],
+    scores: Vec<u64>,
+}
+
+impl<'a> CandidateTemplateSearch<'a> {
+    fn unguided(
+        dimension: usize,
+        max_coefficient: i32,
+        max_candidates: usize,
+        existing: &'a [LinearTemplate],
+    ) -> Self {
+        Self {
+            dimension,
+            max_coefficient,
+            max_candidates,
+            existing,
+            scores: vec![0; dimension],
+        }
+    }
+
+    fn guided(
+        dimension: usize,
+        max_coefficient: i32,
+        max_candidates: usize,
+        current: &'a MainCFGTemplateLowerBounds,
+        model_boundaries: &[(NodeIndex, VASSCounterValuation)],
+    ) -> Self {
+        Self {
+            dimension,
+            max_coefficient,
+            max_candidates,
+            existing: &current.templates,
+            scores: CounterPriorityScorer::new(dimension, current, model_boundaries).scores(),
+        }
+    }
+
+    fn candidates(&self) -> Vec<LinearTemplate> {
+        let mut enumerator = CandidateTemplateEnumerator {
+            coefficients: vec![0; self.dimension],
+            counter_order: self.counter_order(),
+            coefficient_orders: self.coefficient_orders(),
+            max_candidates: self.max_candidates,
+            existing: self.existing,
+            candidates: Vec::new(),
+        };
+        enumerator.enumerate_from(0);
+        enumerator.candidates
+    }
+
+    fn counter_order(&self) -> Vec<usize> {
+        let mut counter_order = (0..self.dimension).collect::<Vec<_>>();
+        counter_order.sort_by_key(|counter| (Reverse(self.scores[*counter]), *counter));
+        counter_order
+    }
+
+    fn coefficient_orders(&self) -> Vec<Vec<i32>> {
+        (0..self.dimension)
+            .map(|counter| {
+                let coefficients = 0..=self.max_coefficient;
+                if self.scores[counter] > 0 {
+                    coefficients.rev().collect()
+                } else {
+                    coefficients.collect()
+                }
+            })
+            .collect()
+    }
 }
 
 struct CandidateTemplateEnumerator<'a> {
     coefficients: Vec<i32>,
-    max_coefficient: i32,
+    counter_order: Vec<usize>,
+    coefficient_orders: Vec<Vec<i32>>,
     max_candidates: usize,
     existing: &'a [LinearTemplate],
     candidates: Vec<LinearTemplate>,
@@ -96,13 +235,15 @@ impl CandidateTemplateEnumerator<'_> {
             return;
         }
 
-        if position == self.coefficients.len() {
+        if position == self.counter_order.len() {
             self.push_current_candidate();
             return;
         }
 
-        for coefficient in 0..=self.max_coefficient {
-            self.coefficients[position] = coefficient;
+        let counter = self.counter_order[position];
+        for index in 0..self.coefficient_orders[counter].len() {
+            let coefficient = self.coefficient_orders[counter][index];
+            self.coefficients[counter] = coefficient;
             self.enumerate_from(position + 1);
         }
     }
@@ -130,5 +271,97 @@ impl CandidateTemplateEnumerator<'_> {
         self.existing
             .iter()
             .any(|template| template.coefficients.as_ref() == self.coefficients)
+    }
+}
+
+struct CounterPriorityScorer<'a> {
+    dimension: usize,
+    current: &'a MainCFGTemplateLowerBounds,
+    model_boundaries: &'a [(NodeIndex, VASSCounterValuation)],
+}
+
+impl<'a> CounterPriorityScorer<'a> {
+    fn new(
+        dimension: usize,
+        current: &'a MainCFGTemplateLowerBounds,
+        model_boundaries: &'a [(NodeIndex, VASSCounterValuation)],
+    ) -> Self {
+        Self {
+            dimension,
+            current,
+            model_boundaries,
+        }
+    }
+
+    fn scores(&self) -> Vec<u64> {
+        let singleton_indices = self.singleton_template_indices();
+        let mut scores = vec![0; self.dimension];
+
+        for (state, valuation) in self.model_boundaries {
+            let values = valuation.iter().copied().collect::<Vec<_>>();
+            self.add_value_spread_scores(&mut scores, &values);
+
+            let Some(bounds) = self.current.state_bounds(*state) else {
+                continue;
+            };
+
+            self.add_bound_margin_scores(&mut scores, &values, bounds, &singleton_indices);
+        }
+
+        scores
+    }
+
+    fn add_value_spread_scores(&self, scores: &mut [u64], values: &[i32]) {
+        let max_value = values.iter().copied().max().unwrap_or(0);
+
+        for counter in 0..self.dimension {
+            scores[counter] += i32::saturating_sub(max_value, values[counter]).max(0) as u64;
+        }
+    }
+
+    fn add_bound_margin_scores(
+        &self,
+        scores: &mut [u64],
+        values: &[i32],
+        bounds: &[i32],
+        singleton_indices: &[Option<usize>],
+    ) {
+        let margins = singleton_indices
+            .iter()
+            .enumerate()
+            .filter_map(|(counter, template_index)| {
+                template_index.map(|template_index| {
+                    (
+                        counter,
+                        i32::saturating_sub(values[counter], bounds[template_index]),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let Some(max_margin) = margins.iter().map(|(_, margin)| *margin).max() else {
+            return;
+        };
+
+        for (counter, margin) in margins {
+            scores[counter] += i32::saturating_sub(max_margin, margin).max(0) as u64;
+        }
+    }
+
+    fn singleton_template_indices(&self) -> Vec<Option<usize>> {
+        (0..self.dimension)
+            .map(|counter| {
+                self.current.templates.iter().position(|template| {
+                    template.coefficients[counter] == 1
+                        && template
+                            .coefficients
+                            .iter()
+                            .enumerate()
+                            .all(|(other, coefficient)| {
+                                (other == counter && *coefficient == 1)
+                                    || (other != counter && *coefficient == 0)
+                            })
+                })
+            })
+            .collect()
     }
 }
