@@ -30,7 +30,16 @@ config! {
         modulo: ModuloConfig (Option<PartialModuloConfig> = ModuloConfig::default()),
         lts: LTSConfig (Option<PartialLTSConfig> = LTSConfig::default()),
         linear_graph: LinearGraphConfig (Option<PartialLinearGraphConfig> = LinearGraphConfig::default()),
+        short_witness: ShortWitnessConfig (Option<PartialShortWitnessConfig> = ShortWitnessConfig::default()),
         debug_trace: DebugTraceConfig (Option<PartialDebugTraceConfig> = DebugTraceConfig::default()),
+    }
+}
+
+config! {
+    pub struct ShortWitnessConfig {
+        enabled: bool = true,
+        max_depth: usize = 64,
+        max_configurations: usize = 100_000,
     }
 }
 

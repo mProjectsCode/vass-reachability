@@ -13,9 +13,9 @@ pub mod testing;
 mod transfer;
 
 pub(super) use analysis::{
-    main_cfg_template_lower_bounds, path_sensitive_linear_graph_template_lower_bounds,
+    main_cfg_template_lower_bounds_with_deadline, path_sensitive_linear_graph_template_lower_bounds,
 };
-pub(super) use synthesis::synthesize_template_for_boundaries;
+pub(super) use synthesis::{TemplateSynthesisOptions, synthesize_template_for_boundaries};
 use z3::ast::Int;
 
 use crate::automaton::vass::counter::VASSCounterValuation;
@@ -83,5 +83,9 @@ impl MainCFGTemplateLowerBounds {
 
     fn state_bounds(&self, state: petgraph::graph::NodeIndex) -> Option<&[i32]> {
         self.state_bounds[state.index()].as_deref()
+    }
+
+    pub(super) fn empty(state_count: usize) -> Self {
+        Self::new(Vec::new(), vec![None; state_count])
     }
 }

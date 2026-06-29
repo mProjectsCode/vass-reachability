@@ -40,14 +40,14 @@ impl Display for Mode {
 
 #[derive(Debug, Clone)]
 pub enum ModeWithConfig {
-    N(VASSReachConfig),
+    N(Box<VASSReachConfig>),
     Z(VASSZReachConfig),
 }
 
 impl ModeWithConfig {
     pub fn from_file(mode: Mode, config: Option<String>) -> anyhow::Result<ModeWithConfig> {
         Ok(match mode {
-            Mode::N => Self::N(VASSReachConfig::from_optional_file(config)?),
+            Mode::N => Self::N(Box::new(VASSReachConfig::from_optional_file(config)?)),
             Mode::Z => Self::Z(VASSZReachConfig::from_optional_file(config)?),
         })
     }
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
 
     match config {
         ModeWithConfig::N(c) => {
-            let res = VASSReachSolver::new(&vass, c).solve();
+            let res = VASSReachSolver::new(&vass, *c).solve();
 
             let json_res = serde_json::to_string_pretty(&SerializableSolverResult::from(res))?;
             println!("{}", json_res);

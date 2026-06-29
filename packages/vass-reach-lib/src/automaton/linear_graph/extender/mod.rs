@@ -1,9 +1,14 @@
-use std::{cell::RefCell, fmt::Debug, time::Instant};
+use std::{
+    cell::RefCell,
+    fmt::Debug,
+    time::{Duration, Instant},
+};
 
 use hashbrown::HashSet;
 
 use crate::{
     automaton::{
+        Automaton,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         implicit_cfg_product::{state::MultiGraphState, view::ImplicitCFGProductView},
         linear_graph::LinearGraph,
@@ -12,7 +17,13 @@ use crate::{
         vass::counter::VASSCounterValuation,
     },
     config::{LinearGraphConfig, LinearGraphRegionOrder, LinearGraphSeedOrder},
-    solver::{SolverStatus, linear_graph_reach::LinearGraphReachSolverOptions},
+    solver::{
+        SolverStatus,
+        linear_graph_reach::{
+            LinearGraphReachSolverError, LinearGraphReachSolverOptions,
+            LinearGraphReachSolverResult, LinearGraphReachSolverStatistics,
+        },
+    },
 };
 
 mod cycles;
@@ -30,12 +41,27 @@ use layout::{CandidateSeed, InterpolationLayout};
 use options::LinearGraphExtenderOptions;
 use strategy::interpolation_strategy;
 use templates::{
-    LinearTemplate, MainCFGTemplateLowerBounds, main_cfg_template_lower_bounds,
+    LinearTemplate, MainCFGTemplateLowerBounds, TemplateSynthesisOptions,
+    main_cfg_template_lower_bounds_with_deadline,
     path_sensitive_linear_graph_template_lower_bounds, synthesize_template_for_boundaries,
 };
 
-type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
+pub type LinearGraphExtenderWitness = Path<MultiGraphState, CFGCounterUpdate>;
+type MultiGraphPath = LinearGraphExtenderWitness;
 type ProductViewLinearGraph<'a> = LinearGraph<'a, MultiGraphState, ImplicitCFGProductView<'a>>;
+type ExtenderSearchResult<T> = Result<T, ExtenderStop>;
+
+enum ExtenderStop {
+    Reachable(MultiGraphPath),
+    Timeout,
+}
+
+#[derive(Debug)]
+pub enum LinearGraphExtenderOutput {
+    Refinement(VASSCFG<()>),
+    Reachable(LinearGraphExtenderWitness),
+    Timeout,
+}
 
 /// Builds a large unreachable LinearGraph between one or more seed-language
 /// lower bounds and the full SCCs of the current product approximation.
@@ -51,6 +77,7 @@ pub struct LinearGraphExtender<'a> {
     pub final_valuation: VASSCounterValuation,
     /// Extender search and solver options.
     options: LinearGraphExtenderOptions,
+    overall_deadline: Option<Instant>,
     /// Optional SCC DAG supplied by a caller that already computed it.
     scc_dag: Option<SCCDag<MultiGraphState, CFGCounterUpdate>>,
     template_lower_bounds: RefCell<MainCFGTemplateLowerBounds>,
@@ -142,13 +169,20 @@ impl<'a> LinearGraphExtender<'a> {
         options: LinearGraphExtenderOptions,
     ) -> Self {
         let timer = Instant::now();
-        let template_lower_bounds = main_cfg_template_lower_bounds(
+        let overall_deadline = options
+            .overall_time_limit
+            .and_then(|limit| Instant::now().checked_add(limit));
+        let template_lower_bounds = main_cfg_template_lower_bounds_with_deadline(
             product.product.main_cfg(),
             &initial_valuation,
             options.template_exact_transfer_enabled,
             options.template_exact_transfer_max_templates,
             &options.initial_template_families,
-        );
+            overall_deadline,
+        )
+        .unwrap_or_else(|| {
+            MainCFGTemplateLowerBounds::empty(product.product.main_cfg().node_count())
+        });
         tracing::debug!(
             elapsed_ms = timer.elapsed().as_millis(),
             templates = template_lower_bounds.templates.len(),
@@ -167,6 +201,7 @@ impl<'a> LinearGraphExtender<'a> {
             initial_valuation,
             final_valuation,
             options,
+            overall_deadline,
             scc_dag: None,
             template_lower_bounds: RefCell::new(template_lower_bounds),
         }
@@ -176,6 +211,12 @@ impl<'a> LinearGraphExtender<'a> {
     /// building.
     pub fn with_scc_dag(mut self, scc_dag: SCCDag<MultiGraphState, CFGCounterUpdate>) -> Self {
         self.scc_dag = Some(scc_dag);
+        self
+    }
+
+    /// Restricts all candidate checks to one shared wall-clock budget.
+    pub fn with_overall_time_limit(mut self, limit: Duration) -> Self {
+        self.overall_deadline = Instant::now().checked_add(limit);
         self
     }
 
@@ -239,6 +280,30 @@ impl<'a> LinearGraphExtender<'a> {
         )
     }
 
+    /// Creates a multi-path extender whose initialization and candidate checks
+    /// share one wall-clock budget.
+    pub fn from_product_view_paths_with_config_and_time_limit(
+        paths: Vec<MultiGraphPath>,
+        product_view: &'a ImplicitCFGProductView<'a>,
+        config: &LinearGraphConfig,
+        time_limit: Duration,
+    ) -> Self {
+        let (primary_path, auxiliary_paths) = split_primary_path(paths);
+        let (initial_valuation, final_valuation) = product_view_boundary_valuations(product_view);
+        let mut options = LinearGraphExtenderOptions::from_config(config);
+        options.overall_time_limit = Some(time_limit);
+
+        Self::from_primary_path_with_options(
+            primary_path,
+            auxiliary_paths,
+            product_view,
+            product_view.dimension(),
+            initial_valuation,
+            final_valuation,
+            options,
+        )
+    }
+
     /// Creates a primary-path extender with auxiliary paths using dimension and
     /// boundary valuations from the implicit product.
     pub fn from_product_view_primary_path(
@@ -294,6 +359,30 @@ impl<'a> LinearGraphExtender<'a> {
     /// VASS reachability refinement consumes, but tests and future call sites
     /// can use this method to inspect the chosen LinearGraph directly.
     pub fn run_linear_graph(&mut self) -> ProductViewLinearGraph<'a> {
+        match self.run_linear_graph_with_witness() {
+            Ok(linear_graph) => linear_graph,
+            Err(_) => {
+                tracing::debug!(
+                    "Ignoring concrete reachable run because the caller requested only a refinement"
+                );
+                LinearGraph::from_path(self.primary_path.clone(), self.product, self.dimension)
+            }
+        }
+    }
+
+    /// Returns either an unreachable refinement language or a concrete
+    /// N-reaching run discovered while checking LinearGraph candidates.
+    pub fn run_with_witness(&mut self) -> LinearGraphExtenderOutput {
+        match self.run_linear_graph_with_witness() {
+            Ok(linear_graph) => LinearGraphExtenderOutput::Refinement(linear_graph.to_cfg()),
+            Err(ExtenderStop::Reachable(run)) => LinearGraphExtenderOutput::Reachable(run),
+            Err(ExtenderStop::Timeout) => LinearGraphExtenderOutput::Timeout,
+        }
+    }
+
+    fn run_linear_graph_with_witness(
+        &mut self,
+    ) -> ExtenderSearchResult<ProductViewLinearGraph<'a>> {
         let _span = tracing::span!(
             tracing::Level::DEBUG,
             "LinearGraphExtender::run_linear_graph"
@@ -302,12 +391,13 @@ impl<'a> LinearGraphExtender<'a> {
 
         let mut seed_checks = 0usize;
 
-        let Some(seed) = self.select_initial_seed(self.options.max_seed_checks, &mut seed_checks)
+        let Some(seed) =
+            self.select_initial_seed(self.options.max_seed_checks, &mut seed_checks)?
         else {
             if let Some(repeated_seed) =
-                self.select_repeated_path_seed(self.options.max_seed_checks, &mut seed_checks)
+                self.select_repeated_path_seed(self.options.max_seed_checks, &mut seed_checks)?
             {
-                return repeated_seed;
+                return Ok(repeated_seed);
             }
             return self.fallback_to_exact_primary_path();
         };
@@ -316,7 +406,7 @@ impl<'a> LinearGraphExtender<'a> {
         let mut checks = 0usize;
 
         if self.interpolation_is_exhausted(&layout, checks, self.options.max_interpolation_steps) {
-            return best;
+            return Ok(best);
         }
 
         tracing::debug!(
@@ -327,9 +417,9 @@ impl<'a> LinearGraphExtender<'a> {
 
         if self.options.check_full_scc_upper_bound
             && checks < self.options.max_interpolation_steps
-            && let Some(full) = self.try_full_scc_upper_bound(&layout, &mut checks)
+            && let Some(full) = self.try_full_scc_upper_bound(&layout, &mut checks)?
         {
-            return full;
+            return Ok(full);
         }
 
         self.search_interpolated_regions(
@@ -342,13 +432,15 @@ impl<'a> LinearGraphExtender<'a> {
 
     /// Keeps the exact primary path when no larger seed-language candidate can
     /// be proved unreachable.
-    fn fallback_to_exact_primary_path(&mut self) -> ProductViewLinearGraph<'a> {
+    fn fallback_to_exact_primary_path(
+        &mut self,
+    ) -> ExtenderSearchResult<ProductViewLinearGraph<'a>> {
         tracing::debug!(
             "No seed LinearGraph was proved unreachable; keeping exact first path LinearGraph"
         );
 
         let exact = LinearGraph::from_path(self.primary_path.clone(), self.product, self.dimension);
-        let result = self.solve_candidate(&exact);
+        let result = self.solve_candidate(&exact)?;
 
         debug_assert!(
             matches!(&result.status, SolverStatus::False(_)),
@@ -361,14 +453,14 @@ impl<'a> LinearGraphExtender<'a> {
             );
         }
 
-        exact
+        Ok(exact)
     }
 
     fn select_repeated_path_seed(
         &self,
         max_checks: usize,
         checks: &mut usize,
-    ) -> Option<ProductViewLinearGraph<'a>> {
+    ) -> ExtenderSearchResult<Option<ProductViewLinearGraph<'a>>> {
         let computed_dag;
         let dag = if let Some(dag) = &self.scc_dag {
             dag
@@ -420,7 +512,7 @@ impl<'a> LinearGraphExtender<'a> {
                 self.product,
                 self.dimension,
             );
-            let result = self.solve_candidate(&candidate);
+            let result = self.solve_candidate(&candidate)?;
             *checks += 1;
 
             if matches!(result.status, SolverStatus::False(_)) {
@@ -430,7 +522,7 @@ impl<'a> LinearGraphExtender<'a> {
                     checks = *checks,
                     "Repeated-path suffix LinearGraph is unreachable"
                 );
-                return Some(candidate);
+                return Ok(Some(candidate));
             }
         }
 
@@ -446,7 +538,7 @@ impl<'a> LinearGraphExtender<'a> {
                 self.product,
                 self.dimension,
             );
-            let result = self.solve_candidate(&candidate);
+            let result = self.solve_candidate(&candidate)?;
             *checks += 1;
 
             if matches!(result.status, SolverStatus::False(_)) {
@@ -457,11 +549,11 @@ impl<'a> LinearGraphExtender<'a> {
                     checks = *checks,
                     "Witness-aligned repeated-path LinearGraph is unreachable"
                 );
-                return Some(candidate);
+                return Ok(Some(candidate));
             }
         }
 
-        None
+        Ok(None)
     }
 
     /// Records the selected seed as the lower bound for interpolation.
@@ -511,10 +603,10 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         layout: &InterpolationLayout<'a>,
         checks: &mut usize,
-    ) -> Option<ProductViewLinearGraph<'a>> {
+    ) -> ExtenderSearchResult<Option<ProductViewLinearGraph<'a>>> {
         let full_mask = vec![true; layout.regions.len()];
         let full = layout.build_candidate(&full_mask);
-        let full_result = self.solve_candidate(&full.linear_graph);
+        let full_result = self.solve_candidate(&full.linear_graph)?;
         *checks += 1;
 
         if matches!(full_result.status, SolverStatus::False(_)) {
@@ -523,10 +615,10 @@ impl<'a> LinearGraphExtender<'a> {
                 checks = *checks,
                 "Full-SCC LinearGraph is unreachable"
             );
-            return Some(full.linear_graph);
+            return Ok(Some(full.linear_graph));
         }
 
-        None
+        Ok(None)
     }
 
     /// Grows the seed candidate by enabling batches of SCC regions and keeping
@@ -537,7 +629,7 @@ impl<'a> LinearGraphExtender<'a> {
         mut best: ProductViewLinearGraph<'a>,
         mut checks: usize,
         max_checks: usize,
-    ) -> ProductViewLinearGraph<'a> {
+    ) -> ExtenderSearchResult<ProductViewLinearGraph<'a>> {
         let mut accepted = vec![false; layout.regions.len()];
         let mut pending = self.ordered_regions(layout);
         let mut strategy =
@@ -553,7 +645,7 @@ impl<'a> LinearGraphExtender<'a> {
             // Try one extra region batch on top of the known-unreachable mask.
             let candidate_mask = mask_with_batch(&accepted, &batch);
             let candidate = layout.build_candidate(&candidate_mask);
-            let candidate_result = self.solve_candidate(&candidate.linear_graph);
+            let candidate_result = self.solve_candidate(&candidate.linear_graph)?;
             checks += 1;
 
             match candidate_result.status {
@@ -607,7 +699,7 @@ impl<'a> LinearGraphExtender<'a> {
             "Finished interpolated LinearGraph search"
         );
 
-        best
+        Ok(best)
     }
 
     /// Finds a large path-compatible seed-language LinearGraph that is still
@@ -620,7 +712,7 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         max_checks: usize,
         checks: &mut usize,
-    ) -> Option<CandidateSeed<'a>> {
+    ) -> ExtenderSearchResult<Option<CandidateSeed<'a>>> {
         let computed_dag;
         let dag = if let Some(dag) = &self.scc_dag {
             dag
@@ -661,7 +753,7 @@ impl<'a> LinearGraphExtender<'a> {
                 break;
             }
 
-            let result = self.solve_candidate(&candidate.seed_linear_graph);
+            let result = self.solve_candidate(&candidate.seed_linear_graph)?;
             *checks += 1;
 
             if matches!(result.status, SolverStatus::False(_)) {
@@ -671,11 +763,11 @@ impl<'a> LinearGraphExtender<'a> {
                     checks,
                     "Selected path subset for initial LinearGraph"
                 );
-                return Some(candidate);
+                return Ok(Some(candidate));
             }
         }
 
-        None
+        Ok(None)
     }
 
     /// Checks whether a candidate LinearGraph is reachable between the
@@ -683,28 +775,53 @@ impl<'a> LinearGraphExtender<'a> {
     fn solve_candidate(
         &self,
         linear_graph: &ProductViewLinearGraph<'a>,
-    ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
-        if !self.options.template_synthesis_enabled {
-            return self.solve_candidate_once(linear_graph);
+    ) -> ExtenderSearchResult<crate::solver::linear_graph_reach::LinearGraphReachSolverResult> {
+        if self.overall_time_expired() {
+            return Err(ExtenderStop::Timeout);
         }
 
-        for synthesis_step in 0..=self.options.template_synthesis_round_limit {
+        let synthesis_round_limit = if self.options.template_synthesis_enabled {
+            self.options.template_synthesis_round_limit
+        } else {
+            0
+        };
+
+        for synthesis_step in 0..=synthesis_round_limit {
             let result = self.solve_candidate_once(linear_graph);
+            if matches!(
+                result.status,
+                SolverStatus::Unknown(LinearGraphReachSolverError::Timeout)
+            ) && self.overall_time_expired()
+            {
+                return Err(ExtenderStop::Timeout);
+            }
             let Some(solution) = result.get_solution() else {
-                return result;
+                return Ok(result);
             };
 
-            if solution.build_run(linear_graph, true).is_some()
-                || synthesis_step == self.options.template_synthesis_round_limit
+            if let Some(run) =
+                solution.build_run_with_deadline(linear_graph, true, self.overall_deadline)
             {
-                return result;
+                tracing::info!(
+                    run_length = run.len(),
+                    "LinearGraph candidate produced a concrete N-reaching run"
+                );
+                return Err(ExtenderStop::Reachable(run));
+            }
+
+            if self.overall_time_expired() {
+                return Err(ExtenderStop::Timeout);
+            }
+
+            if synthesis_step == synthesis_round_limit {
+                return Ok(result);
             }
 
             let model_boundaries = solution.boundary_valuations(linear_graph);
             let Some((template, analysis)) =
                 self.synthesize_template_excluding_boundaries(&model_boundaries)
             else {
-                return result;
+                return Ok(result);
             };
 
             tracing::debug!(
@@ -722,6 +839,13 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         linear_graph: &ProductViewLinearGraph<'a>,
     ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
+        if self.candidate_time_limit() == Some(Duration::ZERO) {
+            return LinearGraphReachSolverResult::new(
+                SolverStatus::Unknown(LinearGraphReachSolverError::Timeout),
+                LinearGraphReachSolverStatistics::new(0, Duration::ZERO),
+            );
+        }
+
         let candidate_timer = Instant::now();
         let template_lower_bounds = self.template_lower_bounds.borrow();
         let lower_bound_timer = Instant::now();
@@ -742,7 +866,7 @@ impl<'a> LinearGraphExtender<'a> {
         let solve_timer = Instant::now();
         let result = LinearGraphReachSolverOptions::default()
             .with_optional_iteration_limit(self.options.reach_solver_max_iterations)
-            .with_optional_time_limit(self.options.reach_solver_timeout)
+            .with_optional_time_limit(self.candidate_time_limit())
             .into_solver_with_boundary_lower_bounds(
                 linear_graph,
                 &self.initial_valuation,
@@ -767,6 +891,24 @@ impl<'a> LinearGraphExtender<'a> {
         result
     }
 
+    fn candidate_time_limit(&self) -> Option<Duration> {
+        let remaining = self
+            .overall_deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+
+        match (remaining, self.options.reach_solver_timeout) {
+            (Some(overall), Some(per_check)) => Some(overall.min(per_check)),
+            (Some(overall), None) => Some(overall),
+            (None, Some(per_check)) => Some(per_check),
+            (None, None) => None,
+        }
+    }
+
+    fn overall_time_expired(&self) -> bool {
+        self.overall_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
     fn synthesize_template_excluding_boundaries(
         &self,
         model_boundaries: &[(MultiGraphState, VASSCounterValuation)],
@@ -785,10 +927,12 @@ impl<'a> LinearGraphExtender<'a> {
             &self.initial_valuation,
             &self.template_lower_bounds.borrow(),
             &main_boundaries,
-            self.options.template_synthesis_max_coefficient,
-            self.options.template_synthesis_candidate_limit,
-            self.options.template_exact_transfer_enabled,
-            self.options.template_exact_transfer_max_templates,
+            TemplateSynthesisOptions {
+                max_coefficient: self.options.template_synthesis_max_coefficient,
+                max_candidates: self.options.template_synthesis_candidate_limit,
+                exact_transfer_enabled: self.options.template_exact_transfer_enabled,
+                exact_transfer_max_templates: self.options.template_exact_transfer_max_templates,
+            },
         )
     }
 

@@ -14,27 +14,22 @@ use super::{
 };
 use crate::automaton::{cfg::vasscfg::VASSCFG, vass::counter::VASSCounterValuation};
 
+pub(in crate::automaton::linear_graph::extender) struct TemplateSynthesisOptions {
+    pub(in crate::automaton::linear_graph::extender) max_coefficient: i32,
+    pub(in crate::automaton::linear_graph::extender) max_candidates: usize,
+    pub(in crate::automaton::linear_graph::extender) exact_transfer_enabled: bool,
+    pub(in crate::automaton::linear_graph::extender) exact_transfer_max_templates: usize,
+}
+
 pub(in crate::automaton::linear_graph::extender) fn synthesize_template_for_boundaries(
     cfg: &VASSCFG<()>,
     initial_valuation: &VASSCounterValuation,
     current: &MainCFGTemplateLowerBounds,
     model_boundaries: &[(NodeIndex, VASSCounterValuation)],
-    max_coefficient: i32,
-    max_candidates: usize,
-    exact_transfer_enabled: bool,
-    exact_transfer_max_templates: usize,
+    options: TemplateSynthesisOptions,
 ) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
-    TemplateSynthesizer::new(
-        cfg,
-        initial_valuation,
-        current,
-        model_boundaries,
-        max_coefficient,
-        max_candidates,
-        exact_transfer_enabled,
-        exact_transfer_max_templates,
-    )
-    .synthesize()
+    TemplateSynthesizer::new(cfg, initial_valuation, current, model_boundaries, options)
+        .synthesize()
 }
 
 pub(super) fn candidate_templates(
@@ -84,20 +79,17 @@ impl<'a> TemplateSynthesizer<'a> {
         initial_valuation: &'a VASSCounterValuation,
         current: &'a MainCFGTemplateLowerBounds,
         model_boundaries: &'a [(NodeIndex, VASSCounterValuation)],
-        max_coefficient: i32,
-        max_candidates: usize,
-        exact_transfer_enabled: bool,
-        exact_transfer_max_templates: usize,
+        options: TemplateSynthesisOptions,
     ) -> Self {
         Self {
             cfg,
             initial_valuation,
             current,
             model_boundaries,
-            max_coefficient,
-            max_candidates,
-            exact_transfer_enabled,
-            exact_transfer_max_templates,
+            max_coefficient: options.max_coefficient,
+            max_candidates: options.max_candidates,
+            exact_transfer_enabled: options.exact_transfer_enabled,
+            exact_transfer_max_templates: options.exact_transfer_max_templates,
         }
     }
 

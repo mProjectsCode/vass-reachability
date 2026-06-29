@@ -173,6 +173,18 @@ impl LinearGraphSolution {
     where
         A: LinearGraphAutomaton<NIndex>,
     {
+        self.build_run_with_deadline(linear_graph, n_run, None)
+    }
+
+    pub fn build_run_with_deadline<'a, NIndex: GIndex, A>(
+        &self,
+        linear_graph: &LinearGraph<'a, NIndex, A>,
+        n_run: bool,
+        deadline: Option<std::time::Instant>,
+    ) -> Option<Path<NIndex, CFGCounterUpdate>>
+    where
+        A: LinearGraphAutomaton<NIndex>,
+    {
         let timer = std::time::Instant::now();
         let dimension = self.initial_valuation.dimension();
         let mut product_path =
@@ -180,6 +192,10 @@ impl LinearGraphSolution {
         let mut current_valuation = self.initial_valuation.clone();
 
         for part in linear_graph.sequence.iter() {
+            if deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+                return None;
+            }
+
             match part {
                 LinearGraphPart::Graph(idx) => {
                     let graph = linear_graph.graph(*idx);
@@ -189,8 +205,13 @@ impl LinearGraphSolution {
                     current_valuation
                         .apply_update(&image.get_total_counter_effect(graph, dimension));
                     let end_valuation = current_valuation.clone();
-                    let sub_path =
-                        image.build_run(graph, &start_valuation, &end_valuation, n_run)?;
+                    let sub_path = image.build_run_with_deadline(
+                        graph,
+                        &start_valuation,
+                        &end_valuation,
+                        n_run,
+                        deadline,
+                    )?;
                     let mapped_path = graph.map_path_to_product(&sub_path);
 
                     product_path.concat(mapped_path);
@@ -214,6 +235,9 @@ impl LinearGraphSolution {
                     );
 
                     for _ in 0..count {
+                        if deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+                            return None;
+                        }
                         current_valuation.apply_update(&update);
                         product_path.concat(repeated.path.clone());
                     }

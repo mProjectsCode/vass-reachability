@@ -5,9 +5,56 @@ use vass_reach_lib::{
         ModifiableAutomaton,
         vass::{VASS, VASSEdge},
     },
-    config::{PreprocessingConfig, VASSReachConfig},
-    solver::vass_reach::VASSReachSolver,
+    config::{PreprocessingConfig, ShortWitnessConfig, VASSReachConfig},
+    solver::{SolverStatus, vass_reach::VASSReachSolver},
 };
+
+#[test]
+fn preprocessing_reuses_concrete_linear_graph_run() {
+    let mut vass = VASS::new(1, (0..2).collect());
+    let initial = vass.add_node(());
+    let middle = vass.add_node(());
+    let target = vass.add_node(());
+    vass.add_edge(&initial, &middle, VASSEdge::new(0, vec![1].into()));
+    vass.add_edge(&middle, &target, VASSEdge::new(1, vec![-1].into()));
+    let instance = vass.init(vec![0].into(), vec![0].into(), initial, target);
+
+    let result = VASSReachSolver::new(
+        &instance,
+        VASSReachConfig::default()
+            .with_max_iterations(Some(0))
+            .with_short_witness(ShortWitnessConfig::default().with_enabled(false))
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(true)),
+    )
+    .solve();
+
+    assert!(result.is_success(), "{:?}", result.status);
+    assert_eq!(result.statistics.step_count, 0);
+}
+
+#[test]
+fn preprocessing_obeys_global_timeout() {
+    let mut vass = VASS::new(1, (0..2).collect());
+    let initial = vass.add_node(());
+    let target = vass.add_node(());
+    vass.add_edge(&initial, &target, VASSEdge::new(0, vec![1].into()));
+    let instance = vass.init(vec![0].into(), vec![1].into(), initial, target);
+
+    let result = VASSReachSolver::new(
+        &instance,
+        VASSReachConfig::default()
+            .with_timeout(Some(Duration::ZERO))
+            .with_short_witness(ShortWitnessConfig::default().with_enabled(false))
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(true)),
+    )
+    .solve();
+
+    assert!(matches!(
+        result.status,
+        SolverStatus::Unknown(vass_reach_lib::solver::vass_reach::VASSReachSolverError::Timeout)
+    ));
+    assert_eq!(result.statistics.step_count, 0);
+}
 
 #[test]
 fn preprocessing_disabled_still_solves_reachable_instance() {

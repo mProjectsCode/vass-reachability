@@ -271,6 +271,25 @@ fn test_parikh_image_from_path() {
 }
 
 #[test]
+fn parikh_run_reconstruction_obeys_deadline() {
+    let update = CFGCounterUpdate::new(0, true);
+    let mut cfg = DFA::new(vec![update]);
+    let state = cfg.add_node(DfaNode::accepting(()));
+    cfg.set_initial(state);
+    let edge = cfg.add_edge(&state, &state, update);
+
+    let mut image = ParikhImage::empty(1);
+    image.set(edge, 1);
+    let expired = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+
+    assert!(
+        image
+            .build_run_with_deadline(&cfg, &vec![0].into(), &vec![1].into(), true, Some(expired),)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_path_into_iterator() {
     let mut path = Path::new(NodeIndex::from(0u32));
     path.add('a', NodeIndex::from(1u32));
@@ -296,3 +315,4 @@ fn test_path_first_last() {
     assert_eq!(path.first(), Some((&'a', &NodeIndex::from(1u32))));
     assert_eq!(path.last(), Some((&'b', &NodeIndex::from(2u32))));
 }
+use std::time::{Duration, Instant};

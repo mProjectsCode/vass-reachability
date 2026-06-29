@@ -217,6 +217,17 @@ impl ParikhImage<EdgeIndex> {
         final_valuation: &VASSCounterValuation,
         n_run: bool,
     ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
+        self.build_run_with_deadline(cfg, initial_valuation, final_valuation, n_run, None)
+    }
+
+    pub fn build_run_with_deadline<C: ExplicitEdgeCFG>(
+        &self,
+        cfg: &C,
+        initial_valuation: &VASSCounterValuation,
+        final_valuation: &VASSCounterValuation,
+        n_run: bool,
+        deadline: Option<std::time::Instant>,
+    ) -> Option<Path<C::NIndex, CFGCounterUpdate>> {
         let valuation = initial_valuation.clone();
 
         let res = rec_build_run(
@@ -226,6 +237,7 @@ impl ParikhImage<EdgeIndex> {
             valuation,
             final_valuation,
             n_run,
+            deadline,
         );
 
         if let Some((mut transitions, mut states)) = res {
@@ -265,7 +277,12 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
     valuation: VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
     n_run: bool,
+    deadline: Option<std::time::Instant>,
 ) -> Option<(Vec<CFGCounterUpdate>, Vec<NodeIndex>)> {
+    if deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+        return None;
+    }
+
     // if the parikh image is empty, we have reached the end of the path, which also
     // means that the path exists if the node is final
     if parikh_image.image.iter().all(|(_, v)| *v == 0) {
@@ -301,7 +318,15 @@ fn rec_build_run<C: ExplicitEdgeCFG>(
 
         let target = cfg.edge_target_unchecked(&edge);
 
-        let res = rec_build_run(parikh, cfg, target, valuation, final_valuation, n_run);
+        let res = rec_build_run(
+            parikh,
+            cfg,
+            target,
+            valuation,
+            final_valuation,
+            n_run,
+            deadline,
+        );
 
         match res {
             Some((mut transitions, mut states)) => {

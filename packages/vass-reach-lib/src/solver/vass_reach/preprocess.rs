@@ -20,6 +20,11 @@ use crate::{
 
 type CFGPath = Path<NodeIndex, CFGCounterUpdate>;
 
+pub(super) enum PreprocessOutcome {
+    Refined(VASSCFG<()>),
+    Reachable(CFGPath),
+}
+
 #[derive(Clone)]
 struct AcceptingRoute<NIndex: GIndex, L: Letter> {
     edges: Vec<SCCDagEdge<NIndex, L>>,
@@ -32,20 +37,20 @@ pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
     final_valuation: &VASSCounterValuation,
     config: &VASSReachConfig,
     solver_start_time: Option<Instant>,
-) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
+) -> Result<PreprocessOutcome, VASSReachSolverStatus> {
     if !*config.get_preprocessing().get_enabled() {
-        return Ok(cfg);
+        return Ok(PreprocessOutcome::Refined(cfg));
     }
 
     if !*config.get_linear_graph().get_enabled() {
-        return Ok(cfg);
+        return Ok(PreprocessOutcome::Refined(cfg));
     }
 
     if !has_reachable_accepting(&cfg) {
         tracing::debug!(
             "Skipping LinearGraph preprocessing because CFG has no reachable accepting node"
         );
-        return Ok(cfg);
+        return Ok(PreprocessOutcome::Refined(cfg));
     }
 
     max_time_reached(config, solver_start_time)?;
@@ -57,7 +62,7 @@ pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
 
     if routes.is_empty() {
         tracing::debug!("No SCC-DAG LinearGraph preprocessing routes found");
-        return Ok(base_cfg);
+        return Ok(PreprocessOutcome::Refined(base_cfg));
     }
 
     let mut processed_cfg = base_cfg.clone();
@@ -89,6 +94,7 @@ pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
         };
 
         let solver_result = LinearGraphReachSolverOptions::default()
+            .with_optional_time_limit(remaining_time(config, solver_start_time))
             .into_solver(&linear_graph, initial_valuation, final_valuation)
             .solve();
 
@@ -99,13 +105,35 @@ pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
                 processed_cfg = processed_cfg.intersect(&cfg);
                 unreachable += 1;
             }
-            SolverStatus::True(_) => {
+            SolverStatus::True(solution) => {
+                if let Some(run) = solution.build_run_with_deadline(
+                    &linear_graph,
+                    true,
+                    global_deadline(config, solver_start_time),
+                ) && base_cfg.is_accepting(run.end())
+                    && run.is_n_reaching(initial_valuation, final_valuation)
+                {
+                    tracing::info!(
+                        run_length = run.len(),
+                        "LinearGraph preprocessing produced a concrete N-reaching run"
+                    );
+                    return Ok(PreprocessOutcome::Reachable(run));
+                }
                 reachable += 1;
             }
-            SolverStatus::Unknown(_) => {
+            SolverStatus::Unknown(reason) => {
+                if matches!(
+                    reason,
+                    crate::solver::linear_graph_reach::LinearGraphReachSolverError::Timeout
+                ) && max_time_reached(config, solver_start_time).is_err()
+                {
+                    return Err(SolverStatus::Unknown(VASSReachSolverError::Timeout));
+                }
                 unknown += 1;
             }
         }
+
+        max_time_reached(config, solver_start_time)?;
     }
 
     processed_cfg = processed_cfg.minimize();
@@ -118,7 +146,36 @@ pub(super) fn run_preprocess_unreachable_linear_graph_from_scc_dag(
         "Finished SCC-DAG LinearGraph preprocessing"
     );
 
-    Ok(processed_cfg)
+    Ok(PreprocessOutcome::Refined(processed_cfg))
+}
+
+fn remaining_time(
+    config: &VASSReachConfig,
+    solver_start_time: Option<Instant>,
+) -> Option<std::time::Duration> {
+    let configured = *config.get_timeout();
+    let remaining_global = match (configured, solver_start_time) {
+        (Some(timeout), Some(started)) => Some(timeout.saturating_sub(started.elapsed())),
+        (Some(timeout), None) => Some(timeout),
+        (None, _) => None,
+    };
+    let per_check = *config.get_linear_graph().get_reach_solver_timeout();
+
+    match (remaining_global, per_check) {
+        (Some(global), Some(check)) => Some(global.min(check)),
+        (Some(global), None) => Some(global),
+        (None, Some(check)) => Some(check),
+        (None, None) => None,
+    }
+}
+
+fn global_deadline(
+    config: &VASSReachConfig,
+    solver_start_time: Option<Instant>,
+) -> Option<Instant> {
+    solver_start_time
+        .zip(*config.get_timeout())
+        .and_then(|(started, timeout)| started.checked_add(timeout))
 }
 
 fn collect_accepting_routes<NIndex: GIndex, L: Letter>(

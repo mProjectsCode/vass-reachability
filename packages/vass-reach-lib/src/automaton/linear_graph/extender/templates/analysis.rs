@@ -33,6 +33,25 @@ pub(in crate::automaton::linear_graph::extender) fn main_cfg_template_lower_boun
     exact_transfer_max_templates: usize,
     initial_template_families: &[LinearGraphTemplateFamily],
 ) -> MainCFGTemplateLowerBounds {
+    main_cfg_template_lower_bounds_with_deadline(
+        cfg,
+        initial_valuation,
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        initial_template_families,
+        None,
+    )
+    .expect("template analysis without a deadline cannot time out")
+}
+
+pub(in crate::automaton::linear_graph::extender) fn main_cfg_template_lower_bounds_with_deadline(
+    cfg: &VASSCFG<()>,
+    initial_valuation: &VASSCounterValuation,
+    exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
+    initial_template_families: &[LinearGraphTemplateFamily],
+    deadline: Option<Instant>,
+) -> Option<MainCFGTemplateLowerBounds> {
     let timer = Instant::now();
     let templates = default_templates(initial_valuation.dimension(), initial_template_families);
     tracing::debug!(
@@ -50,8 +69,17 @@ pub(in crate::automaton::linear_graph::extender) fn main_cfg_template_lower_boun
         templates,
         exact_transfer_enabled,
         exact_transfer_max_templates,
+        deadline,
     )
     .run();
+
+    let Some(result) = result else {
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            "Main-CFG template lower-bound analysis exhausted its time budget"
+        );
+        return None;
+    };
 
     tracing::debug!(
         elapsed_ms = timer.elapsed().as_millis(),
@@ -67,7 +95,7 @@ pub(in crate::automaton::linear_graph::extender) fn main_cfg_template_lower_boun
         "Finished main-CFG template lower-bound analysis"
     );
 
-    result
+    Some(result)
 }
 
 pub(super) fn analyze_templates(
@@ -94,8 +122,10 @@ pub(super) fn analyze_templates(
         templates,
         exact_transfer_enabled,
         exact_transfer_max_templates,
+        None,
     )
-    .run();
+    .run()
+    .expect("template analysis without a deadline cannot time out");
 
     tracing::debug!(
         elapsed_ms = timer.elapsed().as_millis(),
@@ -221,6 +251,7 @@ struct TemplateAnalysis<'a> {
     templates: Vec<LinearTemplate>,
     cap: i32,
     transfer: TemplateTransfer,
+    deadline: Option<Instant>,
 }
 
 impl<'a> TemplateAnalysis<'a> {
@@ -230,6 +261,7 @@ impl<'a> TemplateAnalysis<'a> {
         templates: Vec<LinearTemplate>,
         exact_transfer_enabled: bool,
         exact_transfer_max_templates: usize,
+        deadline: Option<Instant>,
     ) -> Self {
         Self {
             cfg,
@@ -237,18 +269,24 @@ impl<'a> TemplateAnalysis<'a> {
             templates,
             cap: AnalysisCap::for_cfg(cfg),
             transfer: TemplateTransfer::new(exact_transfer_enabled, exact_transfer_max_templates),
+            deadline,
         }
     }
 
-    fn run(self) -> MainCFGTemplateLowerBounds {
+    fn run(self) -> Option<MainCFGTemplateLowerBounds> {
         let mut state_bounds = self.initial_state_bounds();
 
         // Worklist propagation computes the greatest lower bounds representable by
         // this finite capped domain. Joins use min, so every stored fact remains
         // valid for all incoming control-flow paths.
-        self.propagate_bounds(&mut state_bounds);
+        if !self.propagate_bounds(&mut state_bounds) {
+            return None;
+        }
 
-        MainCFGTemplateLowerBounds::new(self.templates, state_bounds)
+        Some(MainCFGTemplateLowerBounds::new(
+            self.templates,
+            state_bounds,
+        ))
     }
 
     fn initial_state_bounds(&self) -> Vec<Option<Box<[i32]>>> {
@@ -261,7 +299,7 @@ impl<'a> TemplateAnalysis<'a> {
         state_bounds
     }
 
-    fn propagate_bounds(&self, state_bounds: &mut [Option<Box<[i32]>>]) {
+    fn propagate_bounds(&self, state_bounds: &mut [Option<Box<[i32]>>]) -> bool {
         let timer = Instant::now();
         let initial = self.cfg.get_initial();
         let mut queue = VecDeque::from([initial]);
@@ -272,6 +310,9 @@ impl<'a> TemplateAnalysis<'a> {
         let mut changed_states = 0usize;
 
         while let Some(source) = queue.pop_front() {
+            if self.deadline_expired() {
+                return false;
+            }
             popped_states += 1;
             queued[source.index()] = false;
             let source_bounds = state_bounds[source.index()]
@@ -280,6 +321,9 @@ impl<'a> TemplateAnalysis<'a> {
                 .clone();
 
             for update in self.cfg.alphabet() {
+                if self.deadline_expired() {
+                    return false;
+                }
                 let Some(target) = self.cfg.successor(&source, update) else {
                     continue;
                 };
@@ -315,6 +359,12 @@ impl<'a> TemplateAnalysis<'a> {
             exact_transfer_enabled = self.transfer.exact_transfer_enabled,
             "Finished main-CFG template propagation fixed point"
         );
+        true
+    }
+
+    fn deadline_expired(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
     }
 }
 

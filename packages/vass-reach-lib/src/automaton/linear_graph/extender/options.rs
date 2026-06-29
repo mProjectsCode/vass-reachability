@@ -7,6 +7,7 @@ use crate::config::{
 
 #[derive(Debug, Clone)]
 pub(super) struct LinearGraphExtenderOptions {
+    pub(super) overall_time_limit: Option<Duration>,
     pub(super) max_seed_checks: usize,
     pub(super) max_interpolation_steps: usize,
     pub(super) check_full_scc_upper_bound: bool,
@@ -29,6 +30,7 @@ impl LinearGraphExtenderOptions {
         let max_checks = refinement_steps_to_usize(max_refinements);
 
         Self {
+            overall_time_limit: None,
             max_seed_checks: max_checks,
             max_interpolation_steps: max_checks,
             check_full_scc_upper_bound: true,
@@ -55,6 +57,7 @@ impl LinearGraphExtenderOptions {
         let default_checks = refinement_steps_to_usize(*config.get_max_refinement_steps());
 
         Self {
+            overall_time_limit: None,
             max_seed_checks: (*config.get_max_seed_checks()).unwrap_or(default_checks),
             max_interpolation_steps: (*config.get_max_interpolation_steps())
                 .unwrap_or(default_checks),

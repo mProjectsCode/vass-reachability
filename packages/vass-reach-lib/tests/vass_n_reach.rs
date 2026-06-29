@@ -6,9 +6,82 @@ use vass_reach_lib::{
         petri_net::PetriNet,
         vass::{VASS, VASSEdge},
     },
-    config::{PreprocessingConfig, VASSReachConfig},
-    solver::vass_reach::VASSReachSolver,
+    config::{PreprocessingConfig, ShortWitnessConfig, VASSReachConfig},
+    solver::{SolverStatus, vass_reach::VASSReachSolver},
 };
+
+#[test]
+fn short_witness_precheck_finds_reachable_instance_before_refinement() {
+    let mut vass = VASS::new(1, (0..2).collect());
+    let q0 = vass.add_node(());
+    let q1 = vass.add_node(());
+    vass.add_edge(&q0, &q0, VASSEdge::new(0, vec![1].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new(1, vec![-2].into()));
+    let instance = vass.init(vec![0].into(), vec![0].into(), q0, q1);
+
+    let result = VASSReachSolver::new(
+        &instance,
+        VASSReachConfig::default()
+            .with_max_iterations(Some(0))
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
+    )
+    .solve();
+
+    assert!(result.is_success(), "{:?}", result.status);
+    assert_eq!(result.statistics.step_count, 0);
+}
+
+#[test]
+fn short_witness_precheck_can_be_disabled() {
+    let mut vass = VASS::new(1, (0..2).collect());
+    let q0 = vass.add_node(());
+    let q1 = vass.add_node(());
+    vass.add_edge(&q0, &q0, VASSEdge::new(0, vec![1].into()));
+    vass.add_edge(&q0, &q1, VASSEdge::new(1, vec![-2].into()));
+    let instance = vass.init(vec![0].into(), vec![0].into(), q0, q1);
+
+    let result = VASSReachSolver::new(
+        &instance,
+        VASSReachConfig::default()
+            .with_max_iterations(Some(0))
+            .with_short_witness(ShortWitnessConfig::default().with_enabled(false))
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
+    )
+    .solve();
+
+    assert!(matches!(result.status, SolverStatus::Unknown(_)));
+}
+
+#[test]
+fn main_solver_reuses_concrete_linear_graph_run() {
+    let mut vass = VASS::new(3, (0..6).collect());
+    let initial = vass.add_node(());
+    let entry = vass.add_node(());
+    let irrelevant = vass.add_node(());
+    let witness = vass.add_node(());
+    let target = vass.add_node(());
+
+    vass.add_edge(&initial, &entry, VASSEdge::new(0, vec![1, 0, 0].into()));
+    vass.add_edge(&entry, &target, VASSEdge::new(1, vec![-1, 0, 0].into()));
+    vass.add_edge(&entry, &irrelevant, VASSEdge::new(2, vec![0, 1, 0].into()));
+    vass.add_edge(&irrelevant, &entry, VASSEdge::new(3, vec![0, -1, 0].into()));
+    vass.add_edge(&entry, &witness, VASSEdge::new(4, vec![0, 0, 1].into()));
+    vass.add_edge(&witness, &entry, VASSEdge::new(5, vec![0, 0, 1].into()));
+    let instance = vass.init(vec![0, 0, 0].into(), vec![0, 0, 2].into(), initial, target);
+
+    let result = VASSReachSolver::new(
+        &instance,
+        VASSReachConfig::default()
+            .with_max_iterations(Some(2))
+            .with_bounded_counting_enabled(false)
+            .with_short_witness(ShortWitnessConfig::default().with_enabled(false))
+            .with_preprocessing(PreprocessingConfig::default().with_enabled(false)),
+    )
+    .solve();
+
+    assert!(result.is_success(), "{:?}", result.status);
+    assert_eq!(result.statistics.step_count, 1);
+}
 
 #[test]
 fn test_vass_n_reach_1() {

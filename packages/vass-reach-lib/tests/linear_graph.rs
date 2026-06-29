@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use itertools::Itertools;
 use petgraph::graph::{DiGraph, NodeIndex};
 use vass_reach_lib::{
     automaton::{
-        Alphabet, Language, ModifiableAutomaton,
+        Alphabet, InitializedAutomaton, Language, ModifiableAutomaton,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::node::DfaNode,
         implicit_cfg_product::{
@@ -10,7 +12,7 @@ use vass_reach_lib::{
         },
         linear_graph::{
             LinearGraph,
-            extender::LinearGraphExtender,
+            extender::{LinearGraphExtender, LinearGraphExtenderOutput},
             part::{LinearGraphPart, LinearGraphRegion},
             rooted::{RootedLinearGraph, RootedLinearGraphError},
         },
@@ -915,7 +917,7 @@ fn linear_graph_extender_drops_auxiliary_paths_with_different_dag_route() {
 }
 
 #[test]
-fn linear_graph_extender_merges_auxiliary_paths_on_same_dag_route() {
+fn linear_graph_extender_returns_concrete_run_from_reachable_candidate() {
     let mut cfg = VASSCFG::<()>::new(CFGCounterUpdate::alphabet(3));
     let s0 = cfg.add_node(DfaNode::non_accepting(()));
     let entry = cfg.add_node(DfaNode::non_accepting(()));
@@ -946,16 +948,26 @@ fn linear_graph_extender_merges_auxiliary_paths_on_same_dag_route() {
         MultiGraphPath::from_word(product.initial(), &auxiliary_word, &product).unwrap();
 
     let product_view = product.full_view();
+    let mut timed_out_extender = LinearGraphExtender::from_product_view_paths(
+        vec![primary.clone(), auxiliary.clone()],
+        &product_view,
+        10,
+    )
+    .with_overall_time_limit(Duration::ZERO);
+    assert!(matches!(
+        timed_out_extender.run_with_witness(),
+        LinearGraphExtenderOutput::Timeout
+    ));
+
     let mut extender =
         LinearGraphExtender::from_product_view_paths(vec![primary, auxiliary], &product_view, 10);
-    let linear_graph = extender.run_linear_graph();
+    let LinearGraphExtenderOutput::Reachable(run) = extender.run_with_witness() else {
+        panic!("the reachable full candidate must return its concrete run");
+    };
 
-    assert_linear_graph_is_unreachable(&linear_graph);
-    assert!(linear_graph.accepts(&primary_word));
-    assert!(linear_graph.accepts(&auxiliary_word));
-    assert!(!linear_graph.accepts(&full_only_word));
-    assert!(linear_graph.contains_state(&MultiGraphState::from(seed_extra)));
-    assert!(!linear_graph.contains_state(&MultiGraphState::from(full_extra)));
+    assert!(product_view.is_accepting(run.end()));
+    assert!(run.is_n_reaching(&product.initial_valuation, &product.final_valuation));
+    assert_eq!(run.transitions, full_only_word);
 }
 
 #[test]

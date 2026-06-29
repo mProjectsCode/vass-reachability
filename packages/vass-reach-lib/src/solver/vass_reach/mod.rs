@@ -3,6 +3,7 @@ use petgraph::graph::NodeIndex;
 pub mod debug_trace;
 mod preprocess;
 mod types;
+mod witness;
 
 pub use types::{
     VASSReachRefinementAction, VASSReachSolverError, VASSReachSolverResult,
@@ -12,12 +13,15 @@ pub use types::{
 use self::debug_trace::DebugTraceWriter;
 use crate::{
     automaton::{
-        Automaton, AutomatonEdge, AutomatonNode, FromLetter, GIndex,
+        Automaton, AutomatonEdge, AutomatonNode, FromLetter, GIndex, InitializedAutomaton,
         algorithms::EdgeAutomatonAlgorithms,
         cfg::{update::CFGCounterUpdate, vasscfg::VASSCFG},
         dfa::minimization::Minimizable,
         implicit_cfg_product::{ImplicitCFGProduct, state::MultiGraphState},
-        linear_graph::extender::LinearGraphExtender,
+        linear_graph::{
+            LinearGraph,
+            extender::{LinearGraphExtender, LinearGraphExtenderOutput},
+        },
         ltc::{LTC, translation::LTCTranslation},
         path::Path,
         scc::{SCCAlgorithms, SCCDag, SCCDagRouteSummary},
@@ -33,6 +37,7 @@ type MultiGraphPath = Path<MultiGraphState, CFGCounterUpdate>;
 pub struct VASSReachSolver {
     config: VASSReachConfig,
     state: ImplicitCFGProduct,
+    initial_status: Option<VASSReachSolverStatus>,
     step_count: u64,
     solver_start_time: Option<std::time::Instant>,
     debug_trace_writer: Option<DebugTraceWriter>,
@@ -45,28 +50,54 @@ impl VASSReachSolver {
     ) -> Self {
         let time = std::time::Instant::now();
 
+        let short_witness = witness::find_short_witness(ivass, config.get_short_witness());
+        let mut initial_status = short_witness
+            .as_ref()
+            .map(|_| VASSReachSolverStatus::True(()));
+        if let Some(found) = &short_witness {
+            tracing::info!(
+                depth = found.depth,
+                explored_configurations = found.explored_configurations,
+                "Short witness precheck found an N-reaching run"
+            );
+        }
+
         let mut cfg = ivass.to_cfg();
         cfg.make_complete(());
         cfg = cfg.minimize();
 
-        cfg = match preprocess::run_preprocess_unreachable_linear_graph_from_scc_dag(
-            cfg,
-            &ivass.initial_valuation,
-            &ivass.final_valuation,
-            &config,
-            None,
-        ) {
-            Ok(cfg) => cfg,
-            Err(status) => {
-                tracing::warn!(
-                    ?status,
-                    "CFG preprocessing failed; continuing with unprocessed CFG"
-                );
-                let mut fallback = ivass.to_cfg();
-                fallback.make_complete(());
-                fallback.minimize()
-            }
-        };
+        if initial_status.is_none() {
+            let unprocessed_cfg = cfg.clone();
+            cfg = match preprocess::run_preprocess_unreachable_linear_graph_from_scc_dag(
+                cfg,
+                &ivass.initial_valuation,
+                &ivass.final_valuation,
+                &config,
+                Some(time),
+            ) {
+                Ok(preprocess::PreprocessOutcome::Refined(cfg)) => cfg,
+                Ok(preprocess::PreprocessOutcome::Reachable(run)) => {
+                    tracing::info!(
+                        run_length = run.len(),
+                        "Reused concrete N-reaching run from LinearGraph preprocessing"
+                    );
+                    initial_status = Some(SolverStatus::True(()));
+                    unprocessed_cfg
+                }
+                Err(status @ SolverStatus::Unknown(VASSReachSolverError::Timeout)) => {
+                    tracing::warn!("CFG preprocessing exhausted the global solver timeout");
+                    initial_status = Some(status);
+                    unprocessed_cfg
+                }
+                Err(status) => {
+                    tracing::warn!(
+                        ?status,
+                        "CFG preprocessing failed; continuing with unprocessed CFG"
+                    );
+                    unprocessed_cfg
+                }
+            };
+        }
 
         tracing::debug!("{}", cfg.to_graphviz(None, None));
 
@@ -93,6 +124,7 @@ impl VASSReachSolver {
         VASSReachSolver {
             config,
             state,
+            initial_status,
             step_count: 0,
             solver_start_time: None,
             debug_trace_writer,
@@ -120,6 +152,10 @@ impl VASSReachSolver {
 
     fn solve_inner(&mut self) -> Result<(), VASSReachSolverStatus> {
         let mut step_time;
+
+        if let Some(status) = &self.initial_status {
+            return Err(status.clone());
+        }
 
         self.z_reach_precheck()?;
 
@@ -294,7 +330,7 @@ impl VASSReachSolver {
                 );
             }
             VASSReachRefinementAction::BuildAutomaton => {
-                let cfg = self.build_linear_graph_refinement_cfg(path);
+                let cfg = self.build_linear_graph_refinement_cfg(path)?;
                 self.state.add_cfg(cfg.minimize());
             }
         }
@@ -302,37 +338,67 @@ impl VASSReachSolver {
         Ok(())
     }
 
-    fn build_linear_graph_refinement_cfg(&mut self, primary_path: MultiGraphPath) -> VASSCFG<()> {
+    fn build_linear_graph_refinement_cfg(
+        &mut self,
+        primary_path: MultiGraphPath,
+    ) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         tracing::debug!("Building and checking LinearGraph");
-        self.log_minimized_explicit_product_summary();
 
         let starting_paths = self.linear_graph_starting_paths(primary_path);
+        let fallback_primary_path = starting_paths[0].clone();
         let product_view = self.state.full_view();
         let view_paths = starting_paths
             .iter()
             .map(|path| product_view.project_path(path))
             .collect::<Vec<_>>();
         let full_dag = product_view.find_scc_dag();
+        self.max_time_reached()?;
         log_scc_dag_route_summary_before_linear_graph("implicit_product", &full_dag);
 
-        let mut extender = LinearGraphExtender::from_product_view_paths_with_config(
-            view_paths,
-            &product_view,
-            self.config.get_linear_graph(),
-        )
+        let mut extender = if let Some(remaining) = self.remaining_solver_time() {
+            LinearGraphExtender::from_product_view_paths_with_config_and_time_limit(
+                view_paths,
+                &product_view,
+                self.config.get_linear_graph(),
+                remaining,
+            )
+        } else {
+            LinearGraphExtender::from_product_view_paths_with_config(
+                view_paths,
+                &product_view,
+                self.config.get_linear_graph(),
+            )
+        }
         .with_scc_dag(full_dag);
-        let mut cfg = extender.run();
+        let mut cfg = match extender.run_with_witness() {
+            LinearGraphExtenderOutput::Refinement(cfg) => cfg,
+            LinearGraphExtenderOutput::Reachable(run)
+                if product_view.is_accepting(run.end())
+                    && run.is_n_reaching(
+                        &self.state.initial_valuation,
+                        &self.state.final_valuation,
+                    ) =>
+            {
+                tracing::info!(
+                    run_length = run.len(),
+                    "Reused concrete N-reaching run from LinearGraph refinement"
+                );
+                return Err(SolverStatus::True(()));
+            }
+            LinearGraphExtenderOutput::Reachable(run) => {
+                tracing::warn!(
+                    run_length = run.len(),
+                    "Rejected invalid reachable run returned by LinearGraph refinement"
+                );
+                LinearGraph::from_path(fallback_primary_path, &product_view, self.state.dimension)
+                    .to_cfg()
+            }
+            LinearGraphExtenderOutput::Timeout => {
+                return Err(SolverStatus::Unknown(VASSReachSolverError::Timeout));
+            }
+        };
         cfg.invert_mut();
-        cfg
-    }
-
-    fn log_minimized_explicit_product_summary(&mut self) {
-        let minimized_explicit_product = self.state.explicit().minimize();
-        let minimized_explicit_dag = minimized_explicit_product.find_scc_dag();
-        log_scc_dag_route_summary_before_linear_graph(
-            "minimized_explicit_product",
-            &minimized_explicit_dag,
-        );
+        Ok(cfg)
     }
 
     fn linear_graph_starting_paths(&self, primary_path: MultiGraphPath) -> Vec<MultiGraphPath> {
@@ -445,6 +511,7 @@ impl VASSReachSolver {
     }
 
     /// Builds and checks the LTC automaton for the given path.
+    #[allow(dead_code)]
     fn ltc(&self, path: &MultiGraphPath) -> Result<VASSCFG<()>, VASSReachSolverStatus> {
         let translation = LTCTranslation::from_multi_graph_path(&self.state, path);
         let ltc = translation.to_ltc(self.state.dimension);
@@ -456,6 +523,7 @@ impl VASSReachSolver {
         }
     }
 
+    #[allow(dead_code)]
     fn ltc_relaxed(
         &self,
         ltc: LTC,
@@ -475,6 +543,7 @@ impl VASSReachSolver {
         }
     }
 
+    #[allow(dead_code)]
     fn ltc_strict(
         &self,
         ltc: LTC,
@@ -535,6 +604,12 @@ impl VASSReachSolver {
 
     fn get_solver_time(&self) -> Option<std::time::Duration> {
         self.solver_start_time.map(|x| x.elapsed())
+    }
+
+    fn remaining_solver_time(&self) -> Option<std::time::Duration> {
+        self.config
+            .get_timeout()
+            .map(|timeout| timeout.saturating_sub(self.get_solver_time().unwrap_or_default()))
     }
 
     fn print_start_banner(&self) {

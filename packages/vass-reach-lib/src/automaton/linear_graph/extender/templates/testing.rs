@@ -13,7 +13,9 @@ use super::{
         analyze_templates, analyze_with_incremental_template, default_templates,
         main_cfg_template_lower_bounds, successor_bounds,
     },
-    synthesis::{candidate_templates, synthesize_template_for_boundaries},
+    synthesis::{
+        TemplateSynthesisOptions, candidate_templates, synthesize_template_for_boundaries,
+    },
     transfer::exact_successor_template_bound,
 };
 use crate::{
@@ -201,10 +203,12 @@ pub fn synthesize_template_coefficients(
         initial_valuation,
         &current,
         model_boundaries,
-        max_coefficient,
-        max_candidates,
-        true,
-        usize::MAX,
+        TemplateSynthesisOptions {
+            max_coefficient,
+            max_candidates,
+            exact_transfer_enabled: true,
+            exact_transfer_max_templates: usize::MAX,
+        },
     )
     .map(|(template, _)| template.coefficients.into_vec())
 }
