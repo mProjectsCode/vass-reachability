@@ -38,6 +38,7 @@ pub fn main_cfg_template_lower_bounds_snapshot(
         cfg,
         initial_valuation,
         true,
+        usize::MAX,
         &DefaultTemplateFamilies::all(),
     ))
 }
@@ -82,6 +83,7 @@ pub fn guided_candidate_template_coefficients(
         cfg,
         initial_valuation,
         true,
+        usize::MAX,
         &DefaultTemplateFamilies::all(),
     );
     TemplateTestCodec::coefficients(super::synthesis::candidate_templates_for_boundaries(
@@ -112,6 +114,26 @@ pub fn successor_bound_from_coefficients_with_exact_transfer(
     cap: i32,
     exact_transfer_enabled: bool,
 ) -> i32 {
+    successor_bound_from_coefficients_with_exact_transfer_limit(
+        templates,
+        source_bounds,
+        update,
+        objective_index,
+        cap,
+        exact_transfer_enabled,
+        usize::MAX,
+    )
+}
+
+pub fn successor_bound_from_coefficients_with_exact_transfer_limit(
+    templates: &[Vec<i32>],
+    source_bounds: &[i32],
+    update: &CFGCounterUpdate,
+    objective_index: usize,
+    cap: i32,
+    exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
+) -> i32 {
     let templates = TemplateTestCodec::templates_from_coefficients(templates);
     successor_bounds(
         &templates,
@@ -119,6 +141,7 @@ pub fn successor_bound_from_coefficients_with_exact_transfer(
         update,
         cap,
         exact_transfer_enabled,
+        exact_transfer_max_templates,
     )[objective_index]
 }
 
@@ -132,6 +155,7 @@ pub fn analyze_template_bounds_snapshot(
         initial_valuation,
         TemplateTestCodec::templates_from_coefficients(templates),
         true,
+        usize::MAX,
     ))
 }
 
@@ -146,6 +170,7 @@ pub fn analyze_incremental_template_bounds_snapshot(
         initial_valuation,
         TemplateTestCodec::templates_from_coefficients(current_templates),
         true,
+        usize::MAX,
     );
     TemplateTestCodec::snapshot(analyze_with_incremental_template(
         cfg,
@@ -153,6 +178,7 @@ pub fn analyze_incremental_template_bounds_snapshot(
         &current,
         LinearTemplate::from_coefficients(extra_template),
         true,
+        usize::MAX,
     ))
 }
 
@@ -167,6 +193,7 @@ pub fn synthesize_template_coefficients(
         cfg,
         initial_valuation,
         true,
+        usize::MAX,
         &DefaultTemplateFamilies::all(),
     );
     synthesize_template_for_boundaries(
@@ -177,6 +204,7 @@ pub fn synthesize_template_coefficients(
         max_coefficient,
         max_candidates,
         true,
+        usize::MAX,
     )
     .map(|(template, _)| template.coefficients.into_vec())
 }

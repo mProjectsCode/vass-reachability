@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Debug};
+use std::{cell::RefCell, fmt::Debug, time::Instant};
 
 use hashbrown::HashSet;
 
@@ -141,11 +141,22 @@ impl<'a> LinearGraphExtender<'a> {
         final_valuation: VASSCounterValuation,
         options: LinearGraphExtenderOptions,
     ) -> Self {
+        let timer = Instant::now();
         let template_lower_bounds = main_cfg_template_lower_bounds(
             product.product.main_cfg(),
             &initial_valuation,
             options.template_exact_transfer_enabled,
+            options.template_exact_transfer_max_templates,
             &options.initial_template_families,
+        );
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            templates = template_lower_bounds.templates.len(),
+            primary_path_len = primary_path.len(),
+            auxiliary_paths = auxiliary_paths.len(),
+            exact_transfer_enabled = options.template_exact_transfer_enabled,
+            exact_transfer_max_templates = options.template_exact_transfer_max_templates,
+            "Initialized LinearGraph template lower bounds"
         );
 
         LinearGraphExtender {
@@ -711,16 +722,25 @@ impl<'a> LinearGraphExtender<'a> {
         &self,
         linear_graph: &ProductViewLinearGraph<'a>,
     ) -> crate::solver::linear_graph_reach::LinearGraphReachSolverResult {
+        let candidate_timer = Instant::now();
         let template_lower_bounds = self.template_lower_bounds.borrow();
+        let lower_bound_timer = Instant::now();
         let boundary_lower_bounds = path_sensitive_linear_graph_template_lower_bounds(
             linear_graph,
             &template_lower_bounds,
             &self.initial_valuation,
             &self.final_valuation,
             self.options.template_exact_transfer_enabled,
+            self.options.template_exact_transfer_max_templates,
         );
+        let lower_bound_elapsed = lower_bound_timer.elapsed();
+        let lower_bound_count = boundary_lower_bounds
+            .values()
+            .map(|constraints| constraints.lower_bounds.len())
+            .sum::<usize>();
 
-        LinearGraphReachSolverOptions::default()
+        let solve_timer = Instant::now();
+        let result = LinearGraphReachSolverOptions::default()
             .with_optional_iteration_limit(self.options.reach_solver_max_iterations)
             .with_optional_time_limit(self.options.reach_solver_timeout)
             .into_solver_with_boundary_lower_bounds(
@@ -729,7 +749,22 @@ impl<'a> LinearGraphExtender<'a> {
                 &self.final_valuation,
                 boundary_lower_bounds,
             )
-            .solve()
+            .solve();
+        let solve_elapsed = solve_timer.elapsed();
+
+        tracing::debug!(
+            total_elapsed_ms = candidate_timer.elapsed().as_millis(),
+            lower_bounds_elapsed_ms = lower_bound_elapsed.as_millis(),
+            reach_solver_elapsed_ms = solve_elapsed.as_millis(),
+            candidate_size = linear_graph.size(),
+            parts = linear_graph.sequence.len(),
+            templates = template_lower_bounds.templates.len(),
+            boundaries_with_constraints = lower_bound_count,
+            status = ?result.status,
+            "Solved LinearGraph candidate with template lower bounds"
+        );
+
+        result
     }
 
     fn synthesize_template_excluding_boundaries(
@@ -753,6 +788,7 @@ impl<'a> LinearGraphExtender<'a> {
             self.options.template_synthesis_max_coefficient,
             self.options.template_synthesis_candidate_limit,
             self.options.template_exact_transfer_enabled,
+            self.options.template_exact_transfer_max_templates,
         )
     }
 

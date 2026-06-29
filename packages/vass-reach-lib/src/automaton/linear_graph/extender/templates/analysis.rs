@@ -4,7 +4,7 @@
 //! Transfer", "Joining Control-Flow Paths", and "LinearGraph Integration"
 //! sections of `docs/linear-template-invariants.md`.
 
-use std::collections::VecDeque;
+use std::{cell::RefCell, collections::VecDeque, time::Instant};
 
 use hashbrown::HashMap;
 
@@ -30,15 +30,44 @@ pub(in crate::automaton::linear_graph::extender) fn main_cfg_template_lower_boun
     cfg: &VASSCFG<()>,
     initial_valuation: &VASSCounterValuation,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
     initial_template_families: &[LinearGraphTemplateFamily],
 ) -> MainCFGTemplateLowerBounds {
-    TemplateAnalysis::new(
+    let timer = Instant::now();
+    let templates = default_templates(initial_valuation.dimension(), initial_template_families);
+    tracing::debug!(
+        states = cfg.node_count(),
+        alphabet = cfg.alphabet().len(),
+        templates = templates.len(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Starting main-CFG template lower-bound analysis"
+    );
+
+    let result = TemplateAnalysis::new(
         cfg,
         initial_valuation,
-        default_templates(initial_valuation.dimension(), initial_template_families),
+        templates,
         exact_transfer_enabled,
+        exact_transfer_max_templates,
     )
-    .run()
+    .run();
+
+    tracing::debug!(
+        elapsed_ms = timer.elapsed().as_millis(),
+        states = cfg.node_count(),
+        templates = result.templates.len(),
+        reachable_states = result
+            .state_bounds
+            .iter()
+            .filter(|bounds| bounds.is_some())
+            .count(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Finished main-CFG template lower-bound analysis"
+    );
+
+    result
 }
 
 pub(super) fn analyze_templates(
@@ -46,8 +75,43 @@ pub(super) fn analyze_templates(
     initial_valuation: &VASSCounterValuation,
     templates: Vec<LinearTemplate>,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
 ) -> MainCFGTemplateLowerBounds {
-    TemplateAnalysis::new(cfg, initial_valuation, templates, exact_transfer_enabled).run()
+    let timer = Instant::now();
+    let template_count = templates.len();
+    tracing::debug!(
+        states = cfg.node_count(),
+        alphabet = cfg.alphabet().len(),
+        templates = template_count,
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Starting custom template lower-bound analysis"
+    );
+
+    let result = TemplateAnalysis::new(
+        cfg,
+        initial_valuation,
+        templates,
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+    )
+    .run();
+
+    tracing::debug!(
+        elapsed_ms = timer.elapsed().as_millis(),
+        states = cfg.node_count(),
+        templates = result.templates.len(),
+        reachable_states = result
+            .state_bounds
+            .iter()
+            .filter(|bounds| bounds.is_some())
+            .count(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Finished custom template lower-bound analysis"
+    );
+
+    result
 }
 
 pub(super) fn analyze_with_incremental_template(
@@ -56,15 +120,43 @@ pub(super) fn analyze_with_incremental_template(
     current: &MainCFGTemplateLowerBounds,
     template: LinearTemplate,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
 ) -> MainCFGTemplateLowerBounds {
-    IncrementalTemplateAnalysis::new(
+    let timer = Instant::now();
+    tracing::debug!(
+        states = cfg.node_count(),
+        alphabet = cfg.alphabet().len(),
+        existing_templates = current.templates.len(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Starting incremental template lower-bound analysis"
+    );
+
+    let result = IncrementalTemplateAnalysis::new(
         cfg,
         initial_valuation,
         current,
         template,
         exact_transfer_enabled,
+        exact_transfer_max_templates,
     )
-    .run()
+    .run();
+
+    tracing::debug!(
+        elapsed_ms = timer.elapsed().as_millis(),
+        states = cfg.node_count(),
+        templates = result.templates.len(),
+        reachable_states = result
+            .state_bounds
+            .iter()
+            .filter(|bounds| bounds.is_some())
+            .count(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Finished incremental template lower-bound analysis"
+    );
+
+    result
 }
 
 /// Builds the small default domain: singleton counters, pairwise sums, and
@@ -82,15 +174,45 @@ pub(in crate::automaton::linear_graph::extender) fn path_sensitive_linear_graph_
     initial_valuation: &VASSCounterValuation,
     final_valuation: &VASSCounterValuation,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
 ) -> HashMap<LinearGraphBoundPoint<MultiGraphState>, LinearGraphBoundaryConstraints> {
-    LinearGraphTemplateBounder::new(
+    let timer = Instant::now();
+    tracing::debug!(
+        linear_graph_size = linear_graph.size(),
+        parts = linear_graph.sequence.len(),
+        templates = main_bounds.templates.len(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Starting path-sensitive LinearGraph template lower-bound analysis"
+    );
+
+    let constraints = LinearGraphTemplateBounder::new(
         linear_graph,
         main_bounds,
         initial_valuation,
         final_valuation,
         exact_transfer_enabled,
+        exact_transfer_max_templates,
     )
-    .boundary_constraints()
+    .boundary_constraints();
+
+    let constraint_count = constraints
+        .values()
+        .map(|constraints| constraints.lower_bounds.len())
+        .sum::<usize>();
+    tracing::debug!(
+        elapsed_ms = timer.elapsed().as_millis(),
+        linear_graph_size = linear_graph.size(),
+        parts = linear_graph.sequence.len(),
+        boundaries = constraints.len(),
+        lower_bound_constraints = constraint_count,
+        templates = main_bounds.templates.len(),
+        exact_transfer_enabled,
+        exact_transfer_max_templates,
+        "Finished path-sensitive LinearGraph template lower-bound analysis"
+    );
+
+    constraints
 }
 
 struct TemplateAnalysis<'a> {
@@ -107,13 +229,14 @@ impl<'a> TemplateAnalysis<'a> {
         initial_valuation: &'a VASSCounterValuation,
         templates: Vec<LinearTemplate>,
         exact_transfer_enabled: bool,
+        exact_transfer_max_templates: usize,
     ) -> Self {
         Self {
             cfg,
             initial_valuation,
             templates,
             cap: AnalysisCap::for_cfg(cfg),
-            transfer: TemplateTransfer::new(exact_transfer_enabled),
+            transfer: TemplateTransfer::new(exact_transfer_enabled, exact_transfer_max_templates),
         }
     }
 
@@ -139,12 +262,17 @@ impl<'a> TemplateAnalysis<'a> {
     }
 
     fn propagate_bounds(&self, state_bounds: &mut [Option<Box<[i32]>>]) {
+        let timer = Instant::now();
         let initial = self.cfg.get_initial();
         let mut queue = VecDeque::from([initial]);
         let mut queued = vec![false; self.cfg.node_count()];
         queued[initial.index()] = true;
+        let mut popped_states = 0usize;
+        let mut transfer_attempts = 0usize;
+        let mut changed_states = 0usize;
 
         while let Some(source) = queue.pop_front() {
+            popped_states += 1;
             queued[source.index()] = false;
             let source_bounds = state_bounds[source.index()]
                 .as_ref()
@@ -156,6 +284,7 @@ impl<'a> TemplateAnalysis<'a> {
                     continue;
                 };
 
+                transfer_attempts += 1;
                 let candidate = self.transfer.successor_bounds(
                     &self.templates,
                     &source_bounds,
@@ -163,14 +292,29 @@ impl<'a> TemplateAnalysis<'a> {
                     self.cap,
                 );
 
-                if TemplateBounds::merge_state(&mut state_bounds[target.index()], candidate)
-                    && !queued[target.index()]
-                {
-                    queued[target.index()] = true;
-                    queue.push_back(target);
+                if TemplateBounds::merge_state(&mut state_bounds[target.index()], candidate) {
+                    changed_states += 1;
+                    if !queued[target.index()] {
+                        queued[target.index()] = true;
+                        queue.push_back(target);
+                    }
                 }
             }
         }
+
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            popped_states,
+            transfer_attempts,
+            changed_states,
+            reachable_states = state_bounds
+                .iter()
+                .filter(|bounds| bounds.is_some())
+                .count(),
+            templates = self.templates.len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Finished main-CFG template propagation fixed point"
+        );
     }
 }
 
@@ -193,8 +337,9 @@ pub(super) fn successor_bounds(
     update: &CFGCounterUpdate,
     cap: i32,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
 ) -> Box<[i32]> {
-    TemplateTransfer::new(exact_transfer_enabled).successor_bounds(
+    TemplateTransfer::new(exact_transfer_enabled, exact_transfer_max_templates).successor_bounds(
         templates,
         source_bounds,
         update,
@@ -219,6 +364,7 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
         current: &'a MainCFGTemplateLowerBounds,
         template: LinearTemplate,
         exact_transfer_enabled: bool,
+        exact_transfer_max_templates: usize,
     ) -> Self {
         let cap = AnalysisCap::for_cfg(cfg);
         let mut templates = current.templates.clone();
@@ -232,7 +378,7 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
             templates,
             new_template_index,
             cap,
-            transfer: TemplateTransfer::new(exact_transfer_enabled),
+            transfer: TemplateTransfer::new(exact_transfer_enabled, exact_transfer_max_templates),
         }
     }
 
@@ -256,6 +402,7 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
     }
 
     fn fixed_point(&self) -> Vec<Option<i32>> {
+        let timer = Instant::now();
         let initial = self.cfg.get_initial();
         let mut new_bounds = vec![None; self.cfg.node_count()];
         new_bounds[initial.index()] = Some(
@@ -266,8 +413,12 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
         let mut queue = VecDeque::from([initial]);
         let mut queued = vec![false; self.cfg.node_count()];
         queued[initial.index()] = true;
+        let mut popped_states = 0usize;
+        let mut transfer_attempts = 0usize;
+        let mut changed_templates = 0usize;
 
         while let Some(source) = queue.pop_front() {
+            popped_states += 1;
             queued[source.index()] = false;
 
             let Some(source_bounds) = self.source_bounds(&new_bounds, source) else {
@@ -279,6 +430,7 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
                     continue;
                 };
 
+                transfer_attempts += 1;
                 let candidate = self.transfer.successor_template_bound(
                     &self.templates,
                     &source_bounds,
@@ -287,14 +439,26 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
                     self.cap,
                 );
 
-                if TemplateBounds::merge_template(&mut new_bounds[target.index()], candidate)
-                    && !queued[target.index()]
-                {
-                    queued[target.index()] = true;
-                    queue.push_back(target);
+                if TemplateBounds::merge_template(&mut new_bounds[target.index()], candidate) {
+                    changed_templates += 1;
+                    if !queued[target.index()] {
+                        queued[target.index()] = true;
+                        queue.push_back(target);
+                    }
                 }
             }
         }
+
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            popped_states,
+            transfer_attempts,
+            changed_templates,
+            reachable_states = new_bounds.iter().filter(|bound| bound.is_some()).count(),
+            templates = self.templates.len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Finished incremental template propagation fixed point"
+        );
 
         new_bounds
     }
@@ -317,58 +481,61 @@ impl<'a> IncrementalTemplateAnalysis<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 struct TemplateTransfer {
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
+    exact_cache: RefCell<HashMap<ExactTransferCacheKey, Box<[i32]>>>,
 }
 
 impl TemplateTransfer {
-    fn new(exact_transfer_enabled: bool) -> Self {
+    fn new(exact_transfer_enabled: bool, exact_transfer_max_templates: usize) -> Self {
         Self {
             exact_transfer_enabled,
+            exact_transfer_max_templates,
+            exact_cache: RefCell::new(HashMap::new()),
         }
     }
 
     fn successor_bounds(
-        self,
+        &self,
         templates: &[LinearTemplate],
         source_bounds: &[i32],
         update: &CFGCounterUpdate,
         cap: i32,
     ) -> Box<[i32]> {
-        let exact_transfer = (self.exact_transfer_enabled && !templates.is_empty())
-            .then(|| ExactTemplateTransfer::new(templates, source_bounds, update));
+        let timer = Instant::now();
+        let exact_transfer_enabled = self.should_use_exact_transfer(templates);
+        let result = if exact_transfer_enabled {
+            self.exact_successor_bounds(templates, source_bounds, update, cap)
+        } else {
+            self.independent_successor_bounds(templates, source_bounds, update, cap)
+        };
 
-        (0..templates.len())
-            .map(|template_index| {
-                if let Some(exact_transfer) = &exact_transfer {
-                    exact_transfer.successor_template_bound(&templates[template_index], update, cap)
-                } else {
-                    self.independent_successor_template_bound(
-                        &templates[template_index],
-                        source_bounds[template_index],
-                        update,
-                        cap,
-                    )
-                }
-            })
-            .collect()
+        tracing::trace!(
+            elapsed_us = timer.elapsed().as_micros(),
+            templates = templates.len(),
+            exact_transfer_enabled,
+            exact_transfer_max_templates = self.exact_transfer_max_templates,
+            counter = update.counter().to_usize(),
+            op = update.op(),
+            "Computed successor template bounds"
+        );
+
+        result
     }
 
     fn successor_template_bound(
-        self,
+        &self,
         templates: &[LinearTemplate],
         source_bounds: &[i32],
         update: &CFGCounterUpdate,
         objective_index: usize,
         cap: i32,
     ) -> i32 {
-        if self.exact_transfer_enabled {
-            ExactTemplateTransfer::new(templates, source_bounds, update).successor_template_bound(
-                &templates[objective_index],
-                update,
-                cap,
-            )
+        let timer = Instant::now();
+        let exact_transfer_enabled = self.should_use_exact_transfer(templates);
+        let result = if exact_transfer_enabled {
+            self.exact_successor_bounds(templates, source_bounds, update, cap)[objective_index]
         } else {
             self.independent_successor_template_bound(
                 &templates[objective_index],
@@ -376,11 +543,67 @@ impl TemplateTransfer {
                 update,
                 cap,
             )
+        };
+
+        tracing::trace!(
+            elapsed_us = timer.elapsed().as_micros(),
+            templates = templates.len(),
+            objective_index,
+            exact_transfer_enabled,
+            exact_transfer_max_templates = self.exact_transfer_max_templates,
+            counter = update.counter().to_usize(),
+            op = update.op(),
+            "Computed successor template bound"
+        );
+
+        result
+    }
+
+    fn should_use_exact_transfer(&self, templates: &[LinearTemplate]) -> bool {
+        self.exact_transfer_enabled
+            && !templates.is_empty()
+            && templates.len() <= self.exact_transfer_max_templates
+    }
+
+    fn exact_successor_bounds(
+        &self,
+        templates: &[LinearTemplate],
+        source_bounds: &[i32],
+        update: &CFGCounterUpdate,
+        cap: i32,
+    ) -> Box<[i32]> {
+        let key = ExactTransferCacheKey::new(source_bounds, *update, cap);
+        if let Some(bounds) = self.exact_cache.borrow().get(&key) {
+            return bounds.clone();
         }
+
+        let exact_transfer = ExactTemplateTransfer::new(templates, source_bounds, update);
+        let bounds = templates
+            .iter()
+            .map(|template| exact_transfer.successor_template_bound(template, update, cap))
+            .collect::<Box<[_]>>();
+        self.exact_cache.borrow_mut().insert(key, bounds.clone());
+        bounds
+    }
+
+    fn independent_successor_bounds(
+        &self,
+        templates: &[LinearTemplate],
+        source_bounds: &[i32],
+        update: &CFGCounterUpdate,
+        cap: i32,
+    ) -> Box<[i32]> {
+        templates
+            .iter()
+            .zip(source_bounds.iter())
+            .map(|(template, source_bound)| {
+                self.independent_successor_template_bound(template, *source_bound, update, cap)
+            })
+            .collect()
     }
 
     fn independent_successor_template_bound(
-        self,
+        &self,
         template: &LinearTemplate,
         source_bound: i32,
         update: &CFGCounterUpdate,
@@ -391,6 +614,23 @@ impl TemplateTransfer {
         let delta = coefficient * update.op();
 
         template.clamp_lower_bound(source_bound + delta, cap)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ExactTransferCacheKey {
+    source_bounds: Box<[i32]>,
+    update: CFGCounterUpdate,
+    cap: i32,
+}
+
+impl ExactTransferCacheKey {
+    fn new(source_bounds: &[i32], update: CFGCounterUpdate, cap: i32) -> Self {
+        Self {
+            source_bounds: source_bounds.to_vec().into_boxed_slice(),
+            update,
+            cap,
+        }
     }
 }
 
@@ -480,6 +720,7 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         initial_valuation: &'a VASSCounterValuation,
         final_valuation: &'a VASSCounterValuation,
         exact_transfer_enabled: bool,
+        exact_transfer_max_templates: usize,
     ) -> Self {
         Self {
             linear_graph,
@@ -487,7 +728,7 @@ impl<'a> LinearGraphTemplateBounder<'a> {
             initial_valuation,
             final_valuation,
             cap: AnalysisCap::for_size(linear_graph.size()),
-            transfer: TemplateTransfer::new(exact_transfer_enabled),
+            transfer: TemplateTransfer::new(exact_transfer_enabled, exact_transfer_max_templates),
         }
     }
 
@@ -511,9 +752,11 @@ impl<'a> LinearGraphTemplateBounder<'a> {
             LinearGraphBoundaryConstraints,
         >,
     ) {
+        let timer = Instant::now();
         let Some(first) = self.linear_graph.sequence.first() else {
             return;
         };
+        let mut transferred_parts = 0usize;
 
         let mut current_bounds =
             TemplateBounds::for_valuation(self.templates(), self.initial_valuation, self.cap);
@@ -528,6 +771,7 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         );
 
         for (index, part) in self.linear_graph.sequence.iter().enumerate() {
+            transferred_parts += 1;
             current_bounds = self.transfer_part(part, &current_bounds);
 
             self.insert_boundary_lower_bounds(
@@ -539,6 +783,15 @@ impl<'a> LinearGraphTemplateBounder<'a> {
                 &current_bounds,
             );
         }
+
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            parts = transferred_parts,
+            boundaries = boundary_constraints.len(),
+            templates = self.templates().len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Finished forward LinearGraph boundary lower-bound propagation"
+        );
     }
 
     fn add_backward_boundary_bounds(
@@ -548,9 +801,11 @@ impl<'a> LinearGraphTemplateBounder<'a> {
             LinearGraphBoundaryConstraints,
         >,
     ) {
+        let timer = Instant::now();
         let Some(last) = self.linear_graph.sequence.last() else {
             return;
         };
+        let mut transferred_parts = 0usize;
 
         let mut current_bounds =
             TemplateBounds::for_valuation(self.templates(), self.final_valuation, self.cap);
@@ -565,6 +820,7 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         );
 
         for (index, part) in self.linear_graph.sequence.iter().enumerate().rev() {
+            transferred_parts += 1;
             current_bounds = self.transfer_part_backwards(part, &current_bounds);
 
             self.insert_boundary_lower_bounds(
@@ -576,10 +832,20 @@ impl<'a> LinearGraphTemplateBounder<'a> {
                 &current_bounds,
             );
         }
+
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            parts = transferred_parts,
+            boundaries = boundary_constraints.len(),
+            templates = self.templates().len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Finished backward LinearGraph boundary lower-bound propagation"
+        );
     }
 
     fn transfer_part(&self, part: &LinearGraphPart, source_bounds: &[i32]) -> Box<[i32]> {
-        match part {
+        let timer = Instant::now();
+        let result = match part {
             LinearGraphPart::Path(index) => self.transfer_path_updates(
                 source_bounds.to_vec().into_boxed_slice(),
                 self.linear_graph.path(*index).path.transitions.iter(),
@@ -595,11 +861,23 @@ impl<'a> LinearGraphTemplateBounder<'a> {
                     .transitions
                     .iter(),
             ),
-        }
+        };
+
+        tracing::trace!(
+            elapsed_us = timer.elapsed().as_micros(),
+            part = ?part,
+            direction = "forward",
+            templates = self.templates().len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Transferred LinearGraph part template bounds"
+        );
+
+        result
     }
 
     fn transfer_part_backwards(&self, part: &LinearGraphPart, target_bounds: &[i32]) -> Box<[i32]> {
-        match part {
+        let timer = Instant::now();
+        let result = match part {
             LinearGraphPart::Path(index) => self.transfer_path_updates_backwards(
                 target_bounds.to_vec().into_boxed_slice(),
                 self.linear_graph.path(*index).path.transitions.iter().rev(),
@@ -616,7 +894,18 @@ impl<'a> LinearGraphTemplateBounder<'a> {
                     .iter()
                     .rev(),
             ),
-        }
+        };
+
+        tracing::trace!(
+            elapsed_us = timer.elapsed().as_micros(),
+            part = ?part,
+            direction = "backward",
+            templates = self.templates().len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Transferred LinearGraph part template bounds"
+        );
+
+        result
     }
 
     fn transfer_path_updates<'b>(
@@ -655,14 +944,25 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         source_bounds: &[i32],
         updates: impl Iterator<Item = &'b CFGCounterUpdate> + Clone,
     ) -> Box<[i32]> {
+        let timer = Instant::now();
         let mut bounds = source_bounds.to_vec().into_boxed_slice();
+        let mut iterations = 0usize;
 
         loop {
+            iterations += 1;
             let after_one_iteration = self.transfer_path_updates(bounds.clone(), updates.clone());
             let mut joined = bounds.clone();
             let changed = TemplateBounds::merge_into(&mut joined, &after_one_iteration);
 
             if !changed {
+                tracing::debug!(
+                    elapsed_ms = timer.elapsed().as_millis(),
+                    iterations,
+                    direction = "forward",
+                    templates = self.templates().len(),
+                    exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+                    "Finished repeat-path template lower-bound fixed point"
+                );
                 return joined;
             }
 
@@ -675,15 +975,26 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         target_bounds: &[i32],
         updates: impl Iterator<Item = &'b CFGCounterUpdate> + Clone,
     ) -> Box<[i32]> {
+        let timer = Instant::now();
         let mut bounds = target_bounds.to_vec().into_boxed_slice();
+        let mut iterations = 0usize;
 
         loop {
+            iterations += 1;
             let before_one_iteration =
                 self.transfer_path_updates_backwards(bounds.clone(), updates.clone());
             let mut joined = bounds.clone();
             let changed = TemplateBounds::merge_into(&mut joined, &before_one_iteration);
 
             if !changed {
+                tracing::debug!(
+                    elapsed_ms = timer.elapsed().as_millis(),
+                    iterations,
+                    direction = "backward",
+                    templates = self.templates().len(),
+                    exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+                    "Finished repeat-path template lower-bound fixed point"
+                );
                 return joined;
             }
 
@@ -696,14 +1007,19 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         graph: &LinearGraphRegion<MultiGraphState>,
         source_bounds: &[i32],
     ) -> Box<[i32]> {
+        let timer = Instant::now();
         let mut state_bounds = vec![None; graph.node_count()];
         state_bounds[graph.start.index()] = Some(source_bounds.to_vec().into_boxed_slice());
 
         let mut queue = VecDeque::from([graph.start]);
         let mut queued = vec![false; graph.node_count()];
         queued[graph.start.index()] = true;
+        let mut popped_states = 0usize;
+        let mut transfer_attempts = 0usize;
+        let mut changed_states = 0usize;
 
         while let Some(source) = queue.pop_front() {
+            popped_states += 1;
             queued[source.index()] = false;
 
             let source_bounds = state_bounds[source.index()]
@@ -714,6 +1030,7 @@ impl<'a> LinearGraphTemplateBounder<'a> {
             for edge in graph.outgoing_edge_indices(&source) {
                 let update = graph.get_edge_unchecked(&edge);
                 let target = graph.edge_target_unchecked(&edge);
+                transfer_attempts += 1;
                 let candidate = self.transfer.successor_bounds(
                     self.templates(),
                     &source_bounds,
@@ -721,14 +1038,29 @@ impl<'a> LinearGraphTemplateBounder<'a> {
                     self.cap,
                 );
 
-                if TemplateBounds::merge_state(&mut state_bounds[target.index()], candidate)
-                    && !queued[target.index()]
-                {
-                    queued[target.index()] = true;
-                    queue.push_back(target);
+                if TemplateBounds::merge_state(&mut state_bounds[target.index()], candidate) {
+                    changed_states += 1;
+                    if !queued[target.index()] {
+                        queued[target.index()] = true;
+                        queue.push_back(target);
+                    }
                 }
             }
         }
+
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            direction = "forward",
+            nodes = graph.node_count(),
+            edges = graph.edge_count(),
+            popped_states,
+            transfer_attempts,
+            changed_states,
+            reached_end = state_bounds[graph.end.index()].is_some(),
+            templates = self.templates().len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Finished graph-region template lower-bound fixed point"
+        );
 
         state_bounds[graph.end.index()]
             .clone()
@@ -740,14 +1072,19 @@ impl<'a> LinearGraphTemplateBounder<'a> {
         graph: &LinearGraphRegion<MultiGraphState>,
         target_bounds: &[i32],
     ) -> Box<[i32]> {
+        let timer = Instant::now();
         let mut state_bounds = vec![None; graph.node_count()];
         state_bounds[graph.end.index()] = Some(target_bounds.to_vec().into_boxed_slice());
 
         let mut queue = VecDeque::from([graph.end]);
         let mut queued = vec![false; graph.node_count()];
         queued[graph.end.index()] = true;
+        let mut popped_states = 0usize;
+        let mut transfer_attempts = 0usize;
+        let mut changed_states = 0usize;
 
         while let Some(target) = queue.pop_front() {
+            popped_states += 1;
             queued[target.index()] = false;
 
             let target_bounds = state_bounds[target.index()]
@@ -758,6 +1095,7 @@ impl<'a> LinearGraphTemplateBounder<'a> {
             for edge in graph.incoming_edge_indices(&target) {
                 let update = graph.get_edge_unchecked(&edge).reverse();
                 let source = graph.edge_source_unchecked(&edge);
+                transfer_attempts += 1;
                 let candidate = self.transfer.successor_bounds(
                     self.templates(),
                     &target_bounds,
@@ -765,14 +1103,29 @@ impl<'a> LinearGraphTemplateBounder<'a> {
                     self.cap,
                 );
 
-                if TemplateBounds::merge_state(&mut state_bounds[source.index()], candidate)
-                    && !queued[source.index()]
-                {
-                    queued[source.index()] = true;
-                    queue.push_back(source);
+                if TemplateBounds::merge_state(&mut state_bounds[source.index()], candidate) {
+                    changed_states += 1;
+                    if !queued[source.index()] {
+                        queued[source.index()] = true;
+                        queue.push_back(source);
+                    }
                 }
             }
         }
+
+        tracing::debug!(
+            elapsed_ms = timer.elapsed().as_millis(),
+            direction = "backward",
+            nodes = graph.node_count(),
+            edges = graph.edge_count(),
+            popped_states,
+            transfer_attempts,
+            changed_states,
+            reached_start = state_bounds[graph.start.index()].is_some(),
+            templates = self.templates().len(),
+            exact_transfer_enabled = self.transfer.exact_transfer_enabled,
+            "Finished graph-region template lower-bound fixed point"
+        );
 
         state_bounds[graph.start.index()]
             .clone()

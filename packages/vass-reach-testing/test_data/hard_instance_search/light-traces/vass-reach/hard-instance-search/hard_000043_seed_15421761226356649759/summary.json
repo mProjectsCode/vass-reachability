@@ -6,12 +6,12 @@
   "result_reason": "Timeout",
   "repetitions": 2,
   "elapsed_ms": [
-    12399,
-    12441
+    10182,
+    10675
   ],
   "step_counts": [
-    8,
-    8
+    28,
+    29
   ],
   "dimension": 2,
   "state_count": 3,

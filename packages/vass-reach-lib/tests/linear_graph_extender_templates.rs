@@ -9,6 +9,7 @@ use vass_reach_lib::{
             default_template_coefficients_with_families, exact_successor_bound_from_coefficients,
             guided_candidate_template_coefficients, main_cfg_template_lower_bounds_snapshot,
             successor_bound_from_coefficients_with_exact_transfer,
+            successor_bound_from_coefficients_with_exact_transfer_limit,
             synthesize_template_coefficients,
         },
     },
@@ -124,6 +125,25 @@ fn independent_transfer_can_be_selected_for_template_analysis() {
 
     assert_eq!(exact, 4);
     assert_eq!(independent, 1);
+}
+
+#[test]
+fn exact_transfer_falls_back_when_template_limit_is_exceeded() {
+    let templates = default_template_coefficients(3);
+    let source_bounds = vec![0, 0, 0, 2, 2, 2, 0];
+    let all_counters = templates.len() - 1;
+
+    let bound = successor_bound_from_coefficients_with_exact_transfer_limit(
+        &templates,
+        &source_bounds,
+        &CFGCounterUpdate::new(0, true),
+        all_counters,
+        10,
+        true,
+        templates.len() - 1,
+    );
+
+    assert_eq!(bound, 1);
 }
 
 #[test]

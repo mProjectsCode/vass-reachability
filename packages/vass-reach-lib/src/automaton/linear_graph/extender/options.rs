@@ -16,6 +16,7 @@ pub(super) struct LinearGraphExtenderOptions {
     pub(super) reach_solver_max_iterations: Option<u32>,
     pub(super) reach_solver_timeout: Option<Duration>,
     pub(super) template_exact_transfer_enabled: bool,
+    pub(super) template_exact_transfer_max_templates: usize,
     pub(super) template_synthesis_enabled: bool,
     pub(super) template_synthesis_max_coefficient: i32,
     pub(super) template_synthesis_candidate_limit: usize,
@@ -37,6 +38,7 @@ impl LinearGraphExtenderOptions {
             reach_solver_max_iterations: None,
             reach_solver_timeout: None,
             template_exact_transfer_enabled: true,
+            template_exact_transfer_max_templates: 8,
             template_synthesis_enabled: true,
             template_synthesis_max_coefficient: 2,
             template_synthesis_candidate_limit: 256,
@@ -63,6 +65,8 @@ impl LinearGraphExtenderOptions {
             reach_solver_max_iterations: *config.get_reach_solver_max_iterations(),
             reach_solver_timeout: *config.get_reach_solver_timeout(),
             template_exact_transfer_enabled: *config.get_template_exact_transfer_enabled(),
+            template_exact_transfer_max_templates: *config
+                .get_template_exact_transfer_max_templates(),
             template_synthesis_enabled: *config.get_template_synthesis_enabled(),
             template_synthesis_max_coefficient: *config
                 .get_template_synthesis_max_coefficient()

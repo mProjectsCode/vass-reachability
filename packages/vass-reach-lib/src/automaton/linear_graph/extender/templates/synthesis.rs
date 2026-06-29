@@ -22,6 +22,7 @@ pub(in crate::automaton::linear_graph::extender) fn synthesize_template_for_boun
     max_coefficient: i32,
     max_candidates: usize,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
 ) -> Option<(LinearTemplate, MainCFGTemplateLowerBounds)> {
     TemplateSynthesizer::new(
         cfg,
@@ -31,6 +32,7 @@ pub(in crate::automaton::linear_graph::extender) fn synthesize_template_for_boun
         max_coefficient,
         max_candidates,
         exact_transfer_enabled,
+        exact_transfer_max_templates,
     )
     .synthesize()
 }
@@ -73,6 +75,7 @@ struct TemplateSynthesizer<'a> {
     max_coefficient: i32,
     max_candidates: usize,
     exact_transfer_enabled: bool,
+    exact_transfer_max_templates: usize,
 }
 
 impl<'a> TemplateSynthesizer<'a> {
@@ -84,6 +87,7 @@ impl<'a> TemplateSynthesizer<'a> {
         max_coefficient: i32,
         max_candidates: usize,
         exact_transfer_enabled: bool,
+        exact_transfer_max_templates: usize,
     ) -> Self {
         Self {
             cfg,
@@ -93,6 +97,7 @@ impl<'a> TemplateSynthesizer<'a> {
             max_coefficient,
             max_candidates,
             exact_transfer_enabled,
+            exact_transfer_max_templates,
         }
     }
 
@@ -127,6 +132,7 @@ impl<'a> TemplateSynthesizer<'a> {
             self.current,
             template.clone(),
             self.exact_transfer_enabled,
+            self.exact_transfer_max_templates,
         )
     }
 
