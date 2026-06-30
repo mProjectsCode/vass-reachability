@@ -2,6 +2,9 @@ timeout = { secs = 2, nanos = 0 }
 max_iterations = 8
 bounded_counting_enabled = false
 
+[short_witness]
+enabled = true
+
 [preprocessing]
 enabled = false
 
